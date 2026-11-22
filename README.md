@@ -19,7 +19,13 @@ A tiny, blazing-fast, cross-platform desktop mascot engine with **Multi-Pet Herd
 **[Download Release](https://github.com/smresponsibilities/diypets/releases)** · **[Install via Cargo](#option-2-install-via-cargo-cratesio)** · **[Multi-Pet Herd Mode](#-multi-pet-herd-mode)** · **[Studio V2 & SVG Import](#-diypets-studio-v2-make-your-own-pet)** · **[AI Agent CLI](AGENT_PET_GUIDE.md)**
 
 
+
 </div>
+
+
+<!-- AUTO:STATS:START -->
+> **Latest release:** `v0.1.6` · **5 Made by SM originals** + **27+ on-demand eSheep packs** · **~7.8 MB RAM** · **MCP API on :3721**
+<!-- AUTO:STATS:END -->
 
 ---
 
@@ -30,6 +36,11 @@ A tiny, blazing-fast, cross-platform desktop mascot engine with **Multi-Pet Herd
 | Highland Cow | Dog | Polar Bear | Goat | Stegosaurus |
 | :---: | :---: | :---: | :---: | :---: |
 | <img src="catalog_icons/highland_cow.png" width="88" alt="Highland Cow" /> | <img src="catalog_icons/dog.png" width="88" alt="Dog" /> | <img src="catalog_icons/polar_bear.png" width="88" alt="Polar Bear" /> | <img src="catalog_icons/goat.png" width="88" alt="Goat" /> | <img src="catalog_icons/stegosaurus.png" width="88" alt="Stegosaurus" /> |
+
+
+<!-- AUTO:STATS:START -->
+> **Latest release:** `v0.1.6` · **5 Made by SM originals** + **27+ on-demand eSheep packs** · **~7.8 MB RAM** · **MCP API on :3721**
+<!-- AUTO:STATS:END -->
 
 ---
 
@@ -46,6 +57,11 @@ A tiny, blazing-fast, cross-platform desktop mascot engine with **Multi-Pet Herd
 | **Classic eSheep XML compatibility** | **Yes (lazy-loaded)** | No | No | Yes |
 | **Start on Login & System Tray** | **Yes** | Varies | No | Yes |
 | **100% Free & Open Source** | **MIT / Apache-2.0** | Varies | Mixed | Mixed |
+
+
+<!-- AUTO:STATS:START -->
+> **Latest release:** `v0.1.6` · **5 Made by SM originals** + **27+ on-demand eSheep packs** · **~7.8 MB RAM** · **MCP API on :3721**
+<!-- AUTO:STATS:END -->
 
 ---
 
@@ -97,6 +113,11 @@ sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev libxdo-dev \
 ```
 </details>
 
+
+<!-- AUTO:STATS:START -->
+> **Latest release:** `v0.1.6` · **5 Made by SM originals** + **27+ on-demand eSheep packs** · **~7.8 MB RAM** · **MCP API on :3721**
+<!-- AUTO:STATS:END -->
+
 ---
 
 ## Using DIYPets
@@ -116,6 +137,11 @@ Run up to **8 pets simultaneously**—mix Highland Cow, Dog, Sky Bird, Emerald S
 - **Row 2 — eSheep:** 27+ classic community packs. Click any Get (XXX KB) card to download, validate, and activate on demand. Right-click downloaded packs to remove them.
 - **Import Pet (.xml):** Install any shared diypets or eSheep XML file in one click.
 
+
+<!-- AUTO:STATS:START -->
+> **Latest release:** `v0.1.6` · **5 Made by SM originals** + **27+ on-demand eSheep packs** · **~7.8 MB RAM** · **MCP API on :3721**
+<!-- AUTO:STATS:END -->
+
 ---
 
 ## DIYPets Studio V2 (Make Your Own Pet)
@@ -132,6 +158,11 @@ Launch from the tray menu, Settings (**+ Create Pet**), or diypets-creator:
 diypets-creator --from-svg bird.svg --name "Sky Bird" --archetype bird --author "SM" --activate
 ```
 
+
+<!-- AUTO:STATS:START -->
+> **Latest release:** `v0.1.6` · **5 Made by SM originals** + **27+ on-demand eSheep packs** · **~7.8 MB RAM** · **MCP API on :3721**
+<!-- AUTO:STATS:END -->
+
 ---
 
 ## Contributing & Community
@@ -142,6 +173,11 @@ Love DIYPets? Give the repo a **Star** to help others discover it!
 - **Have an idea?** [Request a Feature](https://github.com/smresponsibilities/diypets/issues/new?template=feature_request.yml)
 - **Made a pet?** [Submit a Community Pet Pack](https://github.com/smresponsibilities/diypets/issues/new?template=submit_pet_pack.yml)
 - **Want to code?** Read [CONTRIBUTING.md](CONTRIBUTING.md) and check [ROADMAP.md](ROADMAP.md) and [TICKETS.md](TICKETS.md).
+
+
+<!-- AUTO:STATS:START -->
+> **Latest release:** `v0.1.6` · **5 Made by SM originals** + **27+ on-demand eSheep packs** · **~7.8 MB RAM** · **MCP API on :3721**
+<!-- AUTO:STATS:END -->
 
 ---
 

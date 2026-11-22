@@ -6,10 +6,10 @@ use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::mpsc;
+use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
-use diypets::agent_api::{self, AgentCommand};
+use diypets::agent_api::{self, AgentCommand, SharedHerd};
 use diypets::autostart;
 use diypets::bubble::{render_pixel_ball_argb, render_speech_bubble_argb};
 use diypets::catalog::{default_app_icon, make_square_app_icon};
@@ -710,6 +710,7 @@ struct DeskpetApp {
     settings_process: Option<std::process::Child>,
     creator_process: Option<std::process::Child>,
     agent_rx: mpsc::Receiver<AgentCommand>,
+    shared_herd: SharedHerd,
     bubble: Option<SpeechBubbleOverlay>,
     ball: Option<ToyBallOverlay>,
 }
@@ -946,6 +947,9 @@ impl DeskpetApp {
             let inst = self.spawn_pet_instance(event_loop, &id, idx, now_ms);
             self.pets.push(inst);
         }
+        if let Ok(mut guard) = self.shared_herd.lock() {
+            *guard = self.desired_herd.clone();
+        }
     }
 
     fn reload_settings_if_changed(&mut self, event_loop: &ActiveEventLoop, now_ms: u64) {
@@ -1036,7 +1040,8 @@ impl DeskpetApp {
             if let Some(msg) = cmd.text.as_deref()
                 && !msg.trim().is_empty()
             {
-                self.bubble = SpeechBubbleOverlay::create(event_loop, msg.trim(), now_ms + 4500);
+                let dur = cmd.duration_ms.unwrap_or(4500).clamp(1000, 15_000);
+                self.bubble = SpeechBubbleOverlay::create(event_loop, msg.trim(), now_ms + dur);
             }
             match cmd.mood.to_lowercase().as_str() {
                 "happy" | "hop" | "celebrate" => {
@@ -1046,6 +1051,11 @@ impl DeskpetApp {
                         pet.state.toss_force_x = if pet.state.is_moving_left { -3.0 } else { 3.0 };
                         pet.state.toss_vert_vel = -10.0;
                     }
+                }
+                "say" => {}
+                "follow" | "follow_cursor" => {
+                    self.follow_cursor = cmd.enabled.unwrap_or(!self.follow_cursor);
+                    self.persist_current_settings();
                 }
                 "ball" | "play" | "treat" => {
                     self.drop_toy_ball(event_loop, now_ms);
@@ -1872,6 +1882,28 @@ impl Drop for DeskpetApp {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("say") {
+        let msg = args[2..].join(" ");
+        let msg = if msg.trim().is_empty() { "Hello!".to_string() } else { msg };
+        match agent_api::send_cli_react("say", Some(&msg)) {
+            Ok(_) => println!("DIYPets said: {msg}"),
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+    if args.get(1).map(String::as_str) == Some("ball") {
+        match agent_api::send_cli_react("ball", Some("Play time!")) {
+            Ok(_) => println!("Dropped bouncy ball for DIYPets herd!"),
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     if args.get(1).map(String::as_str) == Some("react") {
         let mood = args
             .iter()
@@ -1899,7 +1931,8 @@ fn main() {
     }
 
     let (agent_tx, agent_rx) = mpsc::channel();
-    agent_api::start_local_server(agent_tx);
+    let shared_herd: SharedHerd = Arc::new(Mutex::new(Vec::new()));
+    agent_api::start_local_server(agent_tx, shared_herd.clone());
 
     #[cfg(windows)]
     unsafe {
@@ -1936,6 +1969,7 @@ fn main() {
         settings_process: None,
         creator_process: None,
         agent_rx,
+        shared_herd,
         bubble: None,
         ball: None,
     };

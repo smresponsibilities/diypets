@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.6] - 2026-11-23
+### Added
+- **Play Mode (`T-044`):** Drop a bouncy physics pixel ball (`Drop Bouncy Ball` in tray/right-click menu, `diypets ball`, or MCP `drop_ball`) that your herd chases and kicks with floating hearts, plus a **Follow Cursor** toggle.
+- **Full 6-Tool MCP & HTTP Agent API (`127.0.0.1:3721`):** Added `say`, `drop_ball`, `set_follow_cursor`, and `list_herd` MCP tools alongside `react_pet` and `spawn_pet`, plus `GET /herd` and CLI shortcuts `diypets say "..."` and `diypets ball`.
+- **Per-Pet Herd Sizes & Speeds (`T-032`):** Independent pixel size and walk speed sliders (with Reset) per active pet slot in **Settings -> Active Herd**.
+- **Single-Instance Guard:** Launching `diypets` while already running wakes the active pet cleanly instead of spawning duplicate tray icons.
+- **Distribution & Automation (`T-017`):** Added Scoop, Homebrew Tap, and Winget manifests under `packaging/`, automatic `.sha256` checksum uploads in Release CI, and an auto-updating README stats workflow.
+
+### Changed
+- **Dead-Code Diet (`T-013`):** Removed ~1,600 lines of unused Format v0 modules (`state.rs`, `pack.rs`, `sprite.rs`) for faster `cargo install` builds.
+- **Icon & Sprite Polish:** Rebuilt full-bleed edge-to-edge Highland Cow `.ico`/`logo-512.png` for crisp taskbar sizing and cleaned exterior fringe and heavy grey slabs on `polar_bear`.
 ## [0.1.5] - 2026-11-23
 ### Added
 - **Floating Pixel Speech Bubbles (`src/bubble.rs`):** Crisp click-through speech bubbles float above your pet and track it when triggered via MCP (`/mcp`), HTTP (`/react`), CLI (`diypets react --mood happy --text "Tests passed!"`), or Headpat.

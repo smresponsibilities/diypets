@@ -37,7 +37,7 @@ jobs:
           sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev libxdo-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev pkg-config
       - name: Build release binaries
         run: cargo build --release --target ${{ matrix.target }}
-      - name: Package Windows zip
+      - name: Package Windows zip + SHA256
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
@@ -51,8 +51,11 @@ jobs:
           foreach ($p in @("highland_cow","dog","polar_bear","goat","stegosaurus")) {
             Copy-Item -Recurse "assets/$p" "$stage/assets/$p"
           }
-          Compress-Archive -Path "$stage/*" -DestinationPath "${{ matrix.artifact }}.zip" -Force
-      - name: Package Unix tar.gz
+          $zip = "${{ matrix.artifact }}.zip"
+          Compress-Archive -Path "$stage/*" -DestinationPath $zip -Force
+          $hash = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower()
+          "$hash  $zip" | Out-File -FilePath "$zip.sha256" -Encoding ascii
+      - name: Package Unix tar.gz + SHA256
         if: runner.os != 'Windows'
         run: |
           stage="stage/${{ matrix.artifact }}"
@@ -65,10 +68,18 @@ jobs:
           for p in highland_cow dog polar_bear goat stegosaurus; do
             cp -r "assets/$p" "$stage/assets/$p"
           done
-          tar -czf "${{ matrix.artifact }}.tar.gz" -C stage "${{ matrix.artifact }}"
+          tarball="${{ matrix.artifact }}.tar.gz"
+          tar -czf "$tarball" -C stage "${{ matrix.artifact }}"
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "$tarball" > "$tarball.sha256"
+          else
+            shasum -a 256 "$tarball" > "$tarball.sha256"
+          fi
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
         with:
           files: |
             diypets-*.zip
+            diypets-*.zip.sha256
             diypets-*.tar.gz
+            diypets-*.tar.gz.sha256

@@ -1,0 +1,66 @@
+name: Auto-Update README Stats
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Cargo.toml"
+      - "catalog.json"
+      - "CHANGELOG.md"
+  schedule:
+    - cron: "0 0 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-readme:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sync version & live catalog counts into README.md
+        run: |
+          python3 - <<'PY'
+          import json, re
+
+          cargo = open("Cargo.toml", encoding="utf-8").read()
+          ver_m = re.search(r'(?m)^version\s*=\s*"([^"]+)"', cargo)
+          version = ver_m.group(1) if ver_m else "0.1.6"
+
+          sm_count, esheep_count = 5, 27
+          try:
+              cat = json.load(open("catalog.json", encoding="utf-8"))
+              items = cat if isinstance(cat, list) else cat.get("pets", cat.get("packs", []))
+              sm_count = sum(1 for x in items if str(x.get("category", x.get("author", ""))).lower() in ("made_by_sm", "sm", "made by sm"))
+              esheep_count = max(0, len(items) - sm_count)
+          except Exception:
+              pass
+
+          block = (
+              "<!-- AUTO:STATS:START -->\n"
+              f"> **Latest release:** `v{version}` · **{sm_count} Made by SM originals** + **{esheep_count}+ on-demand eSheep packs** · **~7.8 MB RAM** · **MCP API on `:3721`**\n"
+              "<!-- AUTO:STATS:END -->"
+          )
+
+          rm = open("README.md", encoding="utf-8").read().replace("\r\n", "\n")
+          pat = r"<!-- AUTO:STATS:START -->[\s\S]*?<!-- AUTO:STATS:END -->"
+          if re.search(pat, rm):
+              new_rm = re.sub(pat, block, rm, count=1)
+          else:
+              new_rm = rm.replace("\n---\n", f"\n{block}\n\n---\n", 1)
+          if new_rm != rm:
+              open("README.md", "w", encoding="utf-8", newline="\n").write(new_rm)
+              print(f"Updated README.md stats -> v{version} ({sm_count} SM + {esheep_count} eSheep)")
+          else:
+              print("README.md already up to date.")
+          PY
+      - name: Commit updated README if changed
+        run: |
+          if ! git diff --quiet README.md; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add README.md
+            git commit -m "docs: auto-update README stats [skip ci]"
+            git push
+          fi

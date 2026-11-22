@@ -9,3 +9,4 @@ assets/esheep_ani.gif
 *.ps1
 *.py
 !scripts/generate_demo_gif.py
+!assets/generate_demo.py
