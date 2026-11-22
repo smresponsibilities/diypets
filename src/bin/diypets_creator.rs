@@ -53,6 +53,7 @@ enum StudioTab {
     Rig,
     Animate,
     Export,
+    ImportSheet,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -270,6 +271,13 @@ struct StudioApp {
     tex_body_ghost: Option<egui::TextureHandle>,
     tex_preview: Option<egui::TextureHandle>,
     tex_sheet: Option<egui::TextureHandle>,
+    sheet_import_img: Option<image::RgbaImage>,
+    sheet_import_tex: Option<egui::TextureHandle>,
+    sheet_cols: u32,
+    sheet_rows: u32,
+    sheet_walk_count: u32,
+    sheet_fps_ms: u32,
+    sheet_name: String,
 }
 
 impl Default for StudioApp {
@@ -316,6 +324,13 @@ impl Default for StudioApp {
             tex_body_ghost: None,
             tex_preview: None,
             tex_sheet: None,
+            sheet_import_img: None,
+            sheet_import_tex: None,
+            sheet_cols: 4,
+            sheet_rows: 1,
+            sheet_walk_count: 4,
+            sheet_fps_ms: 140,
+            sheet_name: "sheet_pet".to_string(),
         }
     }
 }
@@ -728,6 +743,108 @@ impl StudioApp {
         self.pending_activate = false;
     }
 
+    fn pick_sprite_sheet_dialog(&mut self, ctx: &egui::Context) {
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("PNG Sprite Sheet", &["png"])
+            .pick_file()
+        else {
+            return;
+        };
+        match image::open(&path) {
+            Ok(img) => {
+                let mut rgba = img.to_rgba8();
+                diypets::catalog::strip_chroma_key_if_opaque(&mut rgba);
+                let stem = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("sheet_pet");
+                self.sheet_name = sanitize_pack_id(stem);
+                let size = [rgba.width() as usize, rgba.height() as usize];
+                let ci = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_flat_samples().as_slice());
+                self.sheet_import_tex = Some(ctx.load_texture("v3_import_sheet", ci, egui::TextureOptions::NEAREST));
+                self.sheet_import_img = Some(rgba);
+                self.status_msg = Some((format!("Loaded sprite sheet '{}' ({}x{})", self.sheet_name, size[0], size[1]), false));
+            }
+            Err(e) => self.status_msg = Some((format!("Failed to open PNG: {e}"), true)),
+        }
+    }
+
+    fn export_imported_sheet(&mut self, activate: bool) {
+        let Some(sheet) = &self.sheet_import_img else {
+            self.status_msg = Some(("Pick a PNG sprite sheet first.".to_string(), true));
+            return;
+        };
+        let cols = self.sheet_cols.max(1);
+        let rows = self.sheet_rows.max(1);
+        let tw = sheet.width() / cols;
+        let th = sheet.height() / rows;
+        if tw == 0 || th == 0 {
+            self.status_msg = Some(("Grid Cols/Rows too large for image size.".to_string(), true));
+            return;
+        }
+        let total = cols * rows;
+        let walk_n = self.sheet_walk_count.clamp(1, total);
+
+        // Compute GroundY from bottom-most opaque pixel across walk frames
+        let mut bottom_y = th.saturating_sub(1);
+        let mut found_px = false;
+        for idx in 0..walk_n {
+            let tx = (idx % cols) * tw;
+            let ty = (idx / cols) * th;
+            for y in (0..th).rev() {
+                if (0..tw).any(|x| sheet.get_pixel(tx + x, ty + y)[3] > 24) {
+                    if !found_px {
+                        bottom_y = y;
+                        found_px = true;
+                    } else {
+                        bottom_y = bottom_y.max(y);
+                    }
+                    break;
+                }
+            }
+        }
+        let ground_y = (bottom_y + 1).clamp(1, th);
+
+        use base64::{Engine as _, engine::general_purpose::STANDARD};
+        let mut png_bytes = Vec::new();
+        if let Err(e) = sheet.write_to(&mut std::io::Cursor::new(&mut png_bytes), image::ImageFormat::Png) {
+            self.status_msg = Some((format!("PNG encode error: {e}"), true));
+            return;
+        }
+        let b64 = STANDARD.encode(&png_bytes);
+        let walk_frames: String = (0..walk_n).map(|f| format!("<Frame>{f}</Frame>")).collect();
+        let id = sanitize_pack_id(&self.sheet_name);
+        if BUNDLED_PROTECTED.contains(&id.as_str()) {
+            self.status_msg = Some((format!("'{id}' is reserved. Pick a unique pet name."), true));
+            return;
+        }
+        let iv = self.sheet_fps_ms.clamp(50, 500);
+        let xml = format!(
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<AnimationXML>\n  <Header><Title>{id}</Title><Author>{}</Author></Header>\n  <Image><TilesX>{cols}</TilesX><TilesY>{rows}</TilesY><GroundY>{ground_y}</GroundY><Png>{b64}</Png></Image>\n  <Spawns><Spawn id=\"1\" probability=\"100\"><X>screenW/2</X><Y>0</Y><Next>5</Next></Spawn></Spawns>\n  <Animation id=\"1\"><Name>walk</Name><Start><X>-6</X><Y>0</Y><Interval>{iv}</Interval><Opacity>1</Opacity></Start><End><X>-6</X><Y>0</Y><Interval>{iv}</Interval><Opacity>1</Opacity></End><Sequence repeat=\"4\" repeatfrom=\"0\">{walk_frames}</Sequence><Border><Next probability=\"100\">2</Next></Border><Gravity><Next probability=\"100\">5</Next></Gravity><Next probability=\"75\">1</Next><Next probability=\"25\">12</Next></Animation>\n  <Animation id=\"2\"><Name>turn</Name><Action>flip</Action><Start><X>0</X><Y>0</Y><Interval>160</Interval><Opacity>1</Opacity></Start><End><X>0</X><Y>0</Y><Interval>160</Interval><Opacity>1</Opacity></End><Sequence repeat=\"0\" repeatfrom=\"0\"><Frame>0</Frame></Sequence><Next probability=\"100\">1</Next></Animation>\n  <Animation id=\"4\"><Name>drag</Name><Start><X>0</X><Y>0</Y><Interval>140</Interval><Opacity>1</Opacity></Start><End><X>0</X><Y>0</Y><Interval>140</Interval><Opacity>1</Opacity></End><Sequence repeat=\"2\" repeatfrom=\"0\"><Frame>0</Frame></Sequence><Next probability=\"100\">4</Next></Animation>\n  <Animation id=\"5\"><Name>fall</Name><Start><X>0</X><Y>12</Y><Interval>60</Interval><Opacity>1</Opacity></Start><End><X>0</X><Y>18</Y><Interval>60</Interval><Opacity>1</Opacity></End><Sequence repeat=\"1\" repeatfrom=\"0\"><Frame>0</Frame></Sequence><Border><Next probability=\"100\">9</Next></Border><Next probability=\"100\">5</Next></Animation>\n  <Animation id=\"9\"><Name>fall soft</Name><Start><X>0</X><Y>0</Y><Interval>140</Interval><Opacity>1</Opacity></Start><End><X>0</X><Y>0</Y><Interval>140</Interval><Opacity>1</Opacity></End><Sequence repeat=\"0\" repeatfrom=\"0\"><Frame>0</Frame></Sequence><Next probability=\"100\">1</Next></Animation>\n  <Animation id=\"12\"><Name>idle</Name><Start><X>0</X><Y>0</Y><Interval>350</Interval><Opacity>1</Opacity></Start><End><X>0</X><Y>0</Y><Interval>350</Interval><Opacity>1</Opacity></End><Sequence repeat=\"3\" repeatfrom=\"0\"><Frame>0</Frame></Sequence><Gravity><Next probability=\"100\">5</Next></Gravity><Next probability=\"100\">1</Next></Animation>\n</AnimationXML>\n",
+            self.project.author
+        );
+        if let Err(e) = diypets::deskpet_xml::DeskpetPack::parse(&xml) {
+            self.status_msg = Some((format!("Sheet validation failed: {e}"), true));
+            return;
+        }
+        let target = export_root_dir().join(&id);
+        let _ = std::fs::create_dir_all(&target);
+        if let Err(e) = std::fs::write(target.join("deskpet.xml"), &xml) {
+            self.status_msg = Some((format!("Write error: {e}"), true));
+            return;
+        }
+        let icon = image::imageops::crop_imm(sheet, 0, 0, tw, th).to_image();
+        let _ = icon.save(target.join("icon.png"));
+        if activate {
+            let sp = Settings::default_path();
+            let mut s = Settings::load_sanitized(&sp);
+            s.pet_pack = id.clone();
+            let _ = s.save(&sp);
+            self.status_msg = Some((format!("Imported & activated sprite sheet '{id}' on your desktop!"), false));
+        } else {
+            self.status_msg = Some((format!("Saved sprite sheet pet '{id}' to library!"), false));
+        }
+    }
     fn sync_canvas_textures(&mut self, ctx: &egui::Context) {
         if !self.canvas_dirty {
             return;
@@ -997,7 +1114,7 @@ impl eframe::App for StudioApp {
             ui.add_space(2.0);
             ui.horizontal(|ui| {
                 ui.label(
-                    egui::RichText::new("DIYPets Studio V2")
+                    egui::RichText::new("DIYPets Studio V3")
                         .strong()
                         .size(16.0)
                         .color(egui::Color32::from_rgb(130, 195, 255)),
@@ -1007,8 +1124,10 @@ impl eframe::App for StudioApp {
                 ui.selectable_value(&mut self.tab, StudioTab::Rig, "2. Rig & Parts");
                 ui.selectable_value(&mut self.tab, StudioTab::Animate, "3. Custom Anims");
                 ui.selectable_value(&mut self.tab, StudioTab::Export, "4. Export & Share");
+                ui.selectable_value(&mut self.tab, StudioTab::ImportSheet, "5. Sprite Sheet");
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.add(egui::Button::new(egui::RichText::new("Run on Desktop").strong().color(egui::Color32::WHITE)).fill(egui::Color32::from_rgb(46, 134, 86))).clicked() { self.request_export(true); }
                     if ui.button("Open Project").clicked() {
                         self.open_project_dialog();
                     }
@@ -1040,7 +1159,7 @@ impl eframe::App for StudioApp {
         });
 
         // RIGHT PANEL: Live Preview + Layer & Face Stack (always accessible in Draw/Rig/Animate)
-        if self.tab != StudioTab::Export {
+        if !matches!(self.tab, StudioTab::Export | StudioTab::ImportSheet) {
             egui::Panel::right("v2_right").show(ui, |ui| {
                 ui.set_width(268.0);
                 egui::ScrollArea::vertical().show(ui, |ui| {
@@ -1439,7 +1558,61 @@ impl eframe::App for StudioApp {
                     }
                 }
 
-                StudioTab::Export => {
+                StudioTab::ImportSheet => {
+                    ui.label(egui::RichText::new("PNG Sprite Sheet Importer").strong());
+                    ui.label(egui::RichText::new("Drop any Aseprite / itch.io / Piskel PNG grid and turn it into a desktop pet in 10 seconds.").size(11.0).color(egui::Color32::GRAY));
+                    ui.add_space(6.0);
+                    if ui.button("Choose PNG Sprite Sheet...").clicked() {
+                        self.pick_sprite_sheet_dialog(ui.ctx());
+                    }
+                    ui.separator();
+                    ui.label("Pet ID:");
+                    ui.text_edit_singleline(&mut self.sheet_name);
+                    ui.add(egui::Slider::new(&mut self.sheet_cols, 1..=20).text("Grid Cols (X)"));
+                    ui.add(egui::Slider::new(&mut self.sheet_rows, 1..=20).text("Grid Rows (Y)"));
+                    let max_f = (self.sheet_cols * self.sheet_rows).max(1);
+                    self.sheet_walk_count = self.sheet_walk_count.clamp(1, max_f);
+                    ui.add(egui::Slider::new(&mut self.sheet_walk_count, 1..=max_f).text("Walk Frames"));
+                    ui.add(egui::Slider::new(&mut self.sheet_fps_ms, 60..=400).text("Frame ms"));
+                    ui.add_space(8.0);
+                    if ui.button("Export Sheet & Run on Desktop").clicked() {
+                        self.export_imported_sheet(true);
+                    }
+                    if ui.button("Export Sheet to Library").clicked() {
+                        self.export_imported_sheet(false);
+                    }
+                }
+                StudioTab::ImportSheet => {
+                ui.heading("Sprite Sheet Grid Preview");
+                if let Some(tex) = &self.sheet_import_tex {
+                    egui::ScrollArea::both().show(ui, |ui| {
+                        let s = tex.size_vec2();
+                        let avail_w = ui.available_width().max(240.0);
+                        let sc = (avail_w / s.x).min(2.0);
+                        let disp = s * sc;
+                        let (rect, _) = ui.allocate_exact_size(disp, egui::Sense::hover());
+                        let p = ui.painter_at(rect);
+                        Self::draw_checkerboard(&p, rect, 12.0, self.light_checker);
+                        p.image(tex.id(), rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
+                        let cols = self.sheet_cols.max(1);
+                        let rows = self.sheet_rows.max(1);
+                        let cw = rect.width() / cols as f32;
+                        let ch = rect.height() / rows as f32;
+                        let st = egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(80, 190, 255, 190));
+                        for i in 1..cols {
+                            let x = rect.min.x + i as f32 * cw;
+                            p.line_segment([egui::pos2(x, rect.min.y), egui::pos2(x, rect.max.y)], st);
+                        }
+                        for j in 1..rows {
+                            let y = rect.min.y + j as f32 * ch;
+                            p.line_segment([egui::pos2(rect.min.x, y), egui::pos2(rect.max.x, y)], st);
+                        }
+                    });
+                } else {
+                    ui.label("Click 'Choose PNG Sprite Sheet...' on the left to load any sprite strip or grid.");
+                }
+            }
+            StudioTab::Export => {
                     ui.label(egui::RichText::new("Pet Metadata").strong());
                     ui.label("Display Name:");
                     if ui.text_edit_singleline(&mut self.project.display_name).changed()
@@ -1502,6 +1675,36 @@ impl eframe::App for StudioApp {
 
         // CENTER STAGE
         egui::CentralPanel::default().show(ui, |ui| match self.tab {
+            StudioTab::ImportSheet => {
+                ui.heading("Sprite Sheet Grid Preview");
+                if let Some(tex) = &self.sheet_import_tex {
+                    egui::ScrollArea::both().show(ui, |ui| {
+                        let s = tex.size_vec2();
+                        let avail_w = ui.available_width().max(240.0);
+                        let sc = (avail_w / s.x).min(2.0);
+                        let disp = s * sc;
+                        let (rect, _) = ui.allocate_exact_size(disp, egui::Sense::hover());
+                        let p = ui.painter_at(rect);
+                        Self::draw_checkerboard(&p, rect, 12.0, self.light_checker);
+                        p.image(tex.id(), rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
+                        let cols = self.sheet_cols.max(1);
+                        let rows = self.sheet_rows.max(1);
+                        let cw = rect.width() / cols as f32;
+                        let ch = rect.height() / rows as f32;
+                        let st = egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(80, 190, 255, 190));
+                        for i in 1..cols {
+                            let x = rect.min.x + i as f32 * cw;
+                            p.line_segment([egui::pos2(x, rect.min.y), egui::pos2(x, rect.max.y)], st);
+                        }
+                        for j in 1..rows {
+                            let y = rect.min.y + j as f32 * ch;
+                            p.line_segment([egui::pos2(rect.min.x, y), egui::pos2(rect.max.x, y)], st);
+                        }
+                    });
+                } else {
+                    ui.label("Click 'Choose PNG Sprite Sheet...' on the left to load any sprite strip or grid.");
+                }
+            }
             StudioTab::Export => {
                 ui.vertical_centered(|ui| {
                     ui.heading("Animation Tester & Exporter");
@@ -1829,13 +2032,23 @@ impl eframe::App for StudioApp {
 }
 
 fn apply_studio_theme(ctx: &egui::Context) {
+    let mut style = (*ctx.style()).clone();
+    style.spacing.item_spacing = egui::vec2(8.0, 6.0);
+    style.spacing.button_padding = egui::vec2(9.0, 5.0);
     let mut visuals = egui::Visuals::dark();
-    visuals.window_fill = egui::Color32::from_rgb(24, 27, 34);
-    visuals.panel_fill = egui::Color32::from_rgb(28, 31, 40);
-    visuals.faint_bg_color = egui::Color32::from_rgb(36, 40, 52);
-    visuals.selection.bg_fill = egui::Color32::from_rgb(56, 114, 198);
+    visuals.window_fill = egui::Color32::from_rgb(20, 23, 30);
+    visuals.panel_fill = egui::Color32::from_rgb(25, 29, 38);
+    visuals.faint_bg_color = egui::Color32::from_rgb(33, 38, 50);
+    visuals.selection.bg_fill = egui::Color32::from_rgb(59, 130, 246);
     visuals.selection.stroke = egui::Stroke::new(1.0, egui::Color32::WHITE);
-    ctx.set_visuals(visuals);
+    visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(38, 44, 58);
+    visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(6);
+    visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(50, 58, 76);
+    visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(6);
+    visuals.widgets.active.bg_fill = egui::Color32::from_rgb(59, 130, 246);
+    visuals.widgets.active.corner_radius = egui::CornerRadius::same(6);
+    style.visuals = visuals;
+    ctx.set_style(style);
 }
 
 fn main() -> eframe::Result<()> {
@@ -1851,7 +2064,7 @@ fn main() -> eframe::Result<()> {
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1240.0, 770.0])
         .with_min_inner_size([920.0, 600.0])
-        .with_title("DIYPets Studio V2");
+        .with_title("DIYPets Studio V3");
 
     if let Some(icon) = default_app_icon(64) {
         viewport = viewport.with_icon(Arc::new(egui::IconData {
@@ -1866,7 +2079,7 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
     eframe::run_native(
-        "DIYPets Studio V2",
+        "DIYPets Studio V3",
         options,
         Box::new(|cc| {
             apply_studio_theme(&cc.egui_ctx);

@@ -23,7 +23,7 @@ Legend: **Priority** (`P0` Critical -> `P3` Nice-to-have) · **Effort** (`S` <2h
 ## Pillar 1: Desktop Runtime, Physics & Performance
 - [x] **T-014A** `[P0][M]` **Fix True Per-Pixel Alpha Click-Through:** On Windows `UpdateLayeredWindow` passes clicks through `alpha == 0` pixels natively when `WS_EX_TRANSPARENT` is NOT set; stop calling `set_cursor_hittest(false)` globally so users can always drag opaque pet pixels while clicking through transparent corners!
 - [x] **T-014B** `[P0][M]` **Direct Right-Click Context Menu on Pets:** Right-clicking any pet opens a quick menu (Pet/Headpat, Sleep, Sit, Clone, Dismiss This Pet, Open Settings).
-- [ ] **T-026** `[P1][S]` **Embed Highland Cow `.ico` into Windows `.exe` Binaries:** Add `build.rs` with `winresource` (Windows-only build-dep) using `brand/diypets.ico` so Explorer & Task Manager show the Highland Cow logo.
+- [x] **T-026** `[P1][S]` **Embed Highland Cow `.ico` into Windows `.exe` Binaries:** Add `build.rs` with `winresource` (Windows-only build-dep) using `brand/diypets.ico` so Explorer & Task Manager show the Highland Cow logo.
 - [x] **T-027** `[P1][M]` **Scaled Frame Cache & Smart Hi-Res Filtering:** Cache scaled ARGB frames by `(frame_idx, moving_left, pet_size)` (90% less CPU while walking) and use Lanczos/bilinear scaling for hi-res >=96px art vs. nearest-neighbor for retro pixel art.
 - [x] **T-028** `[P1][M]` **Multi-Monitor Left Wall & Negative Coordinates:** Pass `min_x` / `wall_left` into `DeskpetState::tick` so pets roam smoothly onto monitors positioned to the left/above the primary screen.
 - [ ] **T-029** `[P1][S]` `[good-first-issue]` **Replace `meval` With Zero-Dep Math Evaluator:** Eliminates the `nom v1.2.4` Rust future-incompatibility compiler warning and trims dependency count.
@@ -43,7 +43,7 @@ Legend: **Priority** (`P0` Critical -> `P3` Nice-to-have) · **Effort** (`S` <2h
 
 ## Pillar 3: DIYPets Studio V2 -> V3
 - [x] **T-036** `[P0][M]` **Pro Canvas Ergonomics:** Mouse-wheel zoom, Spacebar/middle-click pan, Light/Dark checkerboard toggle (fixes drawing dark ink on dark checks!), marquee Select/Move/Copy/Paste/Scale, opacity slider, and recent colors bar.
-- [ ] **T-037** `[P0][L]` **Sprite Sheet & Animated GIF Importer:** Import any PNG strip/grid or `.gif`, choose `TilesX x TilesY`, map frames to Walk/Idle/Sleep/Fall, auto-compute `<GroundY>`, and export a playable pet in 10 seconds.
+- [x] **T-037** `[P0][L]` **Sprite Sheet & Animated GIF Importer:** Import any PNG strip/grid or `.gif`, choose `TilesX x TilesY`, map frames to Walk/Idle/Sleep/Fall, auto-compute `<GroundY>`, and export a playable pet in 10 seconds.
 - [x] **T-038** `[P1][M]` **Timeline Scrubber & Pause-on-Keyframe Preview:** Let users scrub/pause exact keyframes in `3. Custom Anims`, duplicate/reorder frames, and preview individual poses live.
 - [ ] **T-039** `[P1][M]` **Open & Edit Existing `.xml` Packs in Studio:** Load any `deskpet.xml` back into Studio to tweak `<GroundY>`, speed, metadata, or animations.
 - [x] **T-040** `[P1][M]` **Part Z-Order Reordering & 2-Bone Knee/Elbow IK:** Add Up/Down layer ordering buttons for parts and optional 2-bone limb bend for natural walks.
@@ -73,4 +73,4 @@ Legend: **Priority** (`P0` Critical -> `P3` Nice-to-have) · **Effort** (`S` <2h
 - [ ] **T-022** `[P0][S]` **Upload GitHub Social Preview (`brand/social-preview.png`), Set 20 GitHub Topics & Record 10s Hero Demo GIF.**
 - [ ] **T-016** `[P1][M]` **Wayland/GNOME Graceful Detection & macOS/Linux QA:** Detect Wayland, gracefully disable unsupported window-ledge climbing with a tooltip, and verify Retina HiDPI on macOS.
 - [ ] **T-017** `[P1][M]` **Package Managers:** Publish manifests for **Winget**, **Scoop**, **Homebrew Tap**, and **Linux AppImage / AUR**.
-- [ ] **T-045** `[P2][S]` **Community Pack Auto-Catalog GitHub Action & Update Notifier:** Automatically rebuild `catalog.json` + icons when a community pet pack PR is merged, and show a subtle "Update Available" badge in Settings.
+- [x] **T-045** `[P2][S]` **Community Pack Auto-Catalog GitHub Action & Update Notifier:** Automatically rebuild `catalog.json` + icons when a community pet pack PR is merged, and show a subtle "Update Available" badge in Settings.

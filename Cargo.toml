@@ -1,6 +1,6 @@
 [package]
 name = "diypets"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2024"
 description = "Make your own desktop pet - lightweight cross-platform Rust mascot engine with a built-in 2D/SVG Pet Creator Studio and lazy-loaded eSheep XML packs."
 license = "MIT OR Apache-2.0"
@@ -13,6 +13,8 @@ default-run = "diypets"
 autobins = false
 include = [
     "Cargo.toml",
+    "build.rs",
+    "brand/diypets.ico",
     "README.md",
     "ROADMAP.md",
     "CREDITS.md",
@@ -89,3 +91,5 @@ debug = "line-tables-only"
 [profile.dev.package."*"]
 opt-level = 2
 debug = 0
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"

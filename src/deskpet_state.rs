@@ -192,6 +192,9 @@ pub struct DeskpetState {
     pub area_h: f32, // work area height (screen minus taskbar)
     pub pet_size: u32,
     pub walk_speed: i32,
+    pub on_window: bool,
+    pub climb_enabled: bool,
+    current_total_steps: usize,
 }
 
 impl DeskpetState {
@@ -234,6 +237,9 @@ impl DeskpetState {
             screen_w: 1920.0,
             screen_h: 1080.0,
             area_h: 1080.0,
+            on_window: false,
+            climb_enabled: true,
+            current_total_steps: 1,
         };
 
         let mut start_anim = "1".to_string();
@@ -338,6 +344,19 @@ impl DeskpetState {
             self.anim_end_y = self
                 .eval_math(&anim.end_y)
                 .unwrap_or(self.anim_start_y as f64) as f32;
+
+            let base = anim.sequence.len();
+            let repeat_count = self
+                .eval_math(&anim.repeat_expr)
+                .ok()
+                .map(|v| v.round().clamp(0.0, 5000.0) as usize)
+                .unwrap_or(0);
+            let steps = if anim.repeat_from > 0 {
+                base + base.saturating_sub(anim.repeat_from) * repeat_count
+            } else {
+                base + base * repeat_count
+            };
+            self.current_total_steps = steps.max(anim.total_steps).max(base).max(1);
         }
     }
 
@@ -375,7 +394,7 @@ impl DeskpetState {
             self.y = floor_y;
         }
 
-        let total_steps = anim.total_steps.max(1) as f32;
+        let total_steps = self.current_total_steps.max(1) as f32;
         let step = self.sequence_index as f32;
         let progress_ratio = (step / total_steps).min(1.0);
 
@@ -453,7 +472,7 @@ impl DeskpetState {
             let mut apply = true;
             if move_x < 0.0 && self.x + move_x < min_x {
                 let prev = self.current_anim_id.clone();
-                self.pick_next_animation(&anim, Trigger::Border);
+                self.pick_next_animation(&anim, Trigger::Border, true);
                 self.x = min_x;
                 apply = false;
                 if self.current_anim_id == prev {
@@ -461,7 +480,7 @@ impl DeskpetState {
                 }
             } else if move_x > 0.0 && self.x + move_x + self.pet_size as f32 > screen_width {
                 let prev = self.current_anim_id.clone();
-                self.pick_next_animation(&anim, Trigger::Border);
+                self.pick_next_animation(&anim, Trigger::Border, true);
                 self.x = max_x;
                 apply = false;
                 if self.current_anim_id == prev {
@@ -469,14 +488,14 @@ impl DeskpetState {
                 }
             } else if move_y > 0.0 && self.y + move_y >= floor_y {
                 let prev = self.current_anim_id.clone();
-                self.pick_next_animation(&anim, Trigger::Border);
+                self.pick_next_animation(&anim, Trigger::Border, false);
                 self.y = floor_y;
                 if self.current_anim_id != prev {
                     return;
                 }
                 apply = false;
             } else if move_y < 0.0 && self.y + move_y < 0.0 {
-                self.pick_next_animation(&anim, Trigger::Border);
+                self.pick_next_animation(&anim, Trigger::Border, false);
                 apply = false;
             }
 
@@ -488,7 +507,7 @@ impl DeskpetState {
                     self.is_tossing = true;
                     self.toss_force_x = x_vel * dir;
                     self.toss_vert_vel = 0.0;
-                    self.pick_next_animation(&anim, Trigger::Gravity);
+                    self.pick_next_animation(&anim, Trigger::Gravity, false);
                 }
             }
         }
@@ -500,35 +519,57 @@ impl DeskpetState {
         self.elapsed_in_frame -= interval_u;
 
         if !self.is_tossing {
-            if anim.action == "flip" && self.sequence_index + 1 >= anim.total_steps {
+            if anim.action == "flip" && self.sequence_index + 1 >= self.current_total_steps {
                 self.is_moving_left = !self.is_moving_left;
             }
         }
 
         self.sequence_index += 1;
-        if self.sequence_index >= anim.total_steps as usize {
+        if self.sequence_index >= self.current_total_steps {
             if self.is_tossing {
                 self.sequence_index = 0;
             } else {
-                self.pick_next_animation(&anim, Trigger::Next);
+                self.pick_next_animation(&anim, Trigger::Next, false);
             }
         }
     }
 
-    fn pick_next_animation(&mut self, anim: &DeskpetAnimation, trigger: Trigger) {
-        let pool = match trigger {
+    fn pick_next_animation(&mut self, anim: &DeskpetAnimation, trigger: Trigger, border_vertical: bool) {
+        let raw_pool = match trigger {
             Trigger::Next => &anim.next,
             Trigger::Border => &anim.next_border,
             Trigger::Gravity => &anim.next_gravity,
         };
 
-        if pool.is_empty() {
+        if raw_pool.is_empty() {
             if matches!(trigger, Trigger::Next) {
-                // no next defined, loop the animation
                 self.sequence_index = 0;
             }
             return;
         }
+
+        let filtered: Vec<&crate::deskpet_xml::DeskpetNext> = raw_pool
+            .iter()
+            .filter(|n| {
+                if !self.climb_enabled && (n.only == "vertical" || n.animation_id == "19") {
+                    return false;
+                }
+                match n.only.as_str() {
+                    "" | "none" => true,
+                    "taskbar" => !self.on_window,
+                    "window" => self.on_window,
+                    "vertical" => border_vertical && self.climb_enabled,
+                    "horizontal+" => !border_vertical,
+                    _ => true,
+                }
+            })
+            .collect();
+
+        let pool: Vec<&crate::deskpet_xml::DeskpetNext> = if filtered.is_empty() {
+            raw_pool.iter().collect()
+        } else {
+            filtered
+        };
 
         let total_prob: u32 = pool.iter().map(|n| n.probability).sum();
         if total_prob == 0 {
@@ -710,6 +751,7 @@ mod window_floor_tests {
     fn floor_jitter_does_not_interrupt_walk_but_a_ledge_does() {
         let pack = DeskpetPack::parse(include_str!("../assets/deskpet.xml")).unwrap();
         let mut pet = DeskpetState::new(pack);
+        pet.set_state(DeskpetStateId::Custom("1".to_string()));
         pet.y = 500.0;
         pet.tick(1000, 504.0, 1920.0);
         assert_eq!(pet.current_anim_id, "1");

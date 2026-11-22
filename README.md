@@ -48,7 +48,18 @@ A tiny, blazing-fast, cross-platform desktop mascot engine with **Multi-Pet Herd
 
 ## Download & Install
 
-### Option 1: Pre-Built Binaries (Easiest — No Rust Needed)
+### Option 1: 1-Line Install (No Rust / No Cargo Needed!)
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/smresponsibilities/diypets/main/install.ps1 | iex
+```
+**macOS / Linux:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/smresponsibilities/diypets/main/install.sh | bash
+```
+Or download manually from **[GitHub Releases](https://github.com/smresponsibilities/diypets/releases)**.
+
+### Pre-Built Archives (Manual Download)
 1. Open **[GitHub Releases](https://github.com/smresponsibilities/diypets/releases)** and download your OS archive:
    - **Windows:** diypets-windows-x86_64.zip
    - **macOS (Apple Silicon):** diypets-macos-arm64.tar.gz

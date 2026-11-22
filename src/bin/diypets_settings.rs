@@ -414,6 +414,8 @@ struct MyApp {
     search: String,
     last_scan: Instant,
     creator_process: Option<std::process::Child>,
+    update_rx: std::sync::mpsc::Receiver<String>,
+    update_available: Option<String>,
 }
 
 impl MyApp {
@@ -433,6 +435,25 @@ impl MyApp {
             ctx_clone.request_repaint();
         });
         let (dl_tx, dl_rx) = std::sync::mpsc::channel();
+        let (upd_tx, update_rx) = std::sync::mpsc::channel();
+        let ctx_upd = ctx.clone();
+        std::thread::spawn(move || {
+            let current = env!("CARGO_PKG_VERSION");
+            if let Ok(resp) = ureq::get("https://api.github.com/repos/smresponsibilities/diypets/releases/latest")
+                .set("User-Agent", "diypets-updater")
+                .timeout(Duration::from_secs(4))
+                .call()
+                && let Ok(text) = resp.into_string()
+                && let Ok(v) = serde_json::from_str::<serde_json::Value>(&text)
+                && let Some(tag) = v.get("tag_name").and_then(|t| t.as_str())
+            {
+                let latest = tag.trim_start_matches('v');
+                if !latest.is_empty() && latest != current {
+                    let _ = upd_tx.send(tag.to_string());
+                    ctx_upd.request_repaint();
+                }
+            }
+        });
         Self {
             icon_pack: settings.pet_pack.clone(),
             settings,
@@ -447,6 +468,8 @@ impl MyApp {
             search: String::new(),
             last_scan: Instant::now(),
             creator_process: None,
+            update_rx,
+            update_available: None,
         }
     }
 
@@ -510,6 +533,7 @@ impl MyApp {
         }
         self.settings.pet_pack = id.clone();
         self.last_scan = Instant::now() - REFRESH_INTERVAL;
+        if let Ok(tag) = self.update_rx.try_recv() { self.update_available = Some(tag); }
         self.scan_for_new_local_pets();
         self.status_banner = Some((format!("Imported & activated '{id}'!"), false));
         true
@@ -802,6 +826,7 @@ impl eframe::App for MyApp {
             }
         }
 
+        if let Ok(tag) = self.update_rx.try_recv() { self.update_available = Some(tag); }
         self.scan_for_new_local_pets();
 
         for pet in &mut self.pets {
@@ -905,6 +930,26 @@ impl eframe::App for MyApp {
         });
 
         egui::CentralPanel::default().show(ui, |ui| {
+            if let Some(tag) = &self.update_available {
+                egui::Frame::default()
+                    .fill(egui::Color32::from_rgb(30, 56, 40))
+                    .inner_margin(6.0)
+                    .corner_radius(6.0)
+                    .show(ui, |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.colored_label(
+                                egui::Color32::from_rgb(130, 235, 160),
+                                format!("Update available: {tag} (current v{})", env!("CARGO_PKG_VERSION")),
+                            );
+                            ui.hyperlink_to(
+                                "Download Latest",
+                                "https://github.com/smresponsibilities/diypets/releases/latest",
+                            );
+                            ui.label(egui::RichText::new("or run: cargo install diypets --force").size(11.0).color(egui::Color32::LIGHT_GRAY));
+                        });
+                    });
+                ui.add_space(4.0);
+            }
             ui.horizontal(|ui| {
                 ui.heading("Pet Selection");
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

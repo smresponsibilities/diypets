@@ -16,11 +16,11 @@ use diypets::deskpet_state::{
 };
 use diypets::deskpet_xml::DeskpetPack;
 use diypets::settings::{
-    MAX_ACTIVE_PETS, Settings, find_pack_icon, find_pack_xml, resolve_project_root, sibling_binary,
+    MAX_ACTIVE_PETS, Settings, find_pack_icon, find_pack_xml, pack_search_dirs, resolve_project_root, sibling_binary,
 };
 #[cfg(not(windows))]
 use softbuffer::{Context, Surface};
-use tray_icon::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
+use tray_icon::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tray_icon::{Icon as TrayIconImage, TrayIcon, TrayIconBuilder};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalPosition;
@@ -443,6 +443,8 @@ struct PetInstance {
     cached_floor_y: Option<f32>,
     cached_wall_left: Option<f32>,
     cached_wall_right: Option<f32>,
+    #[cfg(windows)]
+    standing_window: Option<(isize, i32, i32)>,
     cursor_pos: (f32, f32),
     cursor_velocity: (f32, f32),
     drag_sample_ms: u64,
@@ -602,6 +604,8 @@ impl DeskpetApp {
             cached_floor_y: None,
             cached_wall_left: None,
             cached_wall_right: None,
+            #[cfg(windows)]
+            standing_window: None,
             cursor_pos: (0.0, 0.0),
             cursor_velocity: (0.0, 0.0),
             drag_sample_ms: 1,
@@ -799,14 +803,10 @@ impl DeskpetApp {
         while let Ok(tray_event) = tray_icon::menu::MenuEvent::receiver().try_recv() {
             match tray_event.id.0.as_str() {
                 "quit" => event_loop.exit(),
-                "add_pet" => {
+                id if id.starts_with("add_pack:") => {
                     if self.desired_herd.len() < MAX_ACTIVE_PETS {
-                        let clone_id = self
-                            .desired_herd
-                            .first()
-                            .cloned()
-                            .unwrap_or_else(|| "highland_cow".to_string());
-                        self.desired_herd.push(clone_id);
+                        let pack_id = id.trim_start_matches("add_pack:").to_string();
+                        self.desired_herd.push(pack_id);
                         self.sync_herd(event_loop, now_ms);
                         self.persist_current_settings();
                     }
@@ -877,7 +877,28 @@ impl ApplicationHandler for DeskpetApp {
                 .or_else(|| default_app_icon(64));
 
             let menu = Menu::new();
-            let add_pet = MenuItem::with_id("add_pet", "Add Another Pet (+1)", true, None);
+            let add_pet = Submenu::new("Add Pet to Herd (+1)", true);
+            let mut installed_ids: Vec<String> = Vec::new();
+            for dir in pack_search_dirs() {
+                if let Ok(entries) = std::fs::read_dir(dir) {
+                    for e in entries.flatten() {
+                        if e.path().join("deskpet.xml").is_file() {
+                            let id = e.file_name().to_string_lossy().into_owned();
+                            if !installed_ids.contains(&id) {
+                                installed_ids.push(id);
+                            }
+                        }
+                    }
+                }
+            }
+            installed_ids.sort();
+            if installed_ids.is_empty() {
+                installed_ids.push("highland_cow".to_string());
+            }
+            for id in installed_ids.iter().take(24) {
+                let item = MenuItem::with_id(format!("add_pack:{id}"), id, true, None);
+                let _ = add_pet.append(&item);
+            }
             let remove_pet = MenuItem::with_id("remove_pet", "Remove Extra Pet (-1)", true, None);
             let sleep = MenuItem::with_id("sleep", "Sleep All", true, None);
             let creator = MenuItem::with_id("creator", "DIYPets Creator", true, None);
@@ -1170,10 +1191,25 @@ impl ApplicationHandler for DeskpetApp {
                                                 pet.state.y + ground_height,
                                                 min_y,
                                             ) {
+                                                let prev_f = floor_y;
                                                 floor_y = select_window_floor(
                                                     floor_y,
                                                     Some(window_floor),
                                                 );
+                                                if floor_y < prev_f - 0.5 {
+                                                    let hid = hwnd.0 as isize;
+                                                    if let Some((old_h, ox, oy)) = pet.standing_window {
+                                                        if old_h == hid {
+                                                            let dx = rect.left - ox;
+                                                            let dy = rect.top - oy;
+                                                            if dx.abs() < 300 && dy.abs() < 300 {
+                                                                pet.state.x += dx as f32;
+                                                                pet.state.y += dy as f32;
+                                                            }
+                                                        }
+                                                    }
+                                                    pet.standing_window = Some((hid, rect.left, rect.top));
+                                                }
                                             }
 
                                             if win_y > 10.0
@@ -1213,6 +1249,8 @@ impl ApplicationHandler for DeskpetApp {
                         pet.state.y = new_y;
                     }
                 } else {
+                    pet.state.climb_enabled = climb_windows;
+                    pet.state.on_window = floor_y < base_floor_y - 3.0;
                     pet.state.screen_w = max_x - min_x;
                     pet.state.screen_h = max_y - min_y;
                     pet.state.area_h = floor_y + ground_height;

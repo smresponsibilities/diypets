@@ -38,6 +38,7 @@ pub struct DeskpetAnimation {
     pub sequence: Vec<u32>,
     /// Total steps including repeats: frames.len() + (frames.len() - repeat_from) * repeat
     pub total_steps: usize,
+    pub repeat_expr: String,
     /// Index in sequence from which the repeat loop begins (repeatfrom attr)
     pub repeat_from: usize,
     pub action: String,
@@ -50,6 +51,7 @@ pub struct DeskpetAnimation {
 pub struct DeskpetNext {
     pub animation_id: String,
     pub probability: u32,
+    pub only: String,
 }
 
 impl DeskpetPack {
@@ -270,6 +272,7 @@ impl DeskpetPack {
 
             let mut sequence = Vec::new();
             let mut total_steps = 0usize;
+            let mut repeat_expr = String::from("0");
             let mut repeat_from = 0usize;
             let mut action = String::new();
             if let Some(seq_node) = anim_node
@@ -297,6 +300,7 @@ impl DeskpetPack {
 
                 // repeat: how many extra loop iterations (expression, evaluate as int)
                 let repeat_str = seq_node.attribute("repeat").unwrap_or("0");
+                repeat_expr = repeat_str.trim().to_string();
                 let repeat_count: usize = repeat_str.trim().parse().unwrap_or(0);
 
                 // Matches C# TotalSteps formula exactly:
@@ -334,9 +338,16 @@ impl DeskpetPack {
                         .unwrap_or("100")
                         .parse()
                         .unwrap_or(100);
+                    let only = next_node
+                        .attribute("only")
+                        .or_else(|| next_node.attribute("Only"))
+                        .unwrap_or("none")
+                        .trim()
+                        .to_lowercase();
                     nexts.push(DeskpetNext {
                         animation_id,
                         probability,
+                        only,
                     });
                 }
                 nexts
@@ -362,6 +373,12 @@ impl DeskpetPack {
                             .unwrap_or("100")
                             .parse()
                             .unwrap_or(100),
+                        only: child
+                            .attribute("only")
+                            .or_else(|| child.attribute("Only"))
+                            .unwrap_or("none")
+                            .trim()
+                            .to_lowercase(),
                     });
                 } else if child.tag_name().name().eq_ignore_ascii_case("Border") {
                     next_border = parse_nexts(child);
@@ -384,6 +401,7 @@ impl DeskpetPack {
                     end_opacity,
                     sequence,
                     total_steps,
+                    repeat_expr,
                     repeat_from,
                     action,
                     next,
