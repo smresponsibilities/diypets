@@ -349,12 +349,16 @@ impl DeskpetState {
     /// 5. Apply movement if no border was hit.
     /// 6. Advance sequence_index, check animation completion.
     pub fn tick(&mut self, delta_ms: u64, floor_y: f32, screen_width: f32) {
+        self.tick_in_bounds(delta_ms, floor_y, 0.0, screen_width);
+    }
+
+    pub fn tick_in_bounds(&mut self, delta_ms: u64, floor_y: f32, min_x: f32, screen_width: f32) {
         let delta_ms = delta_ms.min(100);
-        let max_x = (screen_width - self.pet_size as f32).max(0.0);
+        let max_x = (screen_width - self.pet_size as f32).max(min_x);
         if !self.x.is_finite() {
-            self.x = 0.0;
+            self.x = min_x;
         } else {
-            self.x = self.x.clamp(0.0, max_x);
+            self.x = self.x.clamp(min_x, max_x);
         }
         if !self.y.is_finite() || self.y > floor_y {
             self.y = floor_y;
@@ -413,12 +417,12 @@ impl DeskpetState {
                 return;
             } else {
                 let move_x = self.toss_force_x * fraction;
-                if self.x + move_x < 0.0 {
+                if self.x + move_x < min_x {
                     self.toss_force_x = -self.toss_force_x * 0.3;
-                    self.x = 0.0;
+                    self.x = min_x;
                 } else if self.x + move_x + self.pet_size as f32 > screen_width {
                     self.toss_force_x = -self.toss_force_x * 0.3;
-                    self.x = (screen_width - self.pet_size as f32).max(0.0);
+                    self.x = max_x;
                 } else {
                     self.x += move_x;
                 }
@@ -447,10 +451,10 @@ impl DeskpetState {
             let move_y = y_vel * fraction;
 
             let mut apply = true;
-            if move_x < 0.0 && self.x + move_x < 0.0 {
+            if move_x < 0.0 && self.x + move_x < min_x {
                 let prev = self.current_anim_id.clone();
                 self.pick_next_animation(&anim, Trigger::Border);
-                self.x = 0.0;
+                self.x = min_x;
                 apply = false;
                 if self.current_anim_id == prev {
                     self.is_moving_left = false;
@@ -458,7 +462,7 @@ impl DeskpetState {
             } else if move_x > 0.0 && self.x + move_x + self.pet_size as f32 > screen_width {
                 let prev = self.current_anim_id.clone();
                 self.pick_next_animation(&anim, Trigger::Border);
-                self.x = (screen_width - self.pet_size as f32).max(0.0);
+                self.x = max_x;
                 apply = false;
                 if self.current_anim_id == prev {
                     self.is_moving_left = true;
@@ -674,6 +678,17 @@ mod window_floor_tests {
     #[test]
     fn a_window_too_close_to_screen_top_cannot_pull_pet_off_screen() {
         assert_eq!(window_floor_candidate(50.0, 64.0, 50.0, 0.0), None);
+    }
+
+    #[test]
+    fn multi_monitor_negative_min_x_bounds_work() {
+        let pack = DeskpetPack::parse(include_str!("../assets/highland_cow/deskpet.xml")).unwrap();
+        let mut pet = DeskpetState::new(pack);
+        pet.pet_size = 128;
+        pet.x = -500.0;
+        pet.y = 500.0;
+        pet.tick_in_bounds(16, 800.0, -1920.0, 1920.0);
+        assert!(pet.x < 0.0 && pet.x >= -1920.0, "pet clamped away from left monitor: {}", pet.x);
     }
 
     #[test]

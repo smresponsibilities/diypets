@@ -2,11 +2,14 @@
 
 #[cfg(not(windows))]
 use std::num::NonZeroU32;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+use diypets::agent_api::{self, AgentCommand};
 use diypets::autostart;
+use std::sync::mpsc;
 use diypets::catalog::{default_app_icon, make_square_app_icon};
 use diypets::deskpet_state::{
     DeskpetState, DeskpetStateId, select_window_floor, window_floor_candidate,
@@ -317,6 +320,98 @@ fn get_work_area() -> Option<windows::Win32::Foundation::RECT> {
     None
 }
 
+#[cfg(windows)]
+fn show_pet_context_menu(window: &Window, can_clone: bool, can_dismiss: bool) -> i32 {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        AppendMenuW, CreatePopupMenu, DestroyMenu, GetCursorPos, MF_GRAYED, MF_SEPARATOR,
+        MF_STRING, SetForegroundWindow, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
+    };
+    use windows::core::PCWSTR;
+
+    let Some(hwnd) = hwnd_of(window) else { return 0 };
+    unsafe {
+        let Ok(hmenu) = CreatePopupMenu() else { return 0 };
+        let add_item = |id: usize, label: &str, enabled: bool| {
+            let wide: Vec<u16> = label.encode_utf16().chain(std::iter::once(0)).collect();
+            let flags = if enabled { MF_STRING } else { MF_STRING | MF_GRAYED };
+            let _ = AppendMenuW(hmenu, flags, id, PCWSTR(wide.as_ptr()));
+        };
+        add_item(1, "Headpat / Hop", true);
+        add_item(2, "Sleep", true);
+        add_item(3, "Clone Pet (+1)", can_clone);
+        add_item(4, "Dismiss This Pet", can_dismiss);
+        let _ = AppendMenuW(hmenu, MF_SEPARATOR, 0, PCWSTR::null());
+        add_item(5, "Application Settings", true);
+        add_item(6, "DIYPets Studio", true);
+
+        let mut pt = POINT::default();
+        let _ = GetCursorPos(&mut pt);
+        let _ = SetForegroundWindow(hwnd);
+        let cmd = TrackPopupMenu(
+            hmenu,
+            TPM_RETURNCMD | TPM_RIGHTBUTTON,
+            pt.x,
+            pt.y,
+            0,
+            hwnd,
+            None,
+        )
+        .0;
+        let _ = DestroyMenu(hmenu);
+        cmd
+    }
+}
+
+#[cfg(not(windows))]
+fn show_pet_context_menu(_window: &Window, _can_clone: bool, _can_dismiss: bool) -> i32 {
+    2 // Quick Sleep toggle on non-Windows right-click
+}
+fn stamp_hearts_argb(buf: &mut [u32], w: u32, h: u32, progress: f32) {
+    const HEART: [&str; 6] = [
+        ".##.##.",
+        "#######",
+        "#######",
+        ".#####.",
+        "..###..",
+        "...#...",
+    ];
+    let scale: i32 = if w >= 96 { 2 } else { 1 };
+    let fill: u32 = 0xFF_F0_3C_62;
+    let hi: u32 = 0xFF_FF_C6_D4;
+    let out: u32 = 0xFF_38_10_1C;
+
+    for (k, (bx_ratio, phase)) in [(0.32_f32, 0.0_f32), (0.64_f32, 0.25_f32)].into_iter().enumerate() {
+        let p = ((progress + phase) % 1.0).clamp(0.0, 1.0);
+        let sway = ((p * std::f32::consts::TAU + k as f32).sin() * 4.0).round() as i32;
+        let ox = (w as f32 * bx_ratio) as i32 + sway - (7 * scale) / 2;
+        let oy = ((h as f32 * 0.28) * (1.0 - p)) as i32;
+
+        for (ry, row) in HEART.iter().enumerate() {
+            for (rx, ch) in row.bytes().enumerate() {
+                if ch != b'#' {
+                    continue;
+                }
+                let col = if ry == 1 && (rx == 1 || rx == 2) { hi } else { fill };
+                for sy in 0..scale {
+                    for sx in 0..scale {
+                        let px = ox + rx as i32 * scale + sx;
+                        let py = oy + ry as i32 * scale + sy;
+                        if px >= 1 && px < w as i32 - 1 && py >= 1 && py < h as i32 - 1 {
+                            let idx = (py as u32 * w + px as u32) as usize;
+                            if idx < buf.len() {
+                                buf[idx] = col;
+                                if idx + 1 < buf.len() && buf[idx + 1] == 0 {
+                                    buf[idx + 1] = out;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct RenderKey {
     frame_idx: usize,
@@ -326,6 +421,7 @@ struct RenderKey {
     y: i32,
     dst_w: u32,
     dst_h: u32,
+    heart_tick: u8,
 }
 
 struct PetInstance {
@@ -339,15 +435,21 @@ struct PetInstance {
     buffer: Vec<u32>,
     #[cfg(windows)]
     scaled_buf: Vec<u32>,
+    #[cfg(windows)]
+    frame_cache: HashMap<(usize, bool, u32, u32), Vec<u32>>,
     state: DeskpetState,
     last_tick: u64,
     last_window_scan: u64,
     cached_floor_y: Option<f32>,
+    cached_wall_left: Option<f32>,
     cached_wall_right: Option<f32>,
     cursor_pos: (f32, f32),
     cursor_velocity: (f32, f32),
     drag_sample_ms: u64,
     is_dragging: bool,
+    heart_until_ms: u64,
+    rub_accum: f32,
+    last_rub_ms: u64,
     last_render: Option<RenderKey>,
 }
 
@@ -368,6 +470,7 @@ struct DeskpetApp {
     tray: Option<TrayIcon>,
     settings_process: Option<std::process::Child>,
     creator_process: Option<std::process::Child>,
+    agent_rx: mpsc::Receiver<AgentCommand>,
 }
 
 impl DeskpetApp {
@@ -453,9 +556,12 @@ impl DeskpetApp {
             Some(surface)
         };
 
+        #[cfg(not(windows))]
         window
             .set_cursor_hittest(!self.click_through)
             .unwrap_or(());
+        #[cfg(windows)]
+        let _ = window.set_cursor_hittest(true);
         window.set_visible(true);
 
         #[cfg(windows)]
@@ -488,15 +594,21 @@ impl DeskpetApp {
             buffer,
             #[cfg(windows)]
             scaled_buf,
+            #[cfg(windows)]
+            frame_cache: HashMap::new(),
             state,
             last_tick: now_ms,
             last_window_scan: 0,
             cached_floor_y: None,
+            cached_wall_left: None,
             cached_wall_right: None,
             cursor_pos: (0.0, 0.0),
             cursor_velocity: (0.0, 0.0),
             drag_sample_ms: 1,
             is_dragging: false,
+            heart_until_ms: 0,
+            rub_accum: 0.0,
+            last_rub_ms: 0,
             last_render: None,
         }
     }
@@ -542,6 +654,7 @@ impl DeskpetApp {
                 #[cfg(windows)]
                 {
                     self.pets[i].buffer = vec![0; (st.pack.tile_w * st.pack.tile_h) as usize];
+                    self.pets[i].frame_cache.clear();
                 }
                 self.pets[i].pack_id = wanted;
                 self.pets[i].state = st;
@@ -612,7 +725,10 @@ impl DeskpetApp {
             pet.state.pet_size = self.pet_size;
             pet.state.walk_speed = self.walk_speed;
             pet.cached_floor_y = None;
+            pet.cached_wall_left = None;
             pet.cached_wall_right = None;
+            #[cfg(windows)]
+            pet.frame_cache.clear();
             pet.last_render = None;
 
             if topmost_changed {
@@ -624,9 +740,12 @@ impl DeskpetApp {
                 #[cfg(windows)]
                 apply_topmost(&pet.window, self.is_topmost);
             }
+            #[cfg(not(windows))]
             pet.window
                 .set_cursor_hittest(!self.click_through)
                 .unwrap_or(());
+            #[cfg(windows)]
+            let _ = pet.window.set_cursor_hittest(true);
 
             let scaled_w = self.pet_size;
             let scaled_h = scaled_height(pet.state.pack.tile_w, pet.state.pack.tile_h, scaled_w);
@@ -643,6 +762,39 @@ impl DeskpetApp {
     }
 
     fn process_tray_events(&mut self, event_loop: &ActiveEventLoop, now_ms: u64) {
+        while let Ok(cmd) = self.agent_rx.try_recv() {
+            match cmd.mood.to_lowercase().as_str() {
+                "happy" | "hop" | "celebrate" => {
+                    for pet in &mut self.pets {
+                        pet.heart_until_ms = now_ms + 2600;
+                        pet.state.is_tossing = true;
+                        pet.state.toss_force_x = if pet.state.is_moving_left { -3.0 } else { 3.0 };
+                        pet.state.toss_vert_vel = -10.0;
+                    }
+                }
+                "sleep" => {
+                    for pet in &mut self.pets {
+                        pet.state.set_state(DeskpetStateId::Custom("sleep".to_string()));
+                    }
+                }
+                "walk" => {
+                    for pet in &mut self.pets {
+                        pet.state.set_state(DeskpetStateId::Custom("1".to_string()));
+                    }
+                }
+                "spawn" => {
+                    if self.desired_herd.len() < MAX_ACTIVE_PETS {
+                        let id = cmd.pack_id.unwrap_or_else(|| {
+                            self.desired_herd.first().cloned().unwrap_or_else(|| "highland_cow".to_string())
+                        });
+                        self.desired_herd.push(id);
+                        self.sync_herd(event_loop, now_ms);
+                        self.persist_current_settings();
+                    }
+                }
+                _ => {}
+            }
+        }
         let _ = tray_icon::TrayIconEvent::receiver().try_recv();
         while let Ok(tray_event) = tray_icon::menu::MenuEvent::receiver().try_recv() {
             match tray_event.id.0.as_str() {
@@ -809,13 +961,65 @@ impl ApplicationHandler for DeskpetApp {
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
+                let now_ms = self.start_time.elapsed().as_millis() as u64;
                 let pet = &mut self.pets[pet_idx];
                 let px = position.x as f32;
                 let py = position.y as f32;
                 if !pet.is_dragging {
-                    pet.cursor_velocity = (px - pet.cursor_pos.0, py - pet.cursor_pos.1);
+                    let dx = px - pet.cursor_pos.0;
+                    let dy = py - pet.cursor_pos.1;
+                    pet.cursor_velocity = (dx, dy);
+                    if now_ms.saturating_sub(pet.last_rub_ms) > 900 {
+                        pet.rub_accum = 0.0;
+                    }
+                    pet.last_rub_ms = now_ms;
+                    pet.rub_accum += dx.hypot(dy).min(24.0);
+                    if pet.rub_accum > 140.0 {
+                        pet.rub_accum = 0.0;
+                        pet.heart_until_ms = now_ms + 2000;
+                    }
                 }
                 pet.cursor_pos = (px, py);
+            }
+            WindowEvent::MouseInput {
+                state: ElementState::Released,
+                button: MouseButton::Right,
+                ..
+            } => {
+                let can_clone = self.desired_herd.len() < MAX_ACTIVE_PETS;
+                let can_dismiss = self.pets.len() > 1;
+                let cmd = show_pet_context_menu(&self.pets[pet_idx].window, can_clone, can_dismiss);
+                let now_ms = self.start_time.elapsed().as_millis() as u64;
+                match cmd {
+                    1 => {
+                        let pet = &mut self.pets[pet_idx];
+                        pet.heart_until_ms = now_ms + 2200;
+                        pet.state.is_tossing = true;
+                        pet.state.toss_force_x = if pet.state.is_moving_left { -3.0 } else { 3.0 };
+                        pet.state.toss_vert_vel = -10.0;
+                    }
+                    2 => {
+                        self.pets[pet_idx]
+                            .state
+                            .set_state(DeskpetStateId::Custom("sleep".to_string()));
+                    }
+                    3 if can_clone => {
+                        let clone_id = self.pets[pet_idx].pack_id.clone();
+                        self.desired_herd.push(clone_id);
+                        self.sync_herd(event_loop, now_ms);
+                        self.persist_current_settings();
+                    }
+                    4 if can_dismiss => {
+                        self.pets.remove(pet_idx);
+                        if pet_idx < self.desired_herd.len() {
+                            self.desired_herd.remove(pet_idx);
+                        }
+                        self.persist_current_settings();
+                    }
+                    5 => Self::spawn_sibling(&mut self.settings_process, "diypets-settings"),
+                    6 => Self::spawn_sibling(&mut self.creator_process, "diypets-creator"),
+                    _ => {}
+                }
             }
             WindowEvent::MouseInput {
                 state,
@@ -880,12 +1084,15 @@ impl ApplicationHandler for DeskpetApp {
                 }
 
                 let mut floor_y = pet.cached_floor_y.unwrap_or(base_floor_y);
+                let mut wall_left = pet.cached_wall_left.unwrap_or(min_x);
                 let mut wall_right = pet.cached_wall_right.unwrap_or(max_x);
 
                 if !climb_windows {
                     floor_y = base_floor_y;
+                    wall_left = min_x;
                     wall_right = max_x;
                     pet.cached_floor_y = Some(floor_y);
+                    pet.cached_wall_left = Some(wall_left);
                     pet.cached_wall_right = Some(wall_right);
                 } else if !pet.is_dragging
                     && (pet.cached_floor_y.is_none()
@@ -893,6 +1100,7 @@ impl ApplicationHandler for DeskpetApp {
                 {
                     pet.last_window_scan = now;
                     floor_y = base_floor_y;
+                    wall_left = min_x;
                     wall_right = max_x;
 
                     #[cfg(windows)]
@@ -984,6 +1192,7 @@ impl ApplicationHandler for DeskpetApp {
                     }
 
                     pet.cached_floor_y = Some(floor_y);
+                    pet.cached_wall_left = Some(wall_left);
                     pet.cached_wall_right = Some(wall_right);
                 }
 
@@ -1007,7 +1216,7 @@ impl ApplicationHandler for DeskpetApp {
                     pet.state.screen_w = max_x - min_x;
                     pet.state.screen_h = max_y - min_y;
                     pet.state.area_h = floor_y + ground_height;
-                    pet.state.tick(delta, floor_y, wall_right);
+                    pet.state.tick_in_bounds(delta, floor_y, wall_left, wall_right);
                 }
 
                 let frame_idx = pet.state.current_frame().unwrap_or(0) as usize;
@@ -1021,6 +1230,7 @@ impl ApplicationHandler for DeskpetApp {
                     y: pos_y,
                     dst_w: scaled_w,
                     dst_h: scaled_h,
+                    heart_tick: if now < pet.heart_until_ms { ((now / 70) % 255) as u8 } else { 0 },
                 };
 
                 if pet.last_render == Some(render_key) {
@@ -1080,49 +1290,79 @@ impl ApplicationHandler for DeskpetApp {
 
                 #[cfg(windows)]
                 {
-                    pet.buffer.fill(0);
-                    if frame_idx < pet.state.pack.frames.len() {
-                        let frame_data = &pet.state.pack.frames[frame_idx];
-                        for y in 0..h {
-                            for x in 0..w {
-                                let i = y * w + x;
-                                if i >= pet.buffer.len() {
-                                    break;
+                    let cache_key = (frame_idx, pet.state.is_moving_left, scaled_w, scaled_h);
+                    let use_cache = pet.state.opacity >= 0.99;
+                    if !use_cache || !pet.frame_cache.contains_key(&cache_key) {
+                        pet.buffer.fill(0);
+                        if frame_idx < pet.state.pack.frames.len() {
+                            let frame_data = &pet.state.pack.frames[frame_idx];
+                            for y in 0..h {
+                                for x in 0..w {
+                                    let i = y * w + x;
+                                    if i >= pet.buffer.len() {
+                                        break;
+                                    }
+                                    let src_x = if !pet.state.is_moving_left {
+                                        w.saturating_sub(1) - x
+                                    } else {
+                                        x
+                                    };
+                                    let src_i = y * w + src_x;
+                                    if src_i >= frame_data.len() {
+                                        continue;
+                                    }
+                                    let mut pixel = frame_data[src_i];
+                                    if pet.state.opacity < 1.0 {
+                                        let a = (pixel >> 24) & 0xFF;
+                                        let r = (pixel >> 16) & 0xFF;
+                                        let g = (pixel >> 8) & 0xFF;
+                                        let b = pixel & 0xFF;
+                                        let new_a = (a as f32 * pet.state.opacity) as u32;
+                                        let pr = (r as f32 * pet.state.opacity) as u32;
+                                        let pg = (g as f32 * pet.state.opacity) as u32;
+                                        let pb = (b as f32 * pet.state.opacity) as u32;
+                                        pixel = (new_a << 24) | (pr << 16) | (pg << 8) | pb;
+                                    }
+                                    pet.buffer[i] = pixel;
                                 }
-                                let src_x = if !pet.state.is_moving_left {
-                                    w.saturating_sub(1) - x
-                                } else {
-                                    x
-                                };
-                                let src_i = y * w + src_x;
-                                if src_i >= frame_data.len() {
-                                    continue;
-                                }
-                                let mut pixel = frame_data[src_i];
-                                if pet.state.opacity < 1.0 {
-                                    let a = (pixel >> 24) & 0xFF;
-                                    let r = (pixel >> 16) & 0xFF;
-                                    let g = (pixel >> 8) & 0xFF;
-                                    let b = pixel & 0xFF;
-                                    let new_a = (a as f32 * pet.state.opacity) as u32;
-                                    let pr = (r as f32 * pet.state.opacity) as u32;
-                                    let pg = (g as f32 * pet.state.opacity) as u32;
-                                    let pb = (b as f32 * pet.state.opacity) as u32;
-                                    pixel = (new_a << 24) | (pr << 16) | (pg << 8) | pb;
-                                }
-                                pet.buffer[i] = pixel;
                             }
+                        }
+                        scale_nearest_into(
+                            &pet.buffer,
+                            pet.state.pack.tile_w,
+                            pet.state.pack.tile_h,
+                            scaled_w,
+                            scaled_h,
+                            &mut pet.scaled_buf,
+                        );
+                        if use_cache {
+                            if pet.frame_cache.len() > 128 {
+                                pet.frame_cache.clear();
+                            }
+                            pet.frame_cache.insert(cache_key, pet.scaled_buf.clone());
                         }
                     }
 
-                    scale_nearest_into(
-                        &pet.buffer,
-                        pet.state.pack.tile_w,
-                        pet.state.pack.tile_h,
-                        scaled_w,
-                        scaled_h,
-                        &mut pet.scaled_buf,
-                    );
+                    let show_hearts = now < pet.heart_until_ms;
+                    let present_buf = if show_hearts {
+                        if use_cache {
+                            if let Some(cached) = pet.frame_cache.get(&cache_key) {
+                                pet.scaled_buf.clear();
+                                pet.scaled_buf.extend_from_slice(cached);
+                            }
+                        }
+                        let rem = pet.heart_until_ms.saturating_sub(now) as f32;
+                        let prog = (1.0 - (rem / 2200.0)).clamp(0.0, 1.0);
+                        stamp_hearts_argb(&mut pet.scaled_buf, scaled_w, scaled_h, prog);
+                        &pet.scaled_buf
+                    } else if use_cache {
+                        pet.frame_cache
+                            .get(&cache_key)
+                            .map(Vec::as_slice)
+                            .unwrap_or(&pet.scaled_buf)
+                    } else {
+                        &pet.scaled_buf
+                    };
 
                     let needs_recreate = match &pet.layered {
                         Some(l) => l.width != scaled_w || l.height != scaled_h,
@@ -1132,7 +1372,7 @@ impl ApplicationHandler for DeskpetApp {
                         pet.layered = LayeredSurface::new(scaled_w, scaled_h);
                     }
                     if let Some(layered) = &mut pet.layered {
-                        layered.present(&pet.window, &pet.scaled_buf, pos_x, pos_y);
+                        layered.present(&pet.window, present_buf, pos_x, pos_y);
                     }
                 }
             }
@@ -1153,6 +1393,31 @@ impl Drop for DeskpetApp {
 }
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("react") {
+        let mood = args
+            .iter()
+            .position(|a| a == "--mood")
+            .and_then(|i| args.get(i + 1))
+            .map(String::as_str)
+            .unwrap_or("happy");
+        let text = args
+            .iter()
+            .position(|a| a == "--text" || a == "--bubble")
+            .and_then(|i| args.get(i + 1))
+            .map(String::as_str);
+        match agent_api::send_cli_react(mood, text) {
+            Ok(_) => println!("DIYPets reacted: {mood}"),
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
+    let (agent_tx, agent_rx) = mpsc::channel();
+    agent_api::start_local_server(agent_tx);
     #[cfg(windows)]
     unsafe {
         let _ = windows::Win32::UI::WindowsAndMessaging::SetProcessDPIAware();
@@ -1181,6 +1446,7 @@ fn main() {
         tray: None,
         settings_process: None,
         creator_process: None,
+        agent_rx,
     };
 
     let event_loop = EventLoop::new().unwrap();

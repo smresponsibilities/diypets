@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.4] - 2026-11-22
+### Added
+- **AI Agent MCP & Local HTTP API:** `diypets` listens on `127.0.0.1:3721` (`/status`, `/react`, `/mcp` JSON-RPC 2.0) plus `diypets react --mood happy|sleep|hop|walk` CLI and drop-in `skills/diypets-creator/SKILL.md`.
+- **Headpats & Floating Pixel Hearts:** Rubbing cursor over a pet, clicking Headpat, or sending an agent reaction spawns floating pixel hearts and a happy hop.
+- **Direct Right-Click Pet Menu:** Right-click any pet to Headpat, Sleep, Clone (+1), Dismiss, or open Settings/Studio.
+- **Studio V3 Ergonomics:** Light/Dark checkerboard toggle, Ctrl+Wheel canvas zoom, paused keyframe pose scrubbing, and Part Z-order (`^`/`v`) reordering.
+- **Scaled Frame Cache & Multi-Monitor Left Wall:** Cached scaled ARGB frames for lower idle CPU + full negative-X multi-monitor roaming.
+
+### Fixed
+- **True Per-Pixel Click-Through on Windows:** Transparent corners pass clicks through while opaque pixels stay draggable.
+- **Original Roster Animation Parity:** Fixed `stegosaurus` (`GroundY` 110 -> 98), `dog` (`GroundY` 103 -> 101), `goat` 0px walk foot drift, and `polar_bear` frame recentering; added crisp transparent `brand/logo-512.png` + `brand/diypets.ico`.
 ## [0.1.2] - 2026-11-22
 ### Added
 - **Multi-Pet Herd Mode:** Run up to 8 simultaneous pets on your desktop via Settings (`+ Add` / Active Herd bar) or the system tray (`Add Another Pet (+1)` / `Remove Extra Pet (-1)` / `Sleep All`).

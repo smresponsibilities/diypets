@@ -234,6 +234,7 @@ struct StudioApp {
     shade_lighten: bool,
     mirror_draw_x: bool,
     show_grid: bool,
+    light_checker: bool,
     show_onion_skin: bool,
     zoom: f32,
 
@@ -283,6 +284,7 @@ impl Default for StudioApp {
             shade_lighten: false,
             mirror_draw_x: false,
             show_grid: false,
+            light_checker: true,
             show_onion_skin: true,
             zoom: 4.0,
             undo_stack: Vec::new(),
@@ -748,9 +750,12 @@ impl StudioApp {
         }
     }
 
-    fn draw_checkerboard(painter: &egui::Painter, rect: egui::Rect, tile_px: f32) {
-        let light = egui::Color32::from_rgb(54, 58, 68);
-        let dark = egui::Color32::from_rgb(42, 46, 54);
+    fn draw_checkerboard(painter: &egui::Painter, rect: egui::Rect, tile_px: f32, light_mode: bool) {
+        let (light, dark) = if light_mode {
+            (egui::Color32::from_rgb(238, 238, 242), egui::Color32::from_rgb(214, 216, 224))
+        } else {
+            (egui::Color32::from_rgb(54, 58, 68), egui::Color32::from_rgb(42, 46, 54))
+        };
         painter.rect_filled(rect, 4.0, light);
         let cols = (rect.width() / tile_px).ceil() as i32;
         let rows = (rect.height() / tile_px).ceil() as i32;
@@ -777,7 +782,21 @@ impl StudioApp {
         } else {
             0.0
         };
-        let pose = self.project.live_pose(self.preview_clip, t);
+        let pose = if !self.preview_playing
+            && self.tab == StudioTab::Animate
+            && matches!(self.preview_clip, PreviewClip::Custom(_))
+        {
+            if let Some(anim) = self.project.custom_animations.get(self.selected_custom_anim)
+                && !anim.keyframes.is_empty()
+            {
+                let kf_idx = self.selected_keyframe.min(anim.keyframes.len() - 1);
+                self.project.keyframe_to_pose(&anim.keyframes[kf_idx])
+            } else {
+                self.project.live_pose(self.preview_clip, t)
+            }
+        } else {
+            self.project.live_pose(self.preview_clip, t)
+        };
         let pm = self.project.render_pose(pose);
 
         let side = pm.width() as usize;
@@ -814,7 +833,7 @@ impl StudioApp {
                 );
             }
         } else {
-            Self::draw_checkerboard(&painter, rect, 12.0);
+            Self::draw_checkerboard(&painter, rect, 12.0, false);
         }
 
         if self.preview_clip == PreviewClip::Climb {
@@ -1045,7 +1064,10 @@ impl eframe::App for StudioApp {
                     }
 
                     let mut delete_idx: Option<usize> = None;
-                    for i in 0..self.project.parts.len() {
+                    let mut move_up: Option<usize> = None;
+                    let mut move_dn: Option<usize> = None;
+                    let part_count = self.project.parts.len();
+                    for i in 0..part_count {
                         let sel = self.edit_layer == EditLayer::Part(i);
                         let rgb = self.project.parts[i].role.pin_rgb();
                         let tag = self.project.parts[i].role.short_tag();
@@ -1065,12 +1087,30 @@ impl eframe::App for StudioApp {
                                 self.selected_part_idx = Some(i);
                                 self.canvas_dirty = true;
                             }
+                            if i > 0 && ui.small_button("^").on_hover_text("Move part earlier").clicked() {
+                                move_up = Some(i);
+                            }
+                            if i + 1 < part_count && ui.small_button("v").on_hover_text("Move part later").clicked() {
+                                move_dn = Some(i);
+                            }
                             if ui.small_button("x").clicked() {
                                 delete_idx = Some(i);
                             }
                         });
                     }
-                    if let Some(di) = delete_idx {
+                    if let Some(u) = move_up {
+                        self.push_undo();
+                        self.project.parts.swap(u, u - 1);
+                        self.selected_part_idx = Some(u - 1);
+                        self.edit_layer = EditLayer::Part(u - 1);
+                        self.mark_dirty();
+                    } else if let Some(d) = move_dn {
+                        self.push_undo();
+                        self.project.parts.swap(d, d + 1);
+                        self.selected_part_idx = Some(d + 1);
+                        self.edit_layer = EditLayer::Part(d + 1);
+                        self.mark_dirty();
+                    } else if let Some(di) = delete_idx {
                         self.push_undo();
                         self.project.parts.remove(di);
                         self.clamp_selections();
@@ -1167,6 +1207,7 @@ impl eframe::App for StudioApp {
                     ui.checkbox(&mut self.show_onion_skin, "Body Ghost on Parts & Faces");
                     ui.checkbox(&mut self.mirror_draw_x, "Mirror X Symmetry (M)");
                     ui.checkbox(&mut self.show_grid, "Pixel Grid");
+                    ui.checkbox(&mut self.light_checker, "Light Checkerboard");
 
                     ui.separator();
                     ui.label(egui::RichText::new("Tools").strong());
@@ -1553,13 +1594,17 @@ impl eframe::App for StudioApp {
                 });
 
                 egui::ScrollArea::both().show(ui, |ui| {
+                    let wheel_y = ui.ctx().input(|i| if i.modifiers.ctrl || i.modifiers.command { i.smooth_scroll_delta.y } else { 0.0 });
+                    if wheel_y.abs() > 0.1 {
+                        self.zoom = (self.zoom + wheel_y * 0.01).clamp(1.5, 8.0);
+                    }
                     let board_px = (BOARD_SIZE as f32 * self.zoom).max(256.0);
                     let (rect, response) = ui.allocate_exact_size(
                         egui::vec2(board_px, board_px),
                         egui::Sense::click_and_drag(),
                     );
                     let painter = ui.painter_at(rect);
-                    Self::draw_checkerboard(&painter, rect, (self.zoom * 4.0).max(8.0));
+                    Self::draw_checkerboard(&painter, rect, (self.zoom * 4.0).max(8.0), self.light_checker);
 
                     let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
                     if self.show_onion_skin && self.edit_layer != EditLayer::Body {

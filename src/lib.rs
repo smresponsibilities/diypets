@@ -1,3 +1,4 @@
+pub mod agent_api;
 pub mod autostart;
 pub mod catalog;
 pub mod deskpet_state;

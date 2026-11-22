@@ -118,7 +118,7 @@ fn stress_settings_concurrent_atomic_read_write() {
                 let mut s = Settings::default();
                 s.pet_size = 48 + ((t * 32 + i) % 180);
                 s.walk_speed = 1 + ((t + i) % 20) as i32;
-                s.extra_pets = vec!["dog".to_string(); ((i % 4) as usize)];
+                s.extra_pets = vec!["dog".to_string(); (i % 4) as usize];
                 let _ = s.save(&p);
             }
         }));

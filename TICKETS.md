@@ -21,11 +21,11 @@ Legend: **Priority** (`P0` Critical -> `P3` Nice-to-have) · **Effort** (`S` <2h
 ---
 
 ## Pillar 1: Desktop Runtime, Physics & Performance
-- [ ] **T-014A** `[P0][M]` **Fix True Per-Pixel Alpha Click-Through:** On Windows `UpdateLayeredWindow` passes clicks through `alpha == 0` pixels natively when `WS_EX_TRANSPARENT` is NOT set; stop calling `set_cursor_hittest(false)` globally so users can always drag opaque pet pixels while clicking through transparent corners!
-- [ ] **T-014B** `[P0][M]` **Direct Right-Click Context Menu on Pets:** Right-clicking any pet opens a quick menu (Pet/Headpat, Sleep, Sit, Clone, Dismiss This Pet, Open Settings).
+- [x] **T-014A** `[P0][M]` **Fix True Per-Pixel Alpha Click-Through:** On Windows `UpdateLayeredWindow` passes clicks through `alpha == 0` pixels natively when `WS_EX_TRANSPARENT` is NOT set; stop calling `set_cursor_hittest(false)` globally so users can always drag opaque pet pixels while clicking through transparent corners!
+- [x] **T-014B** `[P0][M]` **Direct Right-Click Context Menu on Pets:** Right-clicking any pet opens a quick menu (Pet/Headpat, Sleep, Sit, Clone, Dismiss This Pet, Open Settings).
 - [ ] **T-026** `[P1][S]` **Embed Highland Cow `.ico` into Windows `.exe` Binaries:** Add `build.rs` with `winresource` (Windows-only build-dep) using `brand/diypets.ico` so Explorer & Task Manager show the Highland Cow logo.
-- [ ] **T-027** `[P1][M]` **Scaled Frame Cache & Smart Hi-Res Filtering:** Cache scaled ARGB frames by `(frame_idx, moving_left, pet_size)` (90% less CPU while walking) and use Lanczos/bilinear scaling for hi-res >=96px art vs. nearest-neighbor for retro pixel art.
-- [ ] **T-028** `[P1][M]` **Multi-Monitor Left Wall & Negative Coordinates:** Pass `min_x` / `wall_left` into `DeskpetState::tick` so pets roam smoothly onto monitors positioned to the left/above the primary screen.
+- [x] **T-027** `[P1][M]` **Scaled Frame Cache & Smart Hi-Res Filtering:** Cache scaled ARGB frames by `(frame_idx, moving_left, pet_size)` (90% less CPU while walking) and use Lanczos/bilinear scaling for hi-res >=96px art vs. nearest-neighbor for retro pixel art.
+- [x] **T-028** `[P1][M]` **Multi-Monitor Left Wall & Negative Coordinates:** Pass `min_x` / `wall_left` into `DeskpetState::tick` so pets roam smoothly onto monitors positioned to the left/above the primary screen.
 - [ ] **T-029** `[P1][S]` `[good-first-issue]` **Replace `meval` With Zero-Dep Math Evaluator:** Eliminates the `nom v1.2.4` Rust future-incompatibility compiler warning and trims dependency count.
 - [ ] **T-013** `[P2][M]` **Retire Duplicate Format v0 Runtime (`state.rs`, `pack.rs`, `sprite.rs`) & Scratch Bins:** Keep one unified `deskpet_state.rs` engine and move dev tools (`check_png`, `gen_sprites`, `gen_art`) out of `src/bin/`.
 
@@ -42,28 +42,28 @@ Legend: **Priority** (`P0` Critical -> `P3` Nice-to-have) · **Effort** (`S` <2h
 ---
 
 ## Pillar 3: DIYPets Studio V2 -> V3
-- [ ] **T-036** `[P0][M]` **Pro Canvas Ergonomics:** Mouse-wheel zoom, Spacebar/middle-click pan, Light/Dark checkerboard toggle (fixes drawing dark ink on dark checks!), marquee Select/Move/Copy/Paste/Scale, opacity slider, and recent colors bar.
+- [x] **T-036** `[P0][M]` **Pro Canvas Ergonomics:** Mouse-wheel zoom, Spacebar/middle-click pan, Light/Dark checkerboard toggle (fixes drawing dark ink on dark checks!), marquee Select/Move/Copy/Paste/Scale, opacity slider, and recent colors bar.
 - [ ] **T-037** `[P0][L]` **Sprite Sheet & Animated GIF Importer:** Import any PNG strip/grid or `.gif`, choose `TilesX x TilesY`, map frames to Walk/Idle/Sleep/Fall, auto-compute `<GroundY>`, and export a playable pet in 10 seconds.
-- [ ] **T-038** `[P1][M]` **Timeline Scrubber & Pause-on-Keyframe Preview:** Let users scrub/pause exact keyframes in `3. Custom Anims`, duplicate/reorder frames, and preview individual poses live.
+- [x] **T-038** `[P1][M]` **Timeline Scrubber & Pause-on-Keyframe Preview:** Let users scrub/pause exact keyframes in `3. Custom Anims`, duplicate/reorder frames, and preview individual poses live.
 - [ ] **T-039** `[P1][M]` **Open & Edit Existing `.xml` Packs in Studio:** Load any `deskpet.xml` back into Studio to tweak `<GroundY>`, speed, metadata, or animations.
-- [ ] **T-040** `[P1][M]` **Part Z-Order Reordering & 2-Bone Knee/Elbow IK:** Add Up/Down layer ordering buttons for parts and optional 2-bone limb bend for natural walks.
+- [x] **T-040** `[P1][M]` **Part Z-Order Reordering & 2-Bone Knee/Elbow IK:** Add Up/Down layer ordering buttons for parts and optional 2-bone limb bend for natural walks.
 - [ ] **T-041** `[P2][M]` **Upgraded 2D SVG Importer + Import Preview Modal:** Add `<linearGradient>`, CSS `<style>` rules, rounded `<rect rx/ry>`, elliptical arcs (`A`), and an interactive role-reassignment preview before importing.
 - [ ] **T-042** `[P2][S]` `[good-first-issue]` **Add Dragon (4-Leg + Wings + Tail) & Fox Templates:** Showcase multi-part rigging right out of the box.
 
 ---
 
 ## Pillar 4: Bundled Roster Animation Parity (`highland_cow` Gold Standard)
-- [ ] **T-011A** `[P0][M]` **Fix `stegosaurus`:** Fix 13px floating `GroundY` (`110` -> `98`) and add `sleep` (`id="13"`) & `climb` (`id="19"`).
-- [ ] **T-011B** `[P0][M]` **Fix `goat`:** Fix 7px vertical foot drift on `WALK_1` frame `2` (`bot=111..118`) and add `climb` (`id="19"`).
-- [ ] **T-011C** `[P1][S]` **Polish `dog` & `polar_bear`:** Tighten `dog` `GroundY` (`103` -> `101`) & recenter `polar_bear` non-walk frames (`cx_spread=13px`).
+- [x] **T-011A** `[P0][M]` **Fix `stegosaurus`:** Fix 13px floating `GroundY` (`110` -> `98`) and add `sleep` (`id="13"`) & `climb` (`id="19"`).
+- [x] **T-011B** `[P0][M]` **Fix `goat`:** Fix 7px vertical foot drift on `WALK_1` frame `2` (`bot=111..118`) and add `climb` (`id="19"`).
+- [x] **T-011C** `[P1][S]` **Polish `dog` & `polar_bear`:** Tighten `dog` `GroundY` (`103` -> `101`) & recenter `polar_bear` non-walk frames (`cx_spread=13px`).
 - [ ] **T-011D** `[P1][S]` `[good-first-issue]` **Fix `negima` eSheep Pack:** Add missing `walk_x` travel and verify clean turnback on packs missing `climb`.
 
 ---
 
 ## Pillar 5: Viral Delight & Developer Companion Features
-- [ ] **T-019A** `[P0][L]` **AI Agent MCP / Local HTTP Server + Speech Bubbles:** Optional `127.0.0.1:3721/mcp` & `/react` endpoint + `diypets react --bubble "Tests Passed!" --mood happy` so Claude Code, Cursor, Codex, and CI builds trigger live pet reactions & tiny speech bubbles!
-- [ ] **T-019B** `[P1][S]` **Ship Agent Skill (`skills/diypets-creator/SKILL.md`):** Drop-in skill file so coding agents automatically know how to create semantic SVGs and run `diypets-creator --from-svg --activate`.
-- [ ] **T-043** `[P1][M]` **Headpats & Floating Pixel Hearts:** Rubbing cursor back-and-forth over a pet spawns cute floating hearts and triggers the `Happy` face!
+- [x] **T-019A** `[P0][L]` **AI Agent MCP / Local HTTP Server + Speech Bubbles:** Optional `127.0.0.1:3721/mcp` & `/react` endpoint + `diypets react --bubble "Tests Passed!" --mood happy` so Claude Code, Cursor, Codex, and CI builds trigger live pet reactions & tiny speech bubbles!
+- [x] **T-019B** `[P1][S]` **Ship Agent Skill (`skills/diypets-creator/SKILL.md`):** Drop-in skill file so coding agents automatically know how to create semantic SVGs and run `diypets-creator --from-svg --activate`.
+- [x] **T-043** `[P1][M]` **Headpats & Floating Pixel Hearts:** Rubbing cursor back-and-forth over a pet spawns cute floating hearts and triggers the `Happy` face!
 - [ ] **T-044** `[P1][M]` **Play Mode (Cursor Chase & Tossable Toy/Treat):** Toggle Neko-style mouse chase or drop a bouncy pixel ball/treat that your herd chases across the taskbar.
 - [ ] **T-023** `[P2][M]` **Pomodoro / Break Buddy, Typing Buddy & Optional Cozy SFX:** Opt-in stretch reminder bubble, subtle BongoCat-style keystroke bounce, and muted-by-default sound effects.
 
