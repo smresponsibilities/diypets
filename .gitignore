@@ -8,3 +8,4 @@ assets/esheep_ani.gif
 *.log
 *.ps1
 *.py
+!scripts/generate_demo_gif.py

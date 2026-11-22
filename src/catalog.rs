@@ -149,21 +149,19 @@ pub fn strip_chroma_key_if_opaque(img: &mut image::RgbaImage) {
 }
 
 /// Produce a crisp, tightly framed square RGBA app/tray icon (no weird borders or tiny margins).
-pub fn make_square_app_icon(source: &image::RgbaImage, target_size: u32) -> image::RgbaImage {
+pub fn make_square_app_icon(source: &image::RgbaImage, side: u32) -> image::RgbaImage {
     let mut img = source.clone();
     strip_chroma_key_if_opaque(&mut img);
     let (w, h) = img.dimensions();
-
-    // Find tight bounding box of visible pixels so the mascot fills the icon cleanly.
     let mut min_x = w;
     let mut min_y = h;
     let mut max_x = 0u32;
     let mut max_y = 0u32;
-    let mut any_visible = false;
+    let mut found = false;
     for y in 0..h {
         for x in 0..w {
             if img.get_pixel(x, y)[3] > 16 {
-                any_visible = true;
+                found = true;
                 min_x = min_x.min(x);
                 min_y = min_y.min(y);
                 max_x = max_x.max(x);
@@ -171,30 +169,20 @@ pub fn make_square_app_icon(source: &image::RgbaImage, target_size: u32) -> imag
             }
         }
     }
-
-    let cropped = if any_visible && max_x >= min_x && max_y >= min_y {
-        image::imageops::crop_imm(&img, min_x, min_y, max_x - min_x + 1, max_y - min_y + 1)
-            .to_image()
+    let cropped = if found && max_x >= min_x && max_y >= min_y {
+        image::imageops::crop_imm(&img, min_x, min_y, max_x - min_x + 1, max_y - min_y + 1).to_image()
     } else {
         img
     };
-
-    let inner = ((target_size as f32) * 0.88).round().max(1.0) as u32;
-    let scale = (inner as f32 / cropped.width().max(1) as f32)
-        .min(inner as f32 / cropped.height().max(1) as f32);
-    let nw = ((cropped.width() as f32 * scale).round() as u32).clamp(1, target_size);
-    let nh = ((cropped.height() as f32 * scale).round() as u32).clamp(1, target_size);
-
-    let filter = if cropped.width().max(cropped.height()) < 48 {
-        image::imageops::FilterType::Nearest
-    } else {
-        image::imageops::FilterType::Lanczos3
-    };
-    let resized = image::imageops::resize(&cropped, nw, nh, filter);
-
-    let mut canvas = image::RgbaImage::from_pixel(target_size, target_size, image::Rgba([0, 0, 0, 0]));
-    let ox = (target_size - nw) / 2;
-    let oy = (target_size - nh) / 2;
+    let (cw, ch) = cropped.dimensions();
+    let target = side.max(1);
+    let scale = (target as f32 / cw.max(1) as f32).min(target as f32 / ch.max(1) as f32);
+    let nw = ((cw as f32 * scale).round() as u32).clamp(1, target);
+    let nh = ((ch as f32 * scale).round() as u32).clamp(1, target);
+    let resized = image::imageops::resize(&cropped, nw, nh, image::imageops::FilterType::Lanczos3);
+    let mut canvas = image::RgbaImage::from_pixel(target, target, image::Rgba([0, 0, 0, 0]));
+    let ox = (target - nw) / 2;
+    let oy = (target - nh) / 2;
     image::imageops::overlay(&mut canvas, &resized, ox as i64, oy as i64);
     canvas
 }

@@ -243,6 +243,45 @@ pub fn render_speech_bubble_argb(text: &str) -> (u32, u32, Vec<u32>) {
     (total_w as u32, total_h as u32, buf)
 }
 
+
+/// Render a crisp 24x24 shaded pixel toy ball (premultiplied ARGB `u32`) for Play Mode.
+pub fn render_pixel_ball_argb() -> (u32, u32, Vec<u32>) {
+    let size = 24usize;
+    let mut buf = vec![0u32; size * size];
+    let c = 11.5_f32;
+    let r_out = 10.6_f32;
+    let r_in = 8.8_f32;
+
+    let outline = premul(255, 42, 24, 24);
+    let base = premul(255, 242, 104, 62);
+    let shade = premul(255, 198, 66, 38);
+    let stripe = premul(255, 255, 224, 128);
+    let hi = premul(255, 255, 248, 236);
+
+    for y in 0..size {
+        for x in 0..size {
+            let dx = x as f32 - c;
+            let dy = y as f32 - c;
+            let dist = dx.hypot(dy);
+            if dist <= r_out {
+                let col = if dist > r_in {
+                    outline
+                } else if (dx + 3.2).hypot(dy + 3.4) < 2.6 {
+                    hi
+                } else if (dx - dy).abs() < 1.9 {
+                    stripe
+                } else if dx + dy > 4.5 {
+                    shade
+                } else {
+                    base
+                };
+                buf[y * size + x] = col;
+            }
+        }
+    }
+    (size as u32, size as u32, buf)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -264,5 +303,9 @@ mod tests {
         );
         assert!(lw <= 340 && lh <= 104);
         assert_eq!(lpx.len(), (lw * lh) as usize);
+        let (bw, bh, bpx) = render_pixel_ball_argb();
+        assert_eq!((bw, bh), (24, 24));
+        assert_eq!(bpx[0], 0);
+        assert!(bpx[12 * 24 + 12] >> 24 == 255);
     }
 }

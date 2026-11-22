@@ -18,6 +18,7 @@ A tiny, blazing-fast, cross-platform desktop mascot engine with **Multi-Pet Herd
 
 **[Download Release](https://github.com/smresponsibilities/diypets/releases)** · **[Install via Cargo](#option-2-install-via-cargo-cratesio)** · **[Multi-Pet Herd Mode](#-multi-pet-herd-mode)** · **[Studio V2 & SVG Import](#-diypets-studio-v2-make-your-own-pet)** · **[AI Agent CLI](AGENT_PET_GUIDE.md)**
 
+
 </div>
 
 ---

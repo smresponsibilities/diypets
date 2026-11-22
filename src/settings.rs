@@ -14,26 +14,39 @@ fn is_safe_pack_id(id: &str) -> bool {
     !id.is_empty() && !id.contains("..") && !id.contains('/') && !id.contains('\\')
 }
 
+/// Optional per-slot size and speed overrides in Multi-Pet Herd Mode.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PetOverride {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub walk_speed: Option<i32>,
+}
+
 /// Tunables the tray menu and settings UI write. Field names are the `settings.toml` keys.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
-    /// Pet window edge length in logical pixels.
+    /// Default pet window edge length in logical pixels.
     pub pet_size: u32,
-    /// Pixels per animation step while walking.
+    /// Default pixels per animation step while walking.
     pub walk_speed: i32,
-    /// Keep the pet window above other windows.
+    /// Keep pet windows above other windows.
     pub always_on_top: bool,
     /// Treat other desktop windows as ledges/walls to stand on and climb.
     pub climb_windows: bool,
-    /// Let clicks over the sprite's transparent margins reach the desktop.
+    /// Let clicks over transparent sprite corners reach the desktop.
     pub click_through: bool,
     /// Launch DIYPets automatically when you log in.
     pub start_on_login: bool,
+    /// Play Mode: steer roaming pets toward the mouse cursor.
+    pub follow_cursor: bool,
     /// Primary active pet pack ID.
     pub pet_pack: String,
     /// Additional simultaneous desktop pets (Herd Mode, up to `MAX_ACTIVE_PETS - 1`).
     pub extra_pets: Vec<String>,
+    /// Per-slot size & speed overrides (slot 0 = primary pet, slots 1.. = extra pets).
+    pub herd_overrides: Vec<PetOverride>,
 }
 
 impl Default for Settings {
@@ -41,17 +54,18 @@ impl Default for Settings {
         Self {
             pet_pack: "highland_cow".to_string(),
             extra_pets: Vec::new(),
+            herd_overrides: Vec::new(),
             pet_size: 128,
             walk_speed: 5,
             always_on_top: true,
             climb_windows: true,
             click_through: true,
             start_on_login: false,
+            follow_cursor: false,
         }
     }
 }
 
-/// OS-standard per-user data directory for globally installed `diypets` binaries.
 pub fn user_data_dir() -> PathBuf {
     #[cfg(windows)]
     {
@@ -91,12 +105,10 @@ pub fn user_data_dir() -> PathBuf {
         .join(".diypets")
 }
 
-/// Directory where lazy-downloaded eSheep packs and globally created pets are saved.
 pub fn user_packs_dir() -> PathBuf {
     user_data_dir().join("packs")
 }
 
-/// Locate a local development/portable repo root that contains `assets/`.
 pub fn local_project_root() -> Option<PathBuf> {
     if let Ok(cwd) = std::env::current_dir()
         && cwd.join("assets").is_dir()
@@ -116,7 +128,6 @@ pub fn local_project_root() -> Option<PathBuf> {
     None
 }
 
-/// Directory holding `settings.toml` and local project files (or user data dir when installed globally).
 pub fn resolve_project_root() -> PathBuf {
     local_project_root().unwrap_or_else(user_data_dir)
 }
@@ -141,7 +152,6 @@ pub fn thumb_cache_dir() -> PathBuf {
     }
 }
 
-/// All directories searched when discovering locally installed packs.
 pub fn pack_search_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     let user_dir = user_packs_dir();
@@ -155,7 +165,6 @@ pub fn pack_search_dirs() -> Vec<PathBuf> {
     dirs
 }
 
-/// Find `deskpet.xml` for `pack_id` across user-downloaded packs and local `assets/`.
 pub fn find_pack_xml(pack_id: &str) -> Option<PathBuf> {
     if !is_safe_pack_id(pack_id) {
         return None;
@@ -169,7 +178,6 @@ pub fn find_pack_xml(pack_id: &str) -> Option<PathBuf> {
     None
 }
 
-/// Find `icon.png` or cached catalog icon for `pack_id`.
 pub fn find_pack_icon(pack_id: &str) -> Option<PathBuf> {
     if !is_safe_pack_id(pack_id) {
         return None;
@@ -200,12 +208,10 @@ pub fn sibling_binary(stem: &str) -> Option<PathBuf> {
 }
 
 impl Settings {
-    /// Canonical `settings.toml` inside the resolved project/data root.
     pub fn default_path() -> PathBuf {
         resolve_project_root().join("settings.toml")
     }
 
-    /// Full ordered list of active desktop pets (primary + up to `MAX_ACTIVE_PETS - 1` extras).
     pub fn active_herd(&self) -> Vec<String> {
         let mut herd = Vec::with_capacity(1 + self.extra_pets.len());
         let primary = if is_safe_pack_id(&self.pet_pack) {
@@ -225,6 +231,48 @@ impl Settings {
         herd
     }
 
+    pub fn slot_pet_size(&self, slot: usize) -> u32 {
+        self.herd_overrides
+            .get(slot)
+            .and_then(|o| o.size)
+            .unwrap_or(self.pet_size)
+            .clamp(PET_SIZE_MIN, PET_SIZE_MAX)
+    }
+
+    pub fn slot_walk_speed(&self, slot: usize) -> i32 {
+        self.herd_overrides
+            .get(slot)
+            .and_then(|o| o.walk_speed)
+            .unwrap_or(self.walk_speed)
+            .clamp(WALK_SPEED_MIN, WALK_SPEED_MAX)
+    }
+
+    pub fn set_slot_size(&mut self, slot: usize, size: Option<u32>) {
+        if slot >= MAX_ACTIVE_PETS {
+            return;
+        }
+        if self.herd_overrides.len() <= slot {
+            self.herd_overrides.resize(slot + 1, PetOverride::default());
+        }
+        self.herd_overrides[slot].size = size.map(|v| v.clamp(PET_SIZE_MIN, PET_SIZE_MAX));
+    }
+
+    pub fn set_slot_walk_speed(&mut self, slot: usize, speed: Option<i32>) {
+        if slot >= MAX_ACTIVE_PETS {
+            return;
+        }
+        if self.herd_overrides.len() <= slot {
+            self.herd_overrides.resize(slot + 1, PetOverride::default());
+        }
+        self.herd_overrides[slot].walk_speed = speed.map(|v| v.clamp(WALK_SPEED_MIN, WALK_SPEED_MAX));
+    }
+
+    pub fn reset_slot_override(&mut self, slot: usize) {
+        if let Some(o) = self.herd_overrides.get_mut(slot) {
+            *o = PetOverride::default();
+        }
+    }
+
     pub fn add_extra_pet(&mut self, pack_id: &str) -> bool {
         if !is_safe_pack_id(pack_id) || 1 + self.extra_pets.len() >= MAX_ACTIVE_PETS {
             return false;
@@ -236,14 +284,16 @@ impl Settings {
     pub fn remove_extra_pet(&mut self, extra_index: usize) -> bool {
         if extra_index < self.extra_pets.len() {
             self.extra_pets.remove(extra_index);
+            let slot = extra_index + 1;
+            if slot < self.herd_overrides.len() {
+                self.herd_overrides.remove(slot);
+            }
             true
         } else {
             false
         }
     }
 
-    /// Read settings from `path`. Missing file, unreadable file, and broken
-    /// TOML all return defaults.
     pub fn load(path: &Path) -> Self {
         fs::read_to_string(path)
             .ok()
@@ -251,7 +301,6 @@ impl Settings {
             .unwrap_or_default()
     }
 
-    /// Atomically write settings to `path`. Creates parent directories when needed.
     pub fn save(&self, path: &Path) -> Result<(), String> {
         if let Some(parent) = path.parent()
             && !parent.as_os_str().is_empty()
@@ -276,7 +325,6 @@ impl Settings {
         Ok(())
     }
 
-    /// Clamp hand-edited values into supportable ranges and strip unsafe pack IDs.
     pub fn sanitized(&self) -> Self {
         let mut s = self.clone();
         s.pet_size = s.pet_size.clamp(PET_SIZE_MIN, PET_SIZE_MAX);
@@ -286,10 +334,14 @@ impl Settings {
         }
         s.extra_pets.retain(|id| is_safe_pack_id(id));
         s.extra_pets.truncate(MAX_ACTIVE_PETS - 1);
+        s.herd_overrides.truncate(1 + s.extra_pets.len());
+        for o in &mut s.herd_overrides {
+            o.size = o.size.map(|v| v.clamp(PET_SIZE_MIN, PET_SIZE_MAX));
+            o.walk_speed = o.walk_speed.map(|v| v.clamp(WALK_SPEED_MIN, WALK_SPEED_MAX));
+        }
         s
     }
 
-    /// `load` plus `sanitized`, which is what the app calls.
     pub fn load_sanitized(path: &Path) -> Self {
         Self::load(path).sanitized()
     }
@@ -333,22 +385,31 @@ mod tests {
     }
 
     #[test]
-    fn save_then_load_roundtrip() {
+    fn save_then_load_roundtrip_with_per_pet_overrides() {
         let dir = TempDir::new().unwrap();
         let path = temp_path(&dir);
-        let wanted = Settings {
-            pet_pack: "slime_pack".to_string(),
+        let mut wanted = Settings {
+            pet_pack: "highland_cow".to_string(),
             extra_pets: vec!["dog".to_string(), "polar_bear".to_string()],
-            pet_size: 64,
-            walk_speed: 9,
+            herd_overrides: Vec::new(),
+            pet_size: 128,
+            walk_speed: 5,
             always_on_top: false,
             climb_windows: false,
             click_through: false,
             start_on_login: true,
+            follow_cursor: true,
         };
+        wanted.set_slot_size(0, Some(168));
+        wanted.set_slot_size(1, Some(72));
+        wanted.set_slot_walk_speed(1, Some(11));
         wanted.save(&path).expect("save settings");
-        assert_eq!(Settings::load(&path), wanted);
-        assert_eq!(wanted.active_herd().len(), 3);
+        let loaded = Settings::load_sanitized(&path);
+        assert_eq!(loaded, wanted);
+        assert_eq!(loaded.slot_pet_size(0), 168);
+        assert_eq!(loaded.slot_pet_size(1), 72);
+        assert_eq!(loaded.slot_walk_speed(1), 11);
+        assert_eq!(loaded.slot_pet_size(2), 128);
     }
 
     #[test]
@@ -392,8 +453,8 @@ mod tests {
         let path = temp_path(&dir);
         Settings::default().save(&path).expect("save settings");
         let text = fs::read_to_string(&path).unwrap();
-        assert!(text.starts_with('#'), "file should explain itself");
-        assert!(text.contains("pet_size = 128"), "got: {text}");
+        assert!(text.starts_with('#'));
+        assert!(text.contains("pet_size = 128"));
     }
 
     #[test]

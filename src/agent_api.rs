@@ -79,7 +79,7 @@ fn handle_mcp_jsonrpc(body: &str, tx: &Sender<AgentCommand>) -> String {
                     "inputSchema": {
                         "type": "object",
                         "properties": {
-                            "mood": { "type": "string", "enum": ["happy", "hop", "sleep", "walk"] },
+                            "mood": { "type": "string", "enum": ["happy", "hop", "sleep", "walk", "ball"] },
                             "text": { "type": "string" }
                         },
                         "required": ["mood"]
@@ -94,6 +94,11 @@ fn handle_mcp_jsonrpc(body: &str, tx: &Sender<AgentCommand>) -> String {
                             "pack_id": { "type": "string" }
                         }
                     }
+                },
+                {
+                    "name": "drop_ball",
+                    "description": "Drop a bouncy pixel toy ball onto the desktop for all pets to chase and kick",
+                    "inputSchema": { "type": "object", "properties": {} }
                 }
             ]
         }),
@@ -130,6 +135,16 @@ fn handle_mcp_jsonrpc(body: &str, tx: &Sender<AgentCommand>) -> String {
                     });
                     serde_json::json!({
                         "content": [{ "type": "text", "text": format!("Spawned pet: {:?}", pack_id) }]
+                    })
+                }
+                "drop_ball" => {
+                    let _ = tx.send(AgentCommand {
+                        mood: "ball".to_string(),
+                        text: Some("Play time!".to_string()),
+                        pack_id: None,
+                    });
+                    serde_json::json!({
+                        "content": [{ "type": "text", "text": "Dropped bouncy ball for DIYPets herd!" }]
                     })
                 }
                 _ => serde_json::json!({ "isError": true, "content": [{ "type": "text", "text": "unknown tool" }] }),

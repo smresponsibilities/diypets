@@ -1,12 +1,9 @@
-pub mod bubble;
 pub mod agent_api;
 pub mod autostart;
+pub mod bubble;
 pub mod catalog;
 pub mod deskpet_state;
 pub mod deskpet_xml;
-pub mod pack;
 pub mod settings;
-pub mod sprite;
-pub mod state;
 pub mod studio_model;
 pub mod svg_import;
