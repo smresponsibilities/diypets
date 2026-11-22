@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use diypets::agent_api;
 use diypets::autostart;
 use diypets::catalog::{
     CatalogEntry, default_app_icon, delete_downloaded_pack, download_and_cache_icon, download_pack,
@@ -12,6 +13,8 @@ use diypets::settings::{
     catalog_icons_dir, find_pack_icon, find_pack_xml, pack_search_dirs, resolve_project_root,
     sibling_binary, thumb_cache_dir, user_packs_dir,
 };
+use diypets::studio_model::Archetype;
+use diypets::svg_import::import_svg_to_project;
 use eframe::egui;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
@@ -30,6 +33,13 @@ const BUNDLED_ORIGINALS: &[&str] = &[
     "goat",
     "stegosaurus",
 ];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SettingsTab {
+    Gallery,
+    Herd,
+    Controls,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PackCategory {
@@ -400,7 +410,56 @@ fn load_gallery(mut add: impl FnMut(PetPreview) + Send) {
     });
 }
 
+fn card_frame(selected: bool) -> egui::Frame {
+    let (fill, stroke_col) = if selected {
+        (
+            egui::Color32::from_rgb(35, 58, 96),
+            egui::Color32::from_rgb(96, 165, 250),
+        )
+    } else {
+        (
+            egui::Color32::from_rgb(28, 33, 44),
+            egui::Color32::from_rgb(46, 54, 70),
+        )
+    };
+    egui::Frame::default()
+        .fill(fill)
+        .stroke(egui::Stroke::new(if selected { 1.5 } else { 1.0 }, stroke_col))
+        .inner_margin(10.0)
+        .corner_radius(egui::CornerRadius::same(10))
+}
+
+fn panel_card() -> egui::Frame {
+    egui::Frame::default()
+        .fill(egui::Color32::from_rgb(26, 30, 40))
+        .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(44, 52, 68)))
+        .inner_margin(14.0)
+        .corner_radius(egui::CornerRadius::same(10))
+}
+
+fn apply_settings_theme(ctx: &egui::Context) {
+    let mut style = (*ctx.style_of(egui::Theme::Dark)).clone();
+    style.spacing.item_spacing = egui::vec2(8.0, 6.0);
+    style.spacing.button_padding = egui::vec2(10.0, 6.0);
+    let mut visuals = egui::Visuals::dark();
+    visuals.window_fill = egui::Color32::from_rgb(18, 21, 28);
+    visuals.panel_fill = egui::Color32::from_rgb(21, 25, 34);
+    visuals.faint_bg_color = egui::Color32::from_rgb(28, 33, 44);
+    visuals.selection.bg_fill = egui::Color32::from_rgb(56, 120, 224);
+    visuals.selection.stroke = egui::Stroke::new(1.0, egui::Color32::WHITE);
+    visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(36, 42, 56);
+    visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(7);
+    visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(48, 56, 74);
+    visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(7);
+    visuals.widgets.active.bg_fill = egui::Color32::from_rgb(56, 120, 224);
+    visuals.widgets.active.corner_radius = egui::CornerRadius::same(7);
+    style.visuals = visuals;
+    ctx.set_style_of(egui::Theme::Dark, style.clone());
+    ctx.set_style_of(egui::Theme::Light, style);
+}
+
 struct MyApp {
+    tab: SettingsTab,
     settings: Settings,
     path: PathBuf,
     pets: Vec<PetPreview>,
@@ -414,8 +473,11 @@ struct MyApp {
     search: String,
     last_scan: Instant,
     creator_process: Option<std::process::Child>,
+    runner_process: Option<std::process::Child>,
     update_rx: std::sync::mpsc::Receiver<String>,
     update_available: Option<String>,
+    test_bubble_text: String,
+    mcp_snippet: String,
 }
 
 impl MyApp {
@@ -454,7 +516,18 @@ impl MyApp {
                 }
             }
         });
+
+        let mcp_snippet = r#"{
+  "mcpServers": {
+    "diypets": {
+      "url": "http://127.0.0.1:3721/mcp"
+    }
+  }
+}"#
+        .to_string();
+
         Self {
+            tab: SettingsTab::Gallery,
             icon_pack: settings.pet_pack.clone(),
             settings,
             path,
@@ -468,19 +541,16 @@ impl MyApp {
             search: String::new(),
             last_scan: Instant::now(),
             creator_process: None,
+            runner_process: None,
             update_rx,
             update_available: None,
+            test_bubble_text: "Build passed!".to_string(),
+            mcp_snippet,
         }
     }
 
-    fn import_xml_pack(&mut self) -> bool {
-        let Some(src_path) = rfd::FileDialog::new()
-            .add_filter("DIYPets / eSheep XML", &["xml"])
-            .pick_file()
-        else {
-            return false;
-        };
-        let Ok(xml_text) = std::fs::read_to_string(&src_path) else {
+    fn import_xml_path(&mut self, src_path: &Path) -> bool {
+        let Ok(xml_text) = std::fs::read_to_string(src_path) else {
             self.status_banner = Some(("Could not read selected XML file.".to_string(), true));
             return false;
         };
@@ -533,23 +603,71 @@ impl MyApp {
         }
         self.settings.pet_pack = id.clone();
         self.last_scan = Instant::now() - REFRESH_INTERVAL;
-        if let Ok(tag) = self.update_rx.try_recv() { self.update_available = Some(tag); }
         self.scan_for_new_local_pets();
         self.status_banner = Some((format!("Imported & activated '{id}'!"), false));
         true
     }
 
-    fn launch_creator(&mut self) {
-        if let Some(child) = &mut self.creator_process {
+    fn import_svg_path(&mut self, src_path: &Path) -> bool {
+        let Ok(svg_text) = std::fs::read_to_string(src_path) else {
+            self.status_banner = Some(("Could not read selected SVG file.".to_string(), true));
+            return false;
+        };
+        let stem = src_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("svg_pet");
+        let proj = match import_svg_to_project(&svg_text, stem, Archetype::Quadruped) {
+            Ok(p) => p,
+            Err(e) => {
+                self.status_banner = Some((format!("SVG import error: {e}"), true));
+                return false;
+            }
+        };
+        let dest_dir = user_packs_dir().join(&proj.pack_id);
+        if let Err(e) = proj.export_to_dir(&dest_dir) {
+            self.status_banner = Some((format!("SVG export error: {e}"), true));
+            return false;
+        }
+        self.settings.pet_pack = proj.pack_id.clone();
+        self.last_scan = Instant::now() - REFRESH_INTERVAL;
+        self.scan_for_new_local_pets();
+        self.status_banner = Some((
+            format!("Auto-rigged SVG '{}' & activated on desktop!", proj.display_name),
+            false,
+        ));
+        true
+    }
+
+    fn import_xml_dialog(&mut self) -> bool {
+        let Some(src_path) = rfd::FileDialog::new()
+            .add_filter("DIYPets / eSheep XML or 2D SVG", &["xml", "svg"])
+            .pick_file()
+        else {
+            return false;
+        };
+        match src_path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|s| s.to_ascii_lowercase())
+            .as_deref()
+        {
+            Some("svg") => self.import_svg_path(&src_path),
+            _ => self.import_xml_path(&src_path),
+        }
+    }
+
+    fn launch_sibling(slot: &mut Option<std::process::Child>, stem: &str) {
+        if let Some(child) = slot.as_mut() {
             if matches!(child.try_wait(), Ok(None)) {
                 return;
             }
         }
-        if let Some(exe) = sibling_binary("diypets-creator") {
+        if let Some(exe) = sibling_binary(stem) {
             let mut cmd = std::process::Command::new(exe);
             cmd.current_dir(resolve_project_root());
             if let Ok(child) = cmd.spawn() {
-                self.creator_process = Some(child);
+                *slot = Some(child);
             }
         }
     }
@@ -658,32 +776,21 @@ impl MyApp {
             .auto_shrink([false, true])
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 10.0;
+                    ui.spacing_mut().item_spacing.x = 12.0;
                     for &idx in indices {
                         let pet = &pets[idx];
                         let is_selected = *selected_pack == pet.id;
                         let is_downloading = downloading.contains(&pet.id);
-
-                        let mut frame = egui::Frame::default()
-                            .inner_margin(8.0)
-                            .corner_radius(6.0);
-
-                        if is_selected {
-                            frame = frame.fill(ui.visuals().selection.bg_fill);
-                        } else {
-                            frame = frame.fill(ui.visuals().faint_bg_color);
-                        }
-
                         let mut add_clicked = false;
 
-                        let response = frame
+                        let response = card_frame(is_selected)
                             .show(ui, |ui| {
-                                ui.set_width(130.0);
-                                ui.set_min_height(152.0);
+                                ui.set_width(134.0);
+                                ui.set_min_height(158.0);
                                 ui.vertical_centered(|ui| {
                                     if let Some(texture) = &pet.texture {
                                         let mut size = texture.size_vec2();
-                                        let max_box = 76.0;
+                                        let max_box = 78.0;
                                         let scale = (max_box / size.x).min(max_box / size.y);
                                         if size.x > max_box || size.y > max_box {
                                             size *= scale;
@@ -695,34 +802,36 @@ impl MyApp {
                                             egui::Image::new((texture.id(), size)),
                                         );
                                     } else {
-                                        ui.add_space(76.0);
+                                        ui.add_space(78.0);
                                     }
 
-                                    ui.add_space(4.0);
-                                    if is_selected {
-                                        ui.colored_label(
-                                            ui.visuals().selection.stroke.color,
-                                            &pet.name,
-                                        );
-                                    } else {
-                                        ui.label(&pet.name);
-                                    }
+                                    ui.add_space(5.0);
+                                    ui.label(
+                                        egui::RichText::new(&pet.name)
+                                            .strong()
+                                            .size(13.0)
+                                            .color(if is_selected {
+                                                egui::Color32::WHITE
+                                            } else {
+                                                egui::Color32::from_rgb(232, 236, 244)
+                                            }),
+                                    );
                                     if !pet.author.is_empty() {
                                         ui.label(
                                             egui::RichText::new(format!("By {}", pet.author))
-                                                .size(10.0)
-                                                .color(egui::Color32::GRAY),
+                                                .size(10.5)
+                                                .color(egui::Color32::from_rgb(142, 152, 172)),
                                         );
                                     }
 
-                                    ui.add_space(3.0);
+                                    ui.add_space(4.0);
                                     if is_downloading {
                                         ui.horizontal(|ui| {
                                             ui.spinner();
                                             ui.label(
-                                                egui::RichText::new("Downloading...")
-                                                    .size(10.0)
-                                                    .color(egui::Color32::from_rgb(120, 180, 255)),
+                                                egui::RichText::new("Getting...")
+                                                    .size(10.5)
+                                                    .color(egui::Color32::from_rgb(120, 185, 255)),
                                             );
                                         });
                                     } else if !pet.installed {
@@ -732,23 +841,24 @@ impl MyApp {
                                             .unwrap_or_else(|| "Get pack".to_string());
                                         ui.label(
                                             egui::RichText::new(kb_label)
-                                                .size(10.0)
-                                                .color(egui::Color32::from_rgb(110, 175, 255)),
+                                                .size(11.0)
+                                                .strong()
+                                                .color(egui::Color32::from_rgb(112, 182, 255)),
                                         );
                                     } else {
                                         ui.horizontal(|ui| {
                                             if is_selected {
                                                 ui.label(
-                                                    egui::RichText::new("Main")
-                                                        .size(10.0)
+                                                    egui::RichText::new("Active")
+                                                        .size(10.5)
                                                         .strong()
-                                                        .color(ui.visuals().selection.stroke.color),
+                                                        .color(egui::Color32::from_rgb(134, 239, 172)),
                                                 );
                                             }
                                             if can_add_more
                                                 && ui
-                                                    .small_button("+ Add")
-                                                    .on_hover_text("Add another pet onto your desktop (Herd Mode)")
+                                                    .small_button("+ Herd")
+                                                    .on_hover_text("Spawn alongside your current pets")
                                                     .clicked()
                                             {
                                                 add_clicked = true;
@@ -795,6 +905,35 @@ impl eframe::App for MyApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let mut changed = false;
 
+        // Drag-and-drop .xml or .svg files anywhere on Settings!
+        let dropped: Vec<PathBuf> = ui.ctx().input(|i| {
+            i.raw
+                .dropped_files
+                .iter()
+                .map(|f| f.path().to_path_buf())
+                .collect()
+        });
+        for path in dropped {
+            match path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|s| s.to_ascii_lowercase())
+                .as_deref()
+            {
+                Some("xml") => {
+                    if self.import_xml_path(&path) {
+                        changed = true;
+                    }
+                }
+                Some("svg") => {
+                    if self.import_svg_path(&path) {
+                        changed = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+
         let previous_count = self.pets.len();
         while self.loading {
             match self.gallery.try_recv() {
@@ -826,7 +965,9 @@ impl eframe::App for MyApp {
             }
         }
 
-        if let Ok(tag) = self.update_rx.try_recv() { self.update_available = Some(tag); }
+        if let Ok(tag) = self.update_rx.try_recv() {
+            self.update_available = Some(tag);
+        }
         self.scan_for_new_local_pets();
 
         for pet in &mut self.pets {
@@ -844,269 +985,428 @@ impl eframe::App for MyApp {
         }
 
         let mut open_creator = false;
+        let mut launch_runner = false;
         let mut to_add_extra: Option<String> = None;
         let mut to_download: Option<CatalogEntry> = None;
         let mut to_delete: Option<String> = None;
 
-        egui::Panel::left("settings_panel").show(ui, |ui| {
-            ui.heading("DIYPets Settings");
-            ui.add_space(10.0);
+        // TOP NAVIGATION HEADER
+        egui::Panel::top("settings_topbar").show(ui, |ui| {
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new("DIYPets")
+                        .strong()
+                        .size(18.0)
+                        .color(egui::Color32::from_rgb(245, 166, 92)),
+                );
+                ui.label(
+                    egui::RichText::new(format!("v{}", env!("CARGO_PKG_VERSION")))
+                        .size(11.0)
+                        .color(egui::Color32::GRAY),
+                );
+                ui.separator();
 
-            changed |= ui
-                .add(
-                    egui::Slider::new(&mut self.settings.pet_size, PET_SIZE_MIN..=PET_SIZE_MAX)
-                        .text("Pet Size (px)"),
-                )
-                .changed();
-            changed |= ui
-                .add(
-                    egui::Slider::new(
-                        &mut self.settings.walk_speed,
-                        WALK_SPEED_MIN..=WALK_SPEED_MAX,
-                    )
-                    .text("Walk Speed"),
-                )
-                .changed();
+                let herd_len = 1 + self.settings.extra_pets.len();
+                ui.selectable_value(&mut self.tab, SettingsTab::Gallery, "Pet Gallery");
+                ui.selectable_value(
+                    &mut self.tab,
+                    SettingsTab::Herd,
+                    format!("Active Herd ({herd_len}/{MAX_ACTIVE_PETS})"),
+                );
+                ui.selectable_value(&mut self.tab, SettingsTab::Controls, "Behavior & AI Agent");
 
-            ui.add_space(10.0);
-
-            changed |= ui
-                .checkbox(&mut self.settings.always_on_top, "Always on Top")
-                .changed();
-            changed |= ui
-                .checkbox(&mut self.settings.climb_windows, "Climb Windows")
-                .changed();
-            changed |= ui
-                .checkbox(&mut self.settings.click_through, "Click Through Margins")
-                .changed();
-            if ui
-                .checkbox(&mut self.settings.start_on_login, "Start on Login (Autostart)")
-                .changed()
-            {
-                match autostart::set_enabled(self.settings.start_on_login) {
-                    Ok(()) => {
-                        let msg = if self.settings.start_on_login {
-                            "Enabled Start on Login."
-                        } else {
-                            "Disabled Start on Login."
-                        };
-                        self.status_banner = Some((msg.to_string(), false));
-                        changed = true;
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui
+                        .add(
+                            egui::Button::new(
+                                egui::RichText::new("+ Create Pet")
+                                    .strong()
+                                    .color(egui::Color32::WHITE),
+                            )
+                            .fill(egui::Color32::from_rgb(56, 120, 224)),
+                        )
+                        .clicked()
+                    {
+                        open_creator = true;
                     }
-                    Err(e) => {
-                        self.settings.start_on_login = !self.settings.start_on_login;
-                        self.status_banner = Some((format!("Autostart error: {e}"), true));
+                    if ui.button("Import .xml / .svg").clicked() {
+                        if self.import_xml_dialog() {
+                            changed = true;
+                        }
                     }
-                }
-            }
+                    if ui.button("Launch Pet").on_hover_text("Start the desktop pet runner").clicked() {
+                        launch_runner = true;
+                    }
+                });
+            });
 
-            ui.add_space(14.0);
-            ui.separator();
-            ui.add_space(8.0);
-            if ui.button("+ Create Your Own Pet").clicked() {
-                open_creator = true;
-            }
-            ui.add_space(6.0);
-            if ui.button("Import Pet (.xml)").clicked() {
-                if self.import_xml_pack() {
-                    changed = true;
-                }
-            }
-            ui.add_space(6.0);
-            if ui.button("Open Packs Folder").clicked() {
-                open_folder_in_os(&user_packs_dir());
-            }
-
-            let installed_count = self.pets.iter().filter(|p| p.installed).count();
-            let remote_count = self.pets.len().saturating_sub(installed_count);
-            ui.add_space(10.0);
-            ui.label(
-                egui::RichText::new(format!(
-                    "{installed_count} installed | {remote_count} on-demand"
-                ))
-                .size(11.0)
-                .color(egui::Color32::GRAY),
-            );
-        });
-
-        egui::CentralPanel::default().show(ui, |ui| {
             if let Some(tag) = &self.update_available {
+                ui.add_space(4.0);
                 egui::Frame::default()
-                    .fill(egui::Color32::from_rgb(30, 56, 40))
+                    .fill(egui::Color32::from_rgb(28, 56, 40))
                     .inner_margin(6.0)
-                    .corner_radius(6.0)
+                    .corner_radius(egui::CornerRadius::same(6))
                     .show(ui, |ui| {
                         ui.horizontal_wrapped(|ui| {
                             ui.colored_label(
-                                egui::Color32::from_rgb(130, 235, 160),
+                                egui::Color32::from_rgb(134, 239, 172),
                                 format!("Update available: {tag} (current v{})", env!("CARGO_PKG_VERSION")),
                             );
                             ui.hyperlink_to(
                                 "Download Latest",
                                 "https://github.com/smresponsibilities/diypets/releases/latest",
                             );
-                            ui.label(egui::RichText::new("or run: cargo install diypets --force").size(11.0).color(egui::Color32::LIGHT_GRAY));
+                            ui.label(
+                                egui::RichText::new("or run: cargo install diypets --force")
+                                    .size(11.0)
+                                    .color(egui::Color32::LIGHT_GRAY),
+                            );
                         });
                     });
-                ui.add_space(4.0);
             }
-            ui.horizontal(|ui| {
-                ui.heading("Pet Selection");
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.search)
-                            .hint_text("Search pets...")
-                            .desired_width(180.0),
-                    );
-                });
-            });
-
-            // Multi-Pet Active Desktop Herd bar
-            let herd_len = 1 + self.settings.extra_pets.len();
-            egui::Frame::default()
-                .fill(ui.visuals().faint_bg_color)
-                .inner_margin(6.0)
-                .corner_radius(6.0)
-                .show(ui, |ui| {
-                    ui.horizontal_wrapped(|ui| {
-                        ui.label(
-                            egui::RichText::new(format!("Active Herd ({herd_len}/{MAX_ACTIVE_PETS}):"))
-                                .strong()
-                                .size(12.0),
-                        );
-                        ui.label(
-                            egui::RichText::new(format!("[Main: {}]", self.settings.pet_pack))
-                                .size(12.0)
-                                .color(egui::Color32::from_rgb(130, 195, 255)),
-                        );
-                        let mut remove_idx: Option<usize> = None;
-                        for (i, id) in self.settings.extra_pets.iter().enumerate() {
-                            if ui
-                                .small_button(format!("{id} x"))
-                                .on_hover_text("Dismiss this extra pet")
-                                .clicked()
-                            {
-                                remove_idx = Some(i);
-                            }
-                        }
-                        if let Some(ri) = remove_idx {
-                            self.settings.remove_extra_pet(ri);
-                            changed = true;
-                        }
-                        if !self.settings.extra_pets.is_empty()
-                            && ui.small_button("Clear Extras").clicked()
-                        {
-                            self.settings.extra_pets.clear();
-                            changed = true;
-                        }
-                    });
-                });
 
             if let Some((msg, is_err)) = &self.status_banner {
+                ui.add_space(2.0);
                 let color = if *is_err {
-                    egui::Color32::from_rgb(240, 110, 110)
+                    egui::Color32::from_rgb(248, 113, 113)
                 } else {
-                    egui::Color32::from_rgb(115, 200, 130)
+                    egui::Color32::from_rgb(134, 239, 172)
                 };
                 ui.label(egui::RichText::new(msg).size(12.0).color(color));
             }
+            ui.add_space(4.0);
+        });
 
-            if self.loading && self.pets.is_empty() {
-                ui.label("Loading pets...");
-            }
-            ui.add_space(8.0);
-
-            let query = self.search.trim().to_lowercase();
-            let mut made_by_sm = Vec::new();
-            let mut esheep = Vec::new();
-            for (idx, pet) in self.pets.iter().enumerate() {
-                if !query.is_empty()
-                    && !pet.name.to_lowercase().contains(&query)
-                    && !pet.id.to_lowercase().contains(&query)
-                    && !pet.author.to_lowercase().contains(&query)
-                {
-                    continue;
-                }
-                match pet.category {
-                    PackCategory::MadeBySM => made_by_sm.push(idx),
-                    PackCategory::ESheep => esheep.push(idx),
-                }
-            }
-
-            let can_add_more = 1 + self.settings.extra_pets.len() < MAX_ACTIVE_PETS;
-
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                // Row 1: Made by SM
+        // MAIN TAB CONTENT
+        egui::CentralPanel::default().show(ui, |ui| match self.tab {
+            SettingsTab::Gallery => {
                 ui.horizontal(|ui| {
+                    let installed_count = self.pets.iter().filter(|p| p.installed).count();
+                    let remote_count = self.pets.len().saturating_sub(installed_count);
                     ui.label(
-                        egui::RichText::new(format!("Made by SM ({})", made_by_sm.len()))
-                            .strong()
-                            .size(15.0),
+                        egui::RichText::new(format!(
+                            "{installed_count} installed  |  {remote_count} on-demand  |  Tip: drop any .xml or .svg file here!"
+                        ))
+                        .size(11.5)
+                        .color(egui::Color32::from_rgb(150, 160, 180)),
                     );
-                    if ui.small_button("+ Create Pet").clicked() {
-                        open_creator = true;
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.search)
+                                .hint_text("Search pets or authors...")
+                                .desired_width(210.0),
+                        );
+                    });
+                });
+                ui.add_space(8.0);
+
+                if self.loading && self.pets.is_empty() {
+                    ui.label("Loading pets...");
+                    return;
+                }
+
+                let query = self.search.trim().to_lowercase();
+                let mut made_by_sm = Vec::new();
+                let mut esheep = Vec::new();
+                for (idx, pet) in self.pets.iter().enumerate() {
+                    if !query.is_empty()
+                        && !pet.name.to_lowercase().contains(&query)
+                        && !pet.id.to_lowercase().contains(&query)
+                        && !pet.author.to_lowercase().contains(&query)
+                    {
+                        continue;
                     }
-                });
-                ui.add_space(6.0);
-                Self::render_pet_row(
-                    ui,
-                    "row_made_by_sm",
-                    &made_by_sm,
-                    &self.pets,
-                    &mut self.settings.pet_pack,
-                    can_add_more,
-                    &self.downloading,
-                    &mut changed,
-                    &mut to_add_extra,
-                    &mut to_download,
-                    &mut to_delete,
-                );
+                    match pet.category {
+                        PackCategory::MadeBySM => made_by_sm.push(idx),
+                        PackCategory::ESheep => esheep.push(idx),
+                    }
+                }
+                let can_add_more = 1 + self.settings.extra_pets.len() < MAX_ACTIVE_PETS;
 
-                ui.add_space(16.0);
-                ui.separator();
-                ui.add_space(10.0);
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(format!("Made by SM ({})", made_by_sm.len()))
+                                .strong()
+                                .size(15.0),
+                        );
+                        ui.label(
+                            egui::RichText::new("Original roster & your Studio creations")
+                                .size(11.5)
+                                .color(egui::Color32::GRAY),
+                        );
+                    });
+                    ui.add_space(6.0);
+                    Self::render_pet_row(
+                        ui,
+                        "row_made_by_sm",
+                        &made_by_sm,
+                        &self.pets,
+                        &mut self.settings.pet_pack,
+                        can_add_more,
+                        &self.downloading,
+                        &mut changed,
+                        &mut to_add_extra,
+                        &mut to_download,
+                        &mut to_delete,
+                    );
 
-                // Row 2: eSheep (with upstream credit)
-                ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new(format!("eSheep ({})", esheep.len()))
-                            .strong()
-                            .size(15.0),
-                    );
-                    ui.label(
-                        egui::RichText::new("- Credit: Adriano Petrucci (")
-                            .size(11.0)
-                            .color(egui::Color32::GRAY),
-                    );
-                    ui.hyperlink_to(
-                        egui::RichText::new("Adrianotiger/desktopPet").size(11.0),
-                        "https://github.com/Adrianotiger/desktopPet",
-                    );
-                    ui.label(
-                        egui::RichText::new(") & original pack authors")
-                            .size(11.0)
-                            .color(egui::Color32::GRAY),
+                    ui.add_space(18.0);
+                    ui.separator();
+                    ui.add_space(10.0);
+
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(
+                            egui::RichText::new(format!("eSheep Community ({})", esheep.len()))
+                                .strong()
+                                .size(15.0),
+                        );
+                        ui.label(
+                            egui::RichText::new("- Credit: Adriano Petrucci (")
+                                .size(11.5)
+                                .color(egui::Color32::GRAY),
+                        );
+                        ui.hyperlink_to(
+                            egui::RichText::new("Adrianotiger/desktopPet").size(11.5),
+                            "https://github.com/Adrianotiger/desktopPet",
+                        );
+                        ui.label(
+                            egui::RichText::new(") & original pack authors")
+                                .size(11.5)
+                                .color(egui::Color32::GRAY),
+                        );
+                    });
+                    ui.add_space(6.0);
+                    Self::render_pet_row(
+                        ui,
+                        "row_esheep",
+                        &esheep,
+                        &self.pets,
+                        &mut self.settings.pet_pack,
+                        can_add_more,
+                        &self.downloading,
+                        &mut changed,
+                        &mut to_add_extra,
+                        &mut to_download,
+                        &mut to_delete,
                     );
                 });
-                ui.add_space(6.0);
-                Self::render_pet_row(
-                    ui,
-                    "row_esheep",
-                    &esheep,
-                    &self.pets,
-                    &mut self.settings.pet_pack,
-                    can_add_more,
-                    &self.downloading,
-                    &mut changed,
-                    &mut to_add_extra,
-                    &mut to_download,
-                    &mut to_delete,
-                );
-            });
+            }
+
+            SettingsTab::Herd => {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    panel_card().show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "Active Desktop Herd ({}/{MAX_ACTIVE_PETS})",
+                                    1 + self.settings.extra_pets.len()
+                                ))
+                                .strong()
+                                .size(16.0),
+                            );
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if !self.settings.extra_pets.is_empty()
+                                    && ui.button("Clear All Extras").clicked()
+                                {
+                                    self.settings.extra_pets.clear();
+                                    changed = true;
+                                }
+                            });
+                        });
+                        ui.label(
+                            egui::RichText::new("Mix any installed pets together on your taskbar. Right-click any pet on desktop to headpat, sleep, clone, or dismiss it.")
+                                .size(12.0)
+                                .color(egui::Color32::GRAY),
+                        );
+                        ui.add_space(10.0);
+
+                        let herd = self.settings.active_herd();
+                        let mut remove_extra_idx: Option<usize> = None;
+                        ui.horizontal_wrapped(|ui| {
+                            for (slot, pack_id) in herd.iter().enumerate() {
+                                card_frame(slot == 0).show(ui, |ui| {
+                                    ui.set_width(136.0);
+                                    ui.vertical_centered(|ui| {
+                                        if let Some(pet) = self.pets.iter().find(|p| &p.id == pack_id)
+                                            && let Some(tex) = &pet.texture
+                                        {
+                                            let mut s = tex.size_vec2();
+                                            let sc = (68.0 / s.x).min(68.0 / s.y).min(1.5);
+                                            s *= sc;
+                                            ui.add_sized([68.0, 68.0], egui::Image::new((tex.id(), s)));
+                                        }
+                                        ui.label(egui::RichText::new(pack_id).strong());
+                                        if slot == 0 {
+                                            ui.colored_label(
+                                                egui::Color32::from_rgb(134, 239, 172),
+                                                "Main Pet",
+                                            );
+                                        } else if ui.small_button("Dismiss").clicked() {
+                                            remove_extra_idx = Some(slot - 1);
+                                        }
+                                    });
+                                });
+                            }
+                        });
+                        if let Some(ri) = remove_extra_idx {
+                            self.settings.remove_extra_pet(ri);
+                            changed = true;
+                        }
+                    });
+
+                    ui.add_space(12.0);
+                    panel_card().show(ui, |ui| {
+                        ui.label(egui::RichText::new("Quick Add Installed Pet").strong().size(14.0));
+                        ui.add_space(6.0);
+                        let can_add = 1 + self.settings.extra_pets.len() < MAX_ACTIVE_PETS;
+                        ui.horizontal_wrapped(|ui| {
+                            for pet in self.pets.iter().filter(|p| p.installed) {
+                                if ui
+                                    .add_enabled(can_add, egui::Button::new(format!("+ {}", pet.name)))
+                                    .clicked()
+                                {
+                                    to_add_extra = Some(pet.id.clone());
+                                }
+                            }
+                        });
+                    });
+                });
+            }
+
+            SettingsTab::Controls => {
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    ui.columns(2, |cols| {
+                        // Left card: Desktop Physics & OS Integration
+                        panel_card().show(&mut cols[0], |ui| {
+                            ui.label(egui::RichText::new("Desktop Physics & System").strong().size(15.0));
+                            ui.add_space(8.0);
+                            changed |= ui
+                                .add(
+                                    egui::Slider::new(&mut self.settings.pet_size, PET_SIZE_MIN..=PET_SIZE_MAX)
+                                        .text("Pet Size (px)"),
+                                )
+                                .changed();
+                            changed |= ui
+                                .add(
+                                    egui::Slider::new(
+                                        &mut self.settings.walk_speed,
+                                        WALK_SPEED_MIN..=WALK_SPEED_MAX,
+                                    )
+                                    .text("Walk Speed"),
+                                )
+                                .changed();
+                            ui.add_space(8.0);
+                            changed |= ui
+                                .checkbox(&mut self.settings.always_on_top, "Always on Top")
+                                .changed();
+                            changed |= ui
+                                .checkbox(&mut self.settings.climb_windows, "Climb & Ride Open Windows")
+                                .changed();
+                            changed |= ui
+                                .checkbox(&mut self.settings.click_through, "Click Through Transparent Corners")
+                                .changed();
+                            if ui
+                                .checkbox(&mut self.settings.start_on_login, "Start on Login (Autostart)")
+                                .changed()
+                            {
+                                match autostart::set_enabled(self.settings.start_on_login) {
+                                    Ok(()) => {
+                                        self.status_banner = Some((
+                                            if self.settings.start_on_login {
+                                                "Enabled Start on Login.".to_string()
+                                            } else {
+                                                "Disabled Start on Login.".to_string()
+                                            },
+                                            false,
+                                        ));
+                                        changed = true;
+                                    }
+                                    Err(e) => {
+                                        self.settings.start_on_login = !self.settings.start_on_login;
+                                        self.status_banner = Some((format!("Autostart error: {e}"), true));
+                                    }
+                                }
+                            }
+                            ui.add_space(10.0);
+                            ui.separator();
+                            ui.add_space(6.0);
+                            ui.horizontal(|ui| {
+                                if ui.button("Open Packs Folder").clicked() {
+                                    open_folder_in_os(&user_packs_dir());
+                                }
+                                if ui.button("Open Project GitHub").clicked() {
+                                    ui.ctx().open_url(egui::OpenUrl::new_tab(
+                                        "https://github.com/smresponsibilities/diypets",
+                                    ));
+                                }
+                            });
+                        });
+
+                        // Right card: AI Agent / MCP Live Control & Speech Bubble Tester
+                        panel_card().show(&mut cols[1], |ui| {
+                            ui.label(egui::RichText::new("AI Agent & MCP Speech Bubbles").strong().size(15.0));
+                            ui.label(
+                                egui::RichText::new("Local endpoint active while DIYPets runs: http://127.0.0.1:3721")
+                                    .size(11.5)
+                                    .color(egui::Color32::from_rgb(134, 239, 172)),
+                            );
+                            ui.add_space(8.0);
+                            ui.label("Test Speech Bubble Message:");
+                            ui.text_edit_singleline(&mut self.test_bubble_text);
+                            ui.add_space(4.0);
+                            ui.horizontal_wrapped(|ui| {
+                                for (mood, label) in [
+                                    ("happy", "Happy + Hearts"),
+                                    ("hop", "Hop"),
+                                    ("sleep", "Sleep"),
+                                    ("walk", "Walk"),
+                                ] {
+                                    if ui.button(label).clicked() {
+                                        let txt = self.test_bubble_text.trim();
+                                        let opt = if txt.is_empty() { None } else { Some(txt) };
+                                        match agent_api::send_cli_react(mood, opt) {
+                                            Ok(_) => {
+                                                self.status_banner = Some((
+                                                    format!("Sent '{mood}' reaction to desktop pet!"),
+                                                    false,
+                                                ));
+                                            }
+                                            Err(e) => {
+                                                self.status_banner = Some((e, true));
+                                            }
+                                        }
+                                    }
+                                }
+                            });
+
+                            ui.add_space(10.0);
+                            ui.separator();
+                            ui.add_space(6.0);
+                            ui.label(egui::RichText::new("Claude Code / Cursor / Codex MCP Config:").strong().size(12.0));
+                            ui.add(
+                                egui::TextEdit::multiline(&mut self.mcp_snippet)
+                                    .font(egui::TextStyle::Monospace)
+                                    .desired_rows(6)
+                                    .desired_width(f32::INFINITY),
+                            );
+                            ui.label(
+                                egui::RichText::new("CLI: diypets react --mood happy --text \"Tests passed!\"")
+                                    .size(11.0)
+                                    .color(egui::Color32::GRAY),
+                            );
+                        });
+                    });
+                });
+            }
         });
 
         if open_creator {
-            self.launch_creator();
+            Self::launch_sibling(&mut self.creator_process, "diypets-creator");
+        }
+        if launch_runner {
+            Self::launch_sibling(&mut self.runner_process, "diypets");
         }
         if let Some(add_id) = to_add_extra {
             if self.settings.add_extra_pet(&add_id) {
@@ -1165,8 +1465,8 @@ impl eframe::App for MyApp {
 fn main() -> Result<(), eframe::Error> {
     let settings = Settings::load_sanitized(&Settings::default_path());
     let mut viewport = egui::ViewportBuilder::default()
-        .with_inner_size([900.0, 630.0])
-        .with_min_inner_size([560.0, 440.0])
+        .with_inner_size([960.0, 660.0])
+        .with_min_inner_size([640.0, 480.0])
         .with_title("DIYPets Settings");
 
     if let Some(icon) = load_startup_icon(&settings.pet_pack) {
@@ -1180,7 +1480,10 @@ fn main() -> Result<(), eframe::Error> {
     eframe::run_native(
         "DIYPets Settings",
         options,
-        Box::new(|cc| Ok(Box::new(MyApp::new(cc.egui_ctx.clone())))),
+        Box::new(|cc| {
+            apply_settings_theme(&cc.egui_ctx);
+            Ok(Box::new(MyApp::new(cc.egui_ctx.clone())))
+        }),
     )
 }
 

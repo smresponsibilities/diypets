@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 
 use diypets::agent_api::{self, AgentCommand};
 use diypets::autostart;
+use diypets::bubble::render_speech_bubble_argb;
 use std::sync::mpsc;
 use diypets::catalog::{default_app_icon, make_square_app_icon};
 use diypets::deskpet_state::{
@@ -455,6 +456,88 @@ struct PetInstance {
     last_render: Option<RenderKey>,
 }
 
+
+struct SpeechBubbleOverlay {
+    window: Rc<Window>,
+    #[cfg(windows)]
+    layered: Option<LayeredSurface>,
+    #[cfg(not(windows))]
+    surface: Option<Surface<Rc<Window>, Rc<Window>>>,
+    pixels: Vec<u32>,
+    width: u32,
+    height: u32,
+    until_ms: u64,
+    last_pos: Option<(i32, i32)>,
+}
+
+impl SpeechBubbleOverlay {
+    fn create(event_loop: &ActiveEventLoop, text: &str, until_ms: u64) -> Option<Self> {
+        let (w, h, pixels) = render_speech_bubble_argb(text);
+        let attr = Window::default_attributes()
+            .with_title("diypets-bubble")
+            .with_inner_size(winit::dpi::PhysicalSize::new(w, h))
+            .with_resizable(false)
+            .with_decorations(false)
+            .with_transparent(cfg!(not(windows)))
+            .with_window_level(WindowLevel::AlwaysOnTop);
+        let window = Rc::new(event_loop.create_window(attr).ok()?);
+        let _ = window.set_cursor_hittest(false);
+        window.set_visible(true);
+
+        #[cfg(windows)]
+        let layered = {
+            prevent_focus_stealing(&window, true);
+            let _ = window.set_cursor_hittest(false);
+            LayeredSurface::new(w, h)
+        };
+
+        #[cfg(not(windows))]
+        let surface = {
+            let ctx = Context::new(window.clone()).ok()?;
+            let mut surf = Surface::new(&ctx, window.clone()).ok()?;
+            let _ = surf.resize(NonZeroU32::new(w)?, NonZeroU32::new(h)?);
+            Some(surf)
+        };
+
+        Some(Self {
+            window,
+            #[cfg(windows)]
+            layered,
+            #[cfg(not(windows))]
+            surface,
+            pixels,
+            width: w,
+            height: h,
+            until_ms,
+            last_pos: None,
+        })
+    }
+
+    fn update_position(&mut self, pet_x: f32, pet_y: f32, pet_size: u32) {
+        let bx = (pet_x + (pet_size as f32 * 0.5) - (self.width as f32 * 0.5)).round() as i32;
+        let by = (pet_y - self.height as f32 - 4.0).max(4.0).round() as i32;
+        if self.last_pos == Some((bx, by)) {
+            return;
+        }
+        self.last_pos = Some((bx, by));
+        self.window.set_outer_position(PhysicalPosition::new(bx, by));
+
+        #[cfg(windows)]
+        if let Some(layered) = &mut self.layered {
+            layered.present(&self.window, &self.pixels, bx, by);
+        }
+
+        #[cfg(not(windows))]
+        if let Some(surface) = &mut self.surface {
+            if let Ok(mut buf) = surface.buffer_mut() {
+                let n = buf.len().min(self.pixels.len());
+                buf[..n].copy_from_slice(&self.pixels[..n]);
+                let _ = buf.present();
+            }
+        }
+    }
+}
+
 struct DeskpetApp {
     pets: Vec<PetInstance>,
     desired_herd: Vec<String>,
@@ -473,6 +556,7 @@ struct DeskpetApp {
     settings_process: Option<std::process::Child>,
     creator_process: Option<std::process::Child>,
     agent_rx: mpsc::Receiver<AgentCommand>,
+    bubble: Option<SpeechBubbleOverlay>,
 }
 
 impl DeskpetApp {
@@ -767,6 +851,11 @@ impl DeskpetApp {
 
     fn process_tray_events(&mut self, event_loop: &ActiveEventLoop, now_ms: u64) {
         while let Ok(cmd) = self.agent_rx.try_recv() {
+            if let Some(msg) = cmd.text.as_deref()
+                && !msg.trim().is_empty()
+            {
+                self.bubble = SpeechBubbleOverlay::create(event_loop, msg.trim(), now_ms + 4500);
+            }
             match cmd.mood.to_lowercase().as_str() {
                 "happy" | "hop" | "celebrate" => {
                     for pet in &mut self.pets {
@@ -952,6 +1041,13 @@ impl ApplicationHandler for DeskpetApp {
             let now_ms = self.start_time.elapsed().as_millis() as u64;
             self.process_tray_events(event_loop, now_ms);
             self.reload_settings_if_changed(event_loop, now_ms);
+            if let Some(b) = &mut self.bubble {
+                if now_ms >= b.until_ms {
+                    self.bubble = None;
+                } else if let Some(primary) = self.pets.first() {
+                    b.update_position(primary.state.x, primary.state.y, primary.state.pet_size);
+                }
+            }
             for pet in &self.pets {
                 pet.window.request_redraw();
             }
@@ -1015,6 +1111,7 @@ impl ApplicationHandler for DeskpetApp {
                     1 => {
                         let pet = &mut self.pets[pet_idx];
                         pet.heart_until_ms = now_ms + 2200;
+                        self.bubble = SpeechBubbleOverlay::create(event_loop, "<3", now_ms + 2200);
                         pet.state.is_tossing = true;
                         pet.state.toss_force_x = if pet.state.is_moving_left { -3.0 } else { 3.0 };
                         pet.state.toss_vert_vel = -10.0;
@@ -1485,6 +1582,7 @@ fn main() {
         settings_process: None,
         creator_process: None,
         agent_rx,
+        bubble: None,
     };
 
     let event_loop = EventLoop::new().unwrap();

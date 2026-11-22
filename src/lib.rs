@@ -1,3 +1,4 @@
+pub mod bubble;
 pub mod agent_api;
 pub mod autostart;
 pub mod catalog;

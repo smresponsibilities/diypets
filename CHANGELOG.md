@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.5] - 2026-11-23
+### Added
+- **Floating Pixel Speech Bubbles (`src/bubble.rs`):** Crisp click-through speech bubbles float above your pet and track it when triggered via MCP (`/mcp`), HTTP (`/react`), CLI (`diypets react --mood happy --text "Tests passed!"`), or Headpat.
+- **Modern Tabbed Settings UI (`diypets-settings`):** Organized into Pet Gallery, Active Herd, and Behavior & AI Agent tabs, with drag-and-drop `.xml`/`.svg` import, live Speech Bubble tester, copyable MCP config, Launch Pet button, and background GitHub release update banner.
+- **Studio V3 Hardening (`diypets-creator`):** Live ghost-rigging composite on the Body canvas while dragging joint pins (with `Ctrl+Z` undo), Aseprite-style Space/Middle-mouse pan & Ctrl+Wheel zoom viewport, visual Keyframe Filmstrip with 64x64 thumbnails, and a 5th **Sprite Sheet** tab to slice & export any PNG grid in seconds.
+- **Real Vertical Climbing & Window Platform Riding:** Engine evaluates `only="..."` and math `repeat` expressions for OG eSheep parity, plus pets ride moving desktop windows.
+- **Mix-and-Match Tray Submenu & No-Cargo Installers:** Choose any installed pet from the tray's `Add Pet to Herd (+1)` submenu; added 1-line `install.ps1` / `install.sh` and embedded the Highland Cow `.ico` into Windows `.exe` binaries.
+
+### Fixed
+- **Zero Foot-Skating:** Walk/run frame interval scales proportionally with `walk_speed`.
+- **Full 5-Original Parity:** Fixed `dog` & `polar_bear` climb gravity (`G=0`), smooth looping `fall`/`drag`, added `climb` to `goat`, and added `sleep` + `climb` to `stegosaurus`.
 ## [0.1.4] - 2026-11-22
 ### Added
 - **AI Agent MCP & Local HTTP API:** `diypets` listens on `127.0.0.1:3721` (`/status`, `/react`, `/mcp` JSON-RPC 2.0) plus `diypets react --mood happy|sleep|hop|walk` CLI and drop-in `skills/diypets-creator/SKILL.md`.

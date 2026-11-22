@@ -238,6 +238,11 @@ struct StudioApp {
     light_checker: bool,
     show_onion_skin: bool,
     zoom: f32,
+    pan_offset: egui::Vec2,
+    rig_dirty: bool,
+    tex_rig_composite: Option<egui::TextureHandle>,
+    kf_thumbs: Vec<egui::TextureHandle>,
+    kf_thumbs_dirty: bool,
 
     undo_stack: Vec<StudioProject>,
     redo_stack: Vec<StudioProject>,
@@ -295,6 +300,11 @@ impl Default for StudioApp {
             light_checker: true,
             show_onion_skin: true,
             zoom: 4.0,
+            pan_offset: egui::Vec2::ZERO,
+            rig_dirty: true,
+            tex_rig_composite: None,
+            kf_thumbs: Vec::new(),
+            kf_thumbs_dirty: true,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             selected_part_idx: Some(0),
@@ -339,6 +349,8 @@ impl StudioApp {
     fn mark_dirty(&mut self) {
         self.canvas_dirty = true;
         self.sheet_dirty = true;
+        self.rig_dirty = true;
+        self.kf_thumbs_dirty = true;
     }
 
     fn push_undo(&mut self) {
@@ -845,6 +857,74 @@ impl StudioApp {
             self.status_msg = Some((format!("Saved sprite sheet pet '{id}' to library!"), false));
         }
     }
+
+    fn sync_rig_composite(&mut self, ctx: &egui::Context) {
+        if !self.rig_dirty && self.tex_rig_composite.is_some() {
+            return;
+        }
+        self.rig_dirty = false;
+        let pm = self.project.render_pose(diypets::studio_model::PoseParams::default());
+        let side = pm.width() as usize;
+        let off = (side - BOARD_SIZE) / 2;
+        let mut pixels = Vec::with_capacity(BOARD_SIZE * BOARD_SIZE);
+        for y in 0..BOARD_SIZE {
+            for x in 0..BOARD_SIZE {
+                let p = pm.pixels()[(off + y) * side + (off + x)];
+                pixels.push(egui::Color32::from_rgba_premultiplied(p.red(), p.green(), p.blue(), p.alpha()));
+            }
+        }
+        let img = egui::ColorImage {
+            size: [BOARD_SIZE, BOARD_SIZE],
+            source_size: egui::vec2(BOARD_SIZE as f32, BOARD_SIZE as f32),
+            pixels,
+        };
+        if let Some(t) = &mut self.tex_rig_composite {
+            t.set(img, egui::TextureOptions::NEAREST);
+        } else {
+            self.tex_rig_composite = Some(ctx.load_texture("v3_rig_ghost", img, egui::TextureOptions::NEAREST));
+        }
+    }
+
+    fn sync_keyframe_thumbs(&mut self, ctx: &egui::Context) {
+        let count = self
+            .project
+            .custom_animations
+            .get(self.selected_custom_anim)
+            .map(|a| a.keyframes.len())
+            .unwrap_or(0);
+        if !self.kf_thumbs_dirty && self.kf_thumbs.len() == count {
+            return;
+        }
+        self.kf_thumbs_dirty = false;
+        self.kf_thumbs.clear();
+        let Some(anim) = self.project.custom_animations.get(self.selected_custom_anim) else {
+            return;
+        };
+        for (i, kf) in anim.keyframes.iter().enumerate() {
+            let pose = self.project.keyframe_to_pose(kf);
+            let pm = self.project.render_pose(pose);
+            let side = pm.width() as usize;
+            let off = (side - BOARD_SIZE) / 2;
+            let mut pixels = Vec::with_capacity(BOARD_SIZE * BOARD_SIZE);
+            for y in 0..BOARD_SIZE {
+                for x in 0..BOARD_SIZE {
+                    let p = pm.pixels()[(off + y) * side + (off + x)];
+                    pixels.push(egui::Color32::from_rgba_premultiplied(p.red(), p.green(), p.blue(), p.alpha()));
+                }
+            }
+            let img = egui::ColorImage {
+                size: [BOARD_SIZE, BOARD_SIZE],
+                source_size: egui::vec2(BOARD_SIZE as f32, BOARD_SIZE as f32),
+                pixels,
+            };
+            self.kf_thumbs.push(ctx.load_texture(
+                format!("v3_kf_{}_{}", self.selected_custom_anim, i),
+                img,
+                egui::TextureOptions::LINEAR,
+            ));
+        }
+    }
+
     fn sync_canvas_textures(&mut self, ctx: &egui::Context) {
         if !self.canvas_dirty {
             return;
@@ -1073,6 +1153,8 @@ impl eframe::App for StudioApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.sync_canvas_textures(&ctx);
+        if self.tab == StudioTab::Rig { self.sync_rig_composite(&ctx); }
+        if self.tab == StudioTab::Animate { self.sync_keyframe_thumbs(&ctx); }
 
         let wants_kb = ctx.egui_wants_keyboard_input();
         ctx.input(|i| {
@@ -1582,36 +1664,6 @@ impl eframe::App for StudioApp {
                         self.export_imported_sheet(false);
                     }
                 }
-                StudioTab::ImportSheet => {
-                ui.heading("Sprite Sheet Grid Preview");
-                if let Some(tex) = &self.sheet_import_tex {
-                    egui::ScrollArea::both().show(ui, |ui| {
-                        let s = tex.size_vec2();
-                        let avail_w = ui.available_width().max(240.0);
-                        let sc = (avail_w / s.x).min(2.0);
-                        let disp = s * sc;
-                        let (rect, _) = ui.allocate_exact_size(disp, egui::Sense::hover());
-                        let p = ui.painter_at(rect);
-                        Self::draw_checkerboard(&p, rect, 12.0, self.light_checker);
-                        p.image(tex.id(), rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
-                        let cols = self.sheet_cols.max(1);
-                        let rows = self.sheet_rows.max(1);
-                        let cw = rect.width() / cols as f32;
-                        let ch = rect.height() / rows as f32;
-                        let st = egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(80, 190, 255, 190));
-                        for i in 1..cols {
-                            let x = rect.min.x + i as f32 * cw;
-                            p.line_segment([egui::pos2(x, rect.min.y), egui::pos2(x, rect.max.y)], st);
-                        }
-                        for j in 1..rows {
-                            let y = rect.min.y + j as f32 * ch;
-                            p.line_segment([egui::pos2(rect.min.x, y), egui::pos2(rect.max.x, y)], st);
-                        }
-                    });
-                } else {
-                    ui.label("Click 'Choose PNG Sprite Sheet...' on the left to load any sprite strip or grid.");
-                }
-            }
             StudioTab::Export => {
                     ui.label(egui::RichText::new("Pet Metadata").strong());
                     ui.label("Display Name:");
@@ -1724,53 +1776,108 @@ impl eframe::App for StudioApp {
             }
 
             StudioTab::Animate => {
-                ui.heading("Custom Keyframe Timeline");
+                ui.horizontal(|ui| {
+                    ui.heading("Keyframe Filmstrip");
+                    ui.separator();
+                    let play_lbl = if self.preview_playing { "Pause (Scrub Frame)" } else { "Play Loop" };
+                    if ui.button(play_lbl).clicked() {
+                        self.preview_playing = !self.preview_playing;
+                    }
+                });
+
                 if let Some(anim) = self.project.custom_animations.get_mut(self.selected_custom_anim) {
+                    let kf_len = anim.keyframes.len();
                     ui.horizontal_wrapped(|ui| {
-                        for k in 0..anim.keyframes.len() {
-                            if ui
-                                .selectable_label(self.selected_keyframe == k, format!("Frame {}", k + 1))
-                                .clicked()
-                            {
-                                self.selected_keyframe = k;
-                            }
-                        }
-                        if ui.button("+ Add Frame").clicked() {
+                        if ui.button("+ Duplicate Frame").clicked() {
                             let clone_kf = anim
                                 .keyframes
                                 .get(self.selected_keyframe)
                                 .cloned()
                                 .unwrap_or_default();
-                            anim.keyframes.push(clone_kf);
-                            self.selected_keyframe = anim.keyframes.len() - 1;
+                            let ins = (self.selected_keyframe + 1).min(anim.keyframes.len());
+                            anim.keyframes.insert(ins, clone_kf);
+                            self.selected_keyframe = ins;
                             self.sheet_dirty = true;
+                            self.kf_thumbs_dirty = true;
                         }
-                        if anim.keyframes.len() > 1 && ui.button("- Remove Frame").clicked() {
-                            let idx = self.selected_keyframe.min(anim.keyframes.len() - 1);
+                        if self.selected_keyframe > 0 && ui.button("<- Move Left").clicked() {
+                            anim.keyframes.swap(self.selected_keyframe, self.selected_keyframe - 1);
+                            self.selected_keyframe -= 1;
+                            self.sheet_dirty = true;
+                            self.kf_thumbs_dirty = true;
+                        }
+                        if self.selected_keyframe + 1 < kf_len && ui.button("Move Right ->").clicked() {
+                            anim.keyframes.swap(self.selected_keyframe, self.selected_keyframe + 1);
+                            self.selected_keyframe += 1;
+                            self.sheet_dirty = true;
+                            self.kf_thumbs_dirty = true;
+                        }
+                        if kf_len > 1 && ui.button("- Delete Frame").clicked() {
+                            let idx = self.selected_keyframe.min(kf_len - 1);
                             anim.keyframes.remove(idx);
                             self.selected_keyframe = idx.saturating_sub(1);
                             self.sheet_dirty = true;
+                            self.kf_thumbs_dirty = true;
                         }
                     });
+                    ui.add_space(6.0);
+
+                    // Visual Filmstrip Cards with rendered 64x64 thumbnails
+                    egui::ScrollArea::horizontal().id_salt("v3_kf_strip").show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            for k in 0..anim.keyframes.len() {
+                                let sel = self.selected_keyframe == k;
+                                let frame = egui::Frame::default()
+                                    .fill(if sel { egui::Color32::from_rgb(42, 68, 114) } else { egui::Color32::from_rgb(30, 35, 46) })
+                                    .stroke(egui::Stroke::new(if sel { 2.0 } else { 1.0 }, if sel { egui::Color32::from_rgb(100, 175, 255) } else { egui::Color32::from_rgb(54, 62, 78) }))
+                                    .inner_margin(6.0)
+                                    .corner_radius(egui::CornerRadius::same(8));
+                                let resp = frame
+                                    .show(ui, |ui| {
+                                        ui.set_width(78.0);
+                                        ui.vertical_centered(|ui| {
+                                            if let Some(tex) = self.kf_thumbs.get(k) {
+                                                ui.image((tex.id(), egui::vec2(64.0, 64.0)));
+                                            }
+                                            ui.label(egui::RichText::new(format!("F{}", k + 1)).strong().size(11.0));
+                                        });
+                                    })
+                                    .response
+                                    .interact(egui::Sense::click());
+                                if resp.clicked() {
+                                    self.selected_keyframe = k;
+                                    self.preview_playing = false;
+                                    self.preview_clip = PreviewClip::Custom(self.selected_custom_anim);
+                                }
+                            }
+                        });
+                    });
+
+                    ui.add_space(8.0);
                     ui.separator();
+                    ui.add_space(6.0);
 
                     let kf_idx = self.selected_keyframe.min(anim.keyframes.len().saturating_sub(1));
                     if let Some(kf) = anim.keyframes.get_mut(kf_idx) {
-                        ui.label(egui::RichText::new(format!("Editing Keyframe #{}", kf_idx + 1)).strong());
-                        ui.add(egui::Slider::new(&mut kf.limb_swing, -1.0..=1.0).text("Limb Swing"));
-                        ui.add(egui::Slider::new(&mut kf.wing_flap, -1.5..=1.5).text("Wing Flap"));
-                        ui.add(egui::Slider::new(&mut kf.tail_wag, -1.5..=1.5).text("Tail Wag"));
-                        ui.add(egui::Slider::new(&mut kf.body_dy, -22.0..=16.0).text("Body Bounce Y"));
-                        ui.add(egui::Slider::new(&mut kf.body_tilt_deg, -25.0..=25.0).text("Body Tilt deg"));
-                        ui.add(egui::Slider::new(&mut kf.torso_scale_y, 0.75..=1.25).text("Squash / Stretch"));
-                        ui.add(egui::Slider::new(&mut kf.wave_phase, 0.0..=6.28).text("Slither / Swim Wave"));
+                        ui.label(egui::RichText::new(format!("Editing Keyframe #{}", kf_idx + 1)).strong().size(14.0));
+                        let mut kf_changed = false;
+                        kf_changed |= ui.add(egui::Slider::new(&mut kf.limb_swing, -1.0..=1.0).text("Limb Swing")).changed();
+                        kf_changed |= ui.add(egui::Slider::new(&mut kf.wing_flap, -1.5..=1.5).text("Wing Flap")).changed();
+                        kf_changed |= ui.add(egui::Slider::new(&mut kf.tail_wag, -1.5..=1.5).text("Tail Wag")).changed();
+                        kf_changed |= ui.add(egui::Slider::new(&mut kf.body_dy, -22.0..=16.0).text("Body Bounce Y")).changed();
+                        kf_changed |= ui.add(egui::Slider::new(&mut kf.body_tilt_deg, -25.0..=25.0).text("Body Tilt deg")).changed();
+                        kf_changed |= ui.add(egui::Slider::new(&mut kf.torso_scale_y, 0.75..=1.25).text("Squash / Stretch")).changed();
+                        kf_changed |= ui.add(egui::Slider::new(&mut kf.wave_phase, 0.0..=6.28).text("Slither / Swim Wave")).changed();
                         ui.horizontal_wrapped(|ui| {
                             ui.label("Face:");
                             for &slot in FaceSlot::all() {
-                                ui.selectable_value(&mut kf.face, slot, slot.label());
+                                kf_changed |= ui.selectable_value(&mut kf.face, slot, slot.label()).changed();
                             }
                         });
-                        self.sheet_dirty = true;
+                        if kf_changed {
+                            self.sheet_dirty = true;
+                            self.kf_thumbs_dirty = true;
+                        }
                     }
                 } else {
                     ui.label("Click + Hop, + Dance, or + Blank on the left to build a custom animation.");
@@ -1787,41 +1894,78 @@ impl eframe::App for StudioApp {
                     );
                     if self.tab == StudioTab::Rig {
                         let hint = if self.edit_layer == EditLayer::Body {
-                            "Drag any socket pin (Near/Far) on the Body"
+                            "Live Rig Preview ON — drag any socket pin (Ctrl+Z undoes)"
                         } else {
-                            "Drag the green Pivot pin to set rotation hinge"
+                            "Drag green PIVOT pin to move rotation hinge"
                         };
                         ui.separator();
                         ui.colored_label(egui::Color32::from_rgb(130, 200, 255), hint);
                     }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.small_button("Reset View").clicked() {
+                            self.zoom = 4.0;
+                            self.pan_offset = egui::Vec2::ZERO;
+                        }
+                        ui.label(egui::RichText::new("Space/Mid-Drag: Pan | Ctrl+Wheel: Zoom").size(10.5).color(egui::Color32::GRAY));
+                    });
                 });
 
-                egui::ScrollArea::both().show(ui, |ui| {
-                    let wheel_y = ui.ctx().input(|i| if i.modifiers.ctrl || i.modifiers.command { i.smooth_scroll_delta.y } else { 0.0 });
+                {
+                    let avail = ui.available_size().max(egui::vec2(300.0, 300.0));
+                    let (vp_rect, response) = ui.allocate_exact_size(avail, egui::Sense::click_and_drag());
+                    let vp_painter = ui.painter_at(vp_rect);
+                    vp_painter.rect_filled(vp_rect, 6.0, egui::Color32::from_rgb(15, 17, 23));
+
+                    let (wheel_y, space_held, mid_btn, ptr_delta) = ui.ctx().input(|i| (
+                        if i.modifiers.ctrl || i.modifiers.command { i.smooth_scroll_delta.y } else { 0.0 },
+                        i.key_down(egui::Key::Space),
+                        i.pointer.button_down(egui::PointerButton::Middle),
+                        i.pointer.delta(),
+                    ));
                     if wheel_y.abs() > 0.1 {
                         self.zoom = (self.zoom + wheel_y * 0.01).clamp(1.5, 8.0);
                     }
-                    let board_px = (BOARD_SIZE as f32 * self.zoom).max(256.0);
-                    let (rect, response) = ui.allocate_exact_size(
+                    let is_panning = (space_held && response.dragged()) || (mid_btn && response.dragged());
+                    if is_panning {
+                        self.pan_offset += ptr_delta;
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                    } else if space_held && response.hovered() {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+                    }
+
+                    let board_px = (BOARD_SIZE as f32 * self.zoom).max(192.0);
+                    let rect = egui::Rect::from_center_size(
+                        vp_rect.center() + self.pan_offset,
                         egui::vec2(board_px, board_px),
-                        egui::Sense::click_and_drag(),
                     );
-                    let painter = ui.painter_at(rect);
+                    let painter = ui.painter_at(vp_rect);
+                    painter.rect_stroke(
+                        rect.expand(1.0),
+                        2.0,
+                        egui::Stroke::new(1.5, egui::Color32::from_rgb(76, 86, 108)),
+                        egui::StrokeKind::Outside,
+                    );
                     Self::draw_checkerboard(&painter, rect, (self.zoom * 4.0).max(8.0), self.light_checker);
 
                     let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
-                    if self.show_onion_skin && self.edit_layer != EditLayer::Body {
-                        if let Some(ghost) = &self.tex_body_ghost {
-                            painter.image(
-                                ghost.id(),
-                                rect,
-                                uv,
-                                egui::Color32::from_rgba_unmultiplied(255, 255, 255, 90),
-                            );
+                    if self.tab == StudioTab::Rig && self.edit_layer == EditLayer::Body {
+                        if let Some(rig_tex) = &self.tex_rig_composite {
+                            painter.image(rig_tex.id(), rect, uv, egui::Color32::WHITE);
                         }
-                    }
-                    if let Some(active) = &self.tex_active {
-                        painter.image(active.id(), rect, uv, egui::Color32::WHITE);
+                    } else {
+                        if self.show_onion_skin && self.edit_layer != EditLayer::Body {
+                            if let Some(ghost) = &self.tex_body_ghost {
+                                painter.image(
+                                    ghost.id(),
+                                    rect,
+                                    uv,
+                                    egui::Color32::from_rgba_unmultiplied(255, 255, 255, 90),
+                                );
+                            }
+                        }
+                        if let Some(active) = &self.tex_active {
+                            painter.image(active.id(), rect, uv, egui::Color32::WHITE);
+                        }
                     }
 
                     let scale = board_px / BOARD_SIZE as f32;
@@ -1902,14 +2046,15 @@ impl eframe::App for StudioApp {
                         }
                     }
 
-                    // Pointer interaction
-                    if let Some(pos) = response.interact_pointer_pos() {
+                    // Pointer interaction (disabled while panning)
+                    if !is_panning && let Some(pos) = response.interact_pointer_pos() && rect.contains(pos) {
                         let local = pos - rect.min;
                         let lx = (local.x / scale).floor().clamp(0.0, (BOARD_SIZE - 1) as f32) as usize;
                         let ly = (local.y / scale).floor().clamp(0.0, (BOARD_SIZE - 1) as f32) as usize;
 
                         if self.tab == StudioTab::Rig {
                             if response.drag_started() {
+                                self.push_undo();
                                 let mut best: Option<RigPin> = None;
                                 let mut best_d = 22.0_f32;
                                 for &(pin, (ax, ay), _, _) in &visible_pins {
@@ -1954,6 +2099,7 @@ impl eframe::App for StudioApp {
                                     }
                                 }
                                 self.sheet_dirty = true;
+                                self.rig_dirty = true;
                             }
                             if response.drag_stopped() {
                                 self.dragging_pin = None;
@@ -2025,14 +2171,14 @@ impl eframe::App for StudioApp {
                             }
                         }
                     }
-                });
+                }
             }
         });
     }
 }
 
 fn apply_studio_theme(ctx: &egui::Context) {
-    let mut style = (*ctx.style()).clone();
+    let mut style = (*ctx.style_of(egui::Theme::Dark)).clone();
     style.spacing.item_spacing = egui::vec2(8.0, 6.0);
     style.spacing.button_padding = egui::vec2(9.0, 5.0);
     let mut visuals = egui::Visuals::dark();
@@ -2048,7 +2194,8 @@ fn apply_studio_theme(ctx: &egui::Context) {
     visuals.widgets.active.bg_fill = egui::Color32::from_rgb(59, 130, 246);
     visuals.widgets.active.corner_radius = egui::CornerRadius::same(6);
     style.visuals = visuals;
-    ctx.set_style(style);
+    ctx.set_style_of(egui::Theme::Dark, style.clone());
+    ctx.set_style_of(egui::Theme::Light, style);
 }
 
 fn main() -> eframe::Result<()> {

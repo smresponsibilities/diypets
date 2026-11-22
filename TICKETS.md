@@ -32,10 +32,10 @@ Legend: **Priority** (`P0` Critical -> `P3` Nice-to-have) · **Effort** (`S` <2h
 ---
 
 ## Pillar 2: Settings UI & UX Polish
-- [ ] **T-030** `[P1][M]` **Modern Tabbed Settings UI:** Split into `Gallery` · `Active Herd` · `Behavior & System` · `About & Credits` with spacious elevated cards and cleaner spacing.
+- [x] **T-030** `[P1][M]` **Modern Tabbed Settings UI:** Split into `Gallery` · `Active Herd` · `Behavior & System` · `About & Credits` with spacious elevated cards and cleaner spacing.
 - [ ] **T-031** `[P1][S]` **Animated Card Hover Previews:** Animate a gentle 2-frame walk/bounce when hovering over a pet card in Settings.
 - [ ] **T-032** `[P1][M]` **Per-Pet Herd Size & Speed Overrides:** Let each pet in the Active Herd have its own size/speed (e.g., 160px Highland Cow + 64px eSheep).
-- [ ] **T-033** `[P1][S]` **Drag-and-Drop `.xml` / `.svg` Install & "Launch Pet" Button:** Drop files directly onto Settings to install/activate, plus a 1-click button to start `diypets` if it isn't currently running.
+- [x] **T-033** `[P1][S]` **Drag-and-Drop `.xml` / `.svg` Install & "Launch Pet" Button:** Drop files directly onto Settings to install/activate, plus a 1-click button to start `diypets` if it isn't currently running.
 - [ ] **T-034** `[P2][S]` **Live Remote `catalog.json` Sync:** Fetch latest `catalog.json` in background from GitHub (with instant embedded fallback offline) so new community packs appear without needing a binary update.
 - [ ] **T-035** `[P2][S]` `[good-first-issue]` **First-Run Welcome Tip:** Subtle one-time toast/banner showing how to drag pets, open Settings from the tray, and launch Studio V2.
 

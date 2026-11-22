@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="brand/logo-512.png" alt="DIYPets Highland Cow Logo" width="140" />
+<img src="brand/logo-512.png" alt="DIYPets Highland Cow Logo" width="220" />
 
 # DIYPets
 
@@ -10,6 +10,8 @@ A tiny, blazing-fast, cross-platform desktop mascot engine with **Multi-Pet Herd
 
 [![Crates.io](https://img.shields.io/crates/v/diypets.svg?style=flat-square&logo=rust&color=fc8d62)](https://crates.io/crates/diypets)
 [![Downloads](https://img.shields.io/crates/d/diypets.svg?style=flat-square&color=8da0cb)](https://crates.io/crates/diypets)
+[![GitHub Release](https://img.shields.io/github/v/release/smresponsibilities/diypets?style=flat-square&color=3fb950)](https://github.com/smresponsibilities/diypets/releases/latest)
+[![GitHub Downloads](https://img.shields.io/github/downloads/smresponsibilities/diypets/total?style=flat-square&color=58a6ff)](https://github.com/smresponsibilities/diypets/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/smresponsibilities/diypets/ci.yml?style=flat-square&label=CI)](https://github.com/smresponsibilities/diypets/actions)
 [![License](https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg?style=flat-square)](LICENSE-MIT)
 [![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-brightgreen.svg?style=flat-square)](#-download--install)

@@ -400,6 +400,13 @@ impl DeskpetState {
 
         let current_interval = anim.start_interval as f32
             + (anim.end_interval as f32 - anim.start_interval as f32) * progress_ratio;
+        let moving_h = self.anim_start_x.abs() > 0.01 || self.anim_end_x.abs() > 0.01;
+        let current_interval = if moving_h && self.walk_speed != 5 {
+            let speed_mult = (self.walk_speed as f32 / 5.0).max(0.2);
+            (current_interval / speed_mult.sqrt()).clamp(35.0, 600.0)
+        } else {
+            current_interval
+        };
 
         self.opacity =
             anim.start_opacity + (anim.end_opacity - anim.start_opacity) * progress_ratio;
@@ -719,6 +726,33 @@ mod window_floor_tests {
     #[test]
     fn a_window_too_close_to_screen_top_cannot_pull_pet_off_screen() {
         assert_eq!(window_floor_candidate(50.0, 64.0, 50.0, 0.0), None);
+    }
+
+    #[test]
+    fn foot_skating_speed_scales_frame_interval() {
+        let xml = include_str!("../assets/highland_cow/deskpet.xml");
+        let mut slow = DeskpetState::new(DeskpetPack::parse(xml).unwrap());
+        slow.set_state(DeskpetStateId::Custom("1".to_string()));
+        slow.walk_speed = 2;
+        slow.x = 600.0;
+        slow.y = 800.0;
+
+        let mut fast = DeskpetState::new(DeskpetPack::parse(xml).unwrap());
+        fast.set_state(DeskpetStateId::Custom("1".to_string()));
+        fast.walk_speed = 16;
+        fast.x = 600.0;
+        fast.y = 800.0;
+
+        for _ in 0..20 {
+            slow.tick(30, 800.0, 1920.0);
+            fast.tick(30, 800.0, 1920.0);
+        }
+        assert!(
+            fast.sequence_index > slow.sequence_index,
+            "fast walk should step frames quicker (fast={}, slow={})",
+            fast.sequence_index,
+            slow.sequence_index
+        );
     }
 
     #[test]

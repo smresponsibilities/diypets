@@ -39,13 +39,20 @@ fn approved_roster_plays_without_rejected_or_missing_states() {
                 );
             }
         }
-        assert_eq!(
+        assert!(
             pack.animations.contains_key("19"),
-            matches!(name, "dog" | "polar_bear")
+            "{name}: missing climb (id=19)"
+        );
+        assert!(
+            pack.animations["19"].next_gravity.is_empty(),
+            "{name}: climb (id=19) must not have Gravity"
+        );
+        assert!(
+            pack.animations.contains_key("13"),
+            "{name}: missing sleep (id=13)"
         );
         if name == "stegosaurus" {
             assert!(!pack.animations.contains_key("12"), "rejected sit");
-            assert!(!pack.animations.contains_key("13"), "rejected sleep");
             assert!(!pack.animations.contains_key("14"), "rejected jump");
             assert_eq!(
                 pack.animations["4"].sequence,
