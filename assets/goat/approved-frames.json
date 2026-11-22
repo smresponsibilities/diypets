@@ -1,0 +1,346 @@
+{
+  "frames": [
+    {
+      "cell": 0,
+      "action": "run",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet1_05.png",
+      "sha256": "15086b406989d350bf28b53b90d0465c26ac6168780acebb76caf57eed113449"
+    },
+    {
+      "cell": 1,
+      "action": "run",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet1_06.png",
+      "sha256": "ff719f7d5a29174eb78df365b5558371c6a0ef749e28a6a9de5b3967aa9fdae8"
+    },
+    {
+      "cell": 2,
+      "action": "run",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet1_07.png",
+      "sha256": "cffdab0458db7b713689826a863fae154ff0af5d80d79dfece8c8c5cb5270b4e"
+    },
+    {
+      "cell": 3,
+      "action": "run",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet1_08.png",
+      "sha256": "58d0aed122b5917f0fbb728f91ea92dc152e90aac2193eaefcbaf33d7d3f7e82"
+    },
+    {
+      "cell": 4,
+      "action": "turn",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet1_09.png",
+      "sha256": "c76b3c0b510685224691ecc30c884506abfcb4992230d177b3864be484d0fe6c"
+    },
+    {
+      "cell": 5,
+      "action": "turn",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet1_10.png",
+      "sha256": "827c7ed0d154f5944ccd7e6ffb9b17f54300af35d6f4dfb059b9e15a4800ba48"
+    },
+    {
+      "cell": 6,
+      "action": "turn",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet1_11.png",
+      "sha256": "5f303e285468d7d338e7a41d08aff47cbd98294ec74ed22065a919acb8ebc5aa"
+    },
+    {
+      "cell": 7,
+      "action": "turn",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet1_12.png",
+      "sha256": "6450676c0402fea73b77307b08295eb57d3656f778dc0d6e42dffc0f4f9578d0"
+    },
+    {
+      "cell": 8,
+      "action": "idle_blink",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet1_13.png",
+      "sha256": "e0855bc144c464a95b2886b436ac80a93bb6d6508d6f8c4b8d81891fef3df903"
+    },
+    {
+      "cell": 9,
+      "action": "idle_blink",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet1_14.png",
+      "sha256": "46620eee248cd42c4180a7c93d89489c782e6dd4f2d843cfe540a3505cfa636b"
+    },
+    {
+      "cell": 10,
+      "action": "idle_blink",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet1_15.png",
+      "sha256": "470146dbe154a33562efca0dbeee1a09bf6ba8f275fdbc315cc8aa48de87739f"
+    },
+    {
+      "cell": 11,
+      "action": "idle_blink",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet1_16.png",
+      "sha256": "d10ec10718a227aa43faa79440817d0a2433bf0ae75a5780949ba293795967a1"
+    },
+    {
+      "cell": 12,
+      "action": "sit",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet2_01.png",
+      "sha256": "b024e0ef94ecd58871dec7077a8d97c79d0df8ff318598d9317679e869b892d6"
+    },
+    {
+      "cell": 13,
+      "action": "sit",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet2_02.png",
+      "sha256": "54acce8d6fb3a7f556a1171b441a3ff1d640a30c48b9cdfb2bf568c44a38d332"
+    },
+    {
+      "cell": 14,
+      "action": "sit",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet2_03.png",
+      "sha256": "4faa8b6b3c17f9c39009f254ec457c4370d14507eae77e9392acfb4aeafc08da"
+    },
+    {
+      "cell": 15,
+      "action": "sit",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet2_04.png",
+      "sha256": "3ba0e78e5bc50d55035f04404882ca09a25d86eb61cd870074b33f811818e2c4"
+    },
+    {
+      "cell": 16,
+      "action": "sleep",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet2_05.png",
+      "sha256": "d088ef5f3a2cbfe343b971485f3f81ab2e7c63d5a390dee8209fa641b7893b97"
+    },
+    {
+      "cell": 17,
+      "action": "sleep",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet2_06.png",
+      "sha256": "baf3c0d96be6e5d706c8f0b85f9c9f9310c4cf6f2d426a156a2641e276df2f36"
+    },
+    {
+      "cell": 18,
+      "action": "sleep",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet2_07.png",
+      "sha256": "13022519035e6f3be321ea4d83bf99707329777d80439d231b0da47df3adfdb7"
+    },
+    {
+      "cell": 19,
+      "action": "sleep",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet2_08.png",
+      "sha256": "30da0263d57f8d3a9166c713148d56f32ddb4298c803787d6ce9da92f656ccd4"
+    },
+    {
+      "cell": 20,
+      "action": "sniff_graze",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet2_09.png",
+      "sha256": "6c5583860922feed62cc86f7a3cbfd3cfb799849324c589180c2451fcfc4b3b7"
+    },
+    {
+      "cell": 21,
+      "action": "sniff_graze",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet2_10.png",
+      "sha256": "f91948f698a663c5b6d32de68501a8316fc73bf32e4693d8ae51eb79bb05da24"
+    },
+    {
+      "cell": 22,
+      "action": "sniff_graze",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet2_11.png",
+      "sha256": "1811a088c58f6c3d4b733217c136cb42b970276c30afad8838190ee7821d2284"
+    },
+    {
+      "cell": 23,
+      "action": "sniff_graze",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet2_12.png",
+      "sha256": "b58e70f8902a198d90909df23bbc706cc74bd02de87a2c42c4ac9dfcbfe12e6f"
+    },
+    {
+      "cell": 24,
+      "action": "jump",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet2_13.png",
+      "sha256": "f17788a9ab3463e5832e7b870ec2419ec78c7eeca15d56283f3888bf2cc48421"
+    },
+    {
+      "cell": 25,
+      "action": "jump",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet2_14.png",
+      "sha256": "8ce9b900088fb3342def963c856422af12ebbae151906d83c1982cb860da4c7b"
+    },
+    {
+      "cell": 26,
+      "action": "jump",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet2_15.png",
+      "sha256": "fac3646ff17282c948e05318311a2174e80db9d4a89f15ad9504a874aba8dcdf"
+    },
+    {
+      "cell": 27,
+      "action": "jump",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet2_16.png",
+      "sha256": "bbee35c3d77996863233fe0d6f42c15cd3ea139b044533a04fedf75f3e0dcc09"
+    },
+    {
+      "cell": 28,
+      "action": "cursor_drag",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet3_05.png",
+      "sha256": "be4912844962ef53ced560b8f7c1bd35aa0232c17b840e26c4006fc43ae1b73c"
+    },
+    {
+      "cell": 29,
+      "action": "cursor_drag",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet3_06.png",
+      "sha256": "8cee17e493365e637283d0730b84fd3cd7168fc1bc44e0b12d9942d1babf4e19"
+    },
+    {
+      "cell": 30,
+      "action": "cursor_drag",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet3_07.png",
+      "sha256": "a002448827a32f12c6d72d163c86fd2a75a5638594258f66e3bd4f9aeebd97d9"
+    },
+    {
+      "cell": 31,
+      "action": "cursor_drag",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet3_08.png",
+      "sha256": "94c56319562e69d005ac5ddd4f6fae674d38408f4ac293e65c0ff2a3c177920a"
+    },
+    {
+      "cell": 32,
+      "action": "fall",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet3_09.png",
+      "sha256": "9dd3762d8e502c4d8a4fb07d4f7efca819ed3fcf924c2285ecea16e0acef2205"
+    },
+    {
+      "cell": 33,
+      "action": "fall",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet3_10.png",
+      "sha256": "6d5d8aa7e15dea6a848509beb12ded2e57761b10a5834baf6a677b639405d3ce"
+    },
+    {
+      "cell": 34,
+      "action": "fall",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet3_11.png",
+      "sha256": "04c17b57502663ba86352a05c8179d844ff4d52e897e975127e2347b86c470ad"
+    },
+    {
+      "cell": 35,
+      "action": "fall",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet3_12.png",
+      "sha256": "c89ffe12db9b4e05ae50a387452fcaf45385ef5ddff99c223423b877ff150999"
+    },
+    {
+      "cell": 36,
+      "action": "splat_recovery",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet3_13.png",
+      "sha256": "c11100b86c2074cf5ebca48970e4587fdfb9f8cf4c83d04b7f9adb225af4a844"
+    },
+    {
+      "cell": 37,
+      "action": "splat_recovery",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet3_14.png",
+      "sha256": "c2328322f27cfff63b7ab688b8b24afa44721852c57ba8852cb2dbf11192eb71"
+    },
+    {
+      "cell": 38,
+      "action": "splat_recovery",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet3_15.png",
+      "sha256": "42cac355dc3e01195392e6af79a19efebdda61f7ec6e03549507d38e1f954d8f"
+    },
+    {
+      "cell": 39,
+      "action": "splat_recovery",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet3_16.png",
+      "sha256": "52b045662f3294a5689f25151b50db8755bd5a03af7e005bc3af53130ee36131"
+    },
+    {
+      "cell": 40,
+      "action": "bleat",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet4_01.png",
+      "sha256": "bb380feda1200b96ddbc55bd586ddd835788e758e6acca2f504465371158f501"
+    },
+    {
+      "cell": 41,
+      "action": "bleat",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet4_02.png",
+      "sha256": "98ef7cdf8f4d7a37b03388fffd8ae7629a370b3bd12804a7983599cf929816d7"
+    },
+    {
+      "cell": 42,
+      "action": "bleat",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet4_03.png",
+      "sha256": "15e07796a27f76db2f844ea7ebb5d3753dd341a3329e52937b4ab8f454442c57"
+    },
+    {
+      "cell": 43,
+      "action": "bleat",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet4_04.png",
+      "sha256": "763d230aced0c0144a4a0289731d1b11281c5b256a0dbbc578126cc7e865270f"
+    },
+    {
+      "cell": 44,
+      "action": "coat_shake",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet4_05.png",
+      "sha256": "c816319cb214fcb614d29e7e630b5e969f37c551f7196381743fb7bdf6941417"
+    },
+    {
+      "cell": 45,
+      "action": "coat_shake",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet4_06.png",
+      "sha256": "4cb23a271a2808bcb38c3708fa868a6f4154bab846c54cb15c8554a7fc83d8af"
+    },
+    {
+      "cell": 46,
+      "action": "coat_shake",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet4_07.png",
+      "sha256": "a051c364595c11955eb86de0b6dfa5a8fa8d982fc5fa3279cbad60263ef9db37"
+    },
+    {
+      "cell": 47,
+      "action": "coat_shake",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet4_08.png",
+      "sha256": "9a9b9e9f300123337a623ef592b7ae27652164844a3448cf641ad7646d5567f8"
+    },
+    {
+      "cell": 48,
+      "action": "hind_hoof_scratch",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet4_09.png",
+      "sha256": "aaaa5ccc3115c68918b9ee18c298c1a00190d083f7e982173bbc81f758422344"
+    },
+    {
+      "cell": 49,
+      "action": "hind_hoof_scratch",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet4_10.png",
+      "sha256": "6e010b75150025d626d8f7b2d6f6bcd6d079eab1adaa79bbc8792f9f54cc73b0"
+    },
+    {
+      "cell": 50,
+      "action": "hind_hoof_scratch",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet4_11.png",
+      "sha256": "b8c2a036c8a60a1af36af467d14b9c54b2cc285fccdb65d5346db062ad19b64f"
+    },
+    {
+      "cell": 51,
+      "action": "hind_hoof_scratch",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet4_12.png",
+      "sha256": "f2a7144326c7650c89d6b8b6393b6da245670d5c16486dc935752f97c8933c57"
+    },
+    {
+      "cell": 52,
+      "action": "headbutt_feint",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet4_13.png",
+      "sha256": "51f8be51bd50c6ba08d9976eac2cb749cf31bf7f487a8b06cc9b5cf8a16a8511"
+    },
+    {
+      "cell": 53,
+      "action": "headbutt_feint",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet4_14.png",
+      "sha256": "a5dee5e9c1d534333e8e79a2cd56d68d5d0cbf10bfb3bbe2095733db8cfe71f7"
+    },
+    {
+      "cell": 54,
+      "action": "headbutt_feint",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet4_15.png",
+      "sha256": "572395b18a13d93db79392825ad3b90f90d2ed2c7d0e05cfea68382ae0d93cca"
+    },
+    {
+      "cell": 55,
+      "action": "headbutt_feint",
+      "source": "research/launch-six-approved-staging/final-fringe-review/sprites/goat/sheet4_16.png",
+      "sha256": "5a226f7e53e08591dea99ec34802fc846b96a022f5d5ea77e5512605045404b0"
+    }
+  ],
+  "rejected": [
+    "walk",
+    "climb"
+  ],
+  "movement": "run",
+  "ground_y": 116
+}

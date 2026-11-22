@@ -1,0 +1,38 @@
+name: Submit a Pet Pack
+description: Share a pet you made with DIYPets Studio or an original eSheep-compatible XML pack!
+labels: ["pet-pack", "community"]
+body:
+  - type: input
+    id: pet_name
+    attributes:
+      label: Pet Display Name
+      placeholder: "e.g., Cozy Capybara"
+    validations:
+      required: true
+  - type: input
+    id: author
+    attributes:
+      label: Author Credit
+      placeholder: "Your name or GitHub handle"
+    validations:
+      required: true
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pack Quality Checklist
+      options:
+        - label: Sprite natively faces LEFT
+          required: true
+        - label: Clean transparent background (no pink/white fringes)
+          required: true
+        - label: Tested in DIYPets desktop runner (walks, falls, drags cleanly)
+          required: true
+        - label: Original art or properly licensed for redistribution
+          required: true
+  - type: textarea
+    id: attach
+    attributes:
+      label: Preview GIF / Screenshot & XML Link
+      description: Drag and drop a preview image/GIF and attach your exported .xml (zipped) or repo link!
+    validations:
+      required: true

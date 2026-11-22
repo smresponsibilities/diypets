@@ -1,0 +1,90 @@
+[package]
+name = "diypets"
+version = "0.1.3"
+edition = "2024"
+description = "Make your own desktop pet - lightweight cross-platform Rust mascot engine with a built-in 2D/SVG Pet Creator Studio and lazy-loaded eSheep XML packs."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/smresponsibilities/diypets"
+homepage = "https://github.com/smresponsibilities/diypets"
+readme = "README.md"
+keywords = ["desktop-pet", "mascot", "esheep", "shimeji", "egui"]
+categories = ["gui", "games"]
+default-run = "diypets"
+autobins = false
+include = [
+    "Cargo.toml",
+    "README.md",
+    "ROADMAP.md",
+    "CREDITS.md",
+    "CONTRIBUTING.md",
+    "AGENT_PET_GUIDE.md",
+    "CHANGELOG.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+    "catalog.json",
+    "catalog_icons/**",
+    "src/**",
+    "assets/deskpet.xml",
+    "assets/highland_cow/deskpet.xml",
+    "assets/highland_cow/icon.png",
+]
+
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/diypets-{ target }{ archive-suffix }"
+bin-dir = "diypets-{ target }/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-fmt = "zip"
+bin-dir = "{ bin }{ binary-ext }"
+
+[[bin]]
+name = "diypets"
+path = "src/bin/diypets.rs"
+
+[[bin]]
+name = "diypets-settings"
+path = "src/bin/diypets_settings.rs"
+
+[[bin]]
+name = "diypets-creator"
+path = "src/bin/diypets_creator.rs"
+
+[dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }
+softbuffer = "0.4"
+winit = "0.30"
+tray-icon = "0.19"
+toml = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+ureq = { version = "2", default-features = false, features = ["tls"] }
+roxmltree = "0.21.1"
+base64 = "0.23.1"
+rand = "0.8"
+eframe = { version = "0.36.2", default-features = false, features = ["default_fonts", "glow"] }
+rfd = "0.17.2"
+tiny-skia = "0.12.0"
+
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+eframe = { version = "0.36.2", default-features = false, features = ["wayland", "x11"] }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58.0", features = [
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_Dwm",
+    "Win32_System_Com",
+    "Win32_UI_HiDpi",
+] }
+
+[dev-dependencies]
+tempfile = "3.0"
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+opt-level = 2
+debug = 0

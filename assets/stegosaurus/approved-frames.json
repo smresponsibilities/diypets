@@ -1,0 +1,231 @@
+{
+  "frames": [
+    {
+      "cell": 0,
+      "action": "idle_blink",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet01/idle_blink_01.png",
+      "sha256": "2ca05aa2f36e743480be956ed0b9ea1659c8922c3931bca46e20ba8741fe652e"
+    },
+    {
+      "cell": 1,
+      "action": "idle_blink",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet01/idle_blink_02.png",
+      "sha256": "5b86e96f633d47b04719de59a0b70a49ae8d7f78dd6f737d50c1ac612ed364b5"
+    },
+    {
+      "cell": 2,
+      "action": "idle_blink",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet01/idle_blink_03.png",
+      "sha256": "704183edf3ee0f5d2b9952462bfcdb179bfd761fdfb0a211f48ee4a1fbc025d4"
+    },
+    {
+      "cell": 3,
+      "action": "idle_blink",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet01/idle_blink_04.png",
+      "sha256": "c3db3484613968b5366a4cbb86dca36f1a38ddd49d0c8851a66205a0cef4399e"
+    },
+    {
+      "cell": 4,
+      "action": "run",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet01/run_01.png",
+      "sha256": "afc8a8e4ba3033d6c0256356a4222935f48d3c28f237753f85f0689d2a723002"
+    },
+    {
+      "cell": 5,
+      "action": "run",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet01/run_02.png",
+      "sha256": "b3c2260979ea144d1bad9d3a897b8092bc3bed44ec65cf99a6332a0929257f3a"
+    },
+    {
+      "cell": 6,
+      "action": "run",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet01/run_03.png",
+      "sha256": "6f9a3c715bc7aad00cf6d8dea245efe1c88f1145319e7b9e964166ee4e1eb592"
+    },
+    {
+      "cell": 7,
+      "action": "run",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet01/run_04.png",
+      "sha256": "ef65fcd1473be0796a1a92da41bd1e434fc868aca8352d3c3974f9ce5e44b37e"
+    },
+    {
+      "cell": 8,
+      "action": "turn",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet01/turn_01.png",
+      "sha256": "6d1fdd299a276b2cd9d6e4fbe83e9064ae48adfcf82ed11ea74c9436df221d33"
+    },
+    {
+      "cell": 9,
+      "action": "turn",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet01/turn_02.png",
+      "sha256": "069f0771996e291095af1c31ad399848afa8a718b420ee4f7fc9b4bb227b7ea0"
+    },
+    {
+      "cell": 10,
+      "action": "turn",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet01/turn_03.png",
+      "sha256": "9704f6803c48b7108bb1cbc95c53cf4c5be765cd4d1c4e293dc40b473c569b16"
+    },
+    {
+      "cell": 11,
+      "action": "turn",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet01/turn_04.png",
+      "sha256": "65fe176c58a8c6c5be56a4071c926261513dc9dbf094db2b53dec34baa6e3681"
+    },
+    {
+      "cell": 12,
+      "action": "fall",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet03/fall_01.png",
+      "sha256": "fdc610f5b2e5acd43dce312fb039bc7115c75789d516d2354514155506ab147e"
+    },
+    {
+      "cell": 13,
+      "action": "fall",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet03/fall_02.png",
+      "sha256": "d15a81a1c3177f009e72b1d83c229c38c133bb9e42e92299d9a77a9b9870e108"
+    },
+    {
+      "cell": 14,
+      "action": "fall",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet03/fall_03.png",
+      "sha256": "dc532bbff75ad9d062acc3cf43571b85ebeeea93795849302b3423f9bc2c3769"
+    },
+    {
+      "cell": 15,
+      "action": "fall",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet03/fall_04.png",
+      "sha256": "e80510cb628d3b756ef7193d25fb0d24510da0229021a77a39b366ba13f69226"
+    },
+    {
+      "cell": 16,
+      "action": "splat",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet03/splat_01.png",
+      "sha256": "b41cd5b3d5ad85a7369372263eb2b847a8a6973e2fcc5054c056faaf8ec41862"
+    },
+    {
+      "cell": 17,
+      "action": "splat",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet03/splat_02.png",
+      "sha256": "e970ffa5ddcc213fd78570f61d46e818cee8269a2c74733294845ff8e78f2455"
+    },
+    {
+      "cell": 18,
+      "action": "splat",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet03/splat_03.png",
+      "sha256": "789e5081fddcbb44f2d384409b35d6df268437cb5abfbeb1a743dc969b4bb136"
+    },
+    {
+      "cell": 19,
+      "action": "splat",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet03/splat_04.png",
+      "sha256": "cae50f50e8b4b6a859616615e5d4a164b4374f468c131afb0ce520fc050be805"
+    },
+    {
+      "cell": 20,
+      "action": "defensive_pivot",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet04/defensive_pivot_01.png",
+      "sha256": "02f1c89fe119a3c0d45575819235dfc2aafd6fa7df6dba2b9c27d3a4b3698b4c"
+    },
+    {
+      "cell": 21,
+      "action": "defensive_pivot",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet04/defensive_pivot_02.png",
+      "sha256": "fcaa313e7849edec79a85f69f8abe8aff14fb8a15d766150f7dc2107934abc23"
+    },
+    {
+      "cell": 22,
+      "action": "defensive_pivot",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet04/defensive_pivot_03.png",
+      "sha256": "c5db5f20d4b03f425f00995f8f260c9856d70fc56b95f39ed08310d7a68c9656"
+    },
+    {
+      "cell": 23,
+      "action": "defensive_pivot",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet04/defensive_pivot_04.png",
+      "sha256": "8a68a1f8790fc786c517f3c6172bafd5cbb84ee02ca6dd2c65a6ee16ee8ce3c2"
+    },
+    {
+      "cell": 24,
+      "action": "fern_browse",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet04/fern_browse_01.png",
+      "sha256": "8337305566e63cfc745f9ab369a51dfab68427409575d43741d607d6067b53f0"
+    },
+    {
+      "cell": 25,
+      "action": "fern_browse",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet04/fern_browse_02.png",
+      "sha256": "67befc7beb9d8771c9fedf7a49844bd1c66adbb4aa2f4ac5dd6e53208d19016c"
+    },
+    {
+      "cell": 26,
+      "action": "fern_browse",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet04/fern_browse_03.png",
+      "sha256": "10787b81986a2ef833671f0b42a6cf03d053f9feaffa0a7fe8e18bb3814eb91f"
+    },
+    {
+      "cell": 27,
+      "action": "fern_browse",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet04/fern_browse_04.png",
+      "sha256": "7da576727fa1be5b3256f073733d593b702ef3f2b8e237bd093146cd60d4c295"
+    },
+    {
+      "cell": 28,
+      "action": "plate_display",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet04/plate_display_01.png",
+      "sha256": "2ee97f43351f56bc3fd73564014021041ea5b7d81f395f3d558bb3890f389a46"
+    },
+    {
+      "cell": 29,
+      "action": "plate_display",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet04/plate_display_02.png",
+      "sha256": "e1a2bac756c3f69dd444099a2771a00c8ea2c8734c023262b7ff3bf60bc86c4e"
+    },
+    {
+      "cell": 30,
+      "action": "plate_display",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet04/plate_display_03.png",
+      "sha256": "8d4f4ce3ba2157c555d46a4261dad1e41c94603d6a4aedf9bcbc8ba6d75b5048"
+    },
+    {
+      "cell": 31,
+      "action": "plate_display",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet04/plate_display_04.png",
+      "sha256": "8a2d92d5cd358d93265f9196daca32d92c3d2097dc8d320c13c126fba9e1100f"
+    },
+    {
+      "cell": 32,
+      "action": "tail_defense",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet04/tail_defense_01.png",
+      "sha256": "62fe180022b024f9249ca43977744df5d636a2184746d443df9da26bd3971f59"
+    },
+    {
+      "cell": 33,
+      "action": "tail_defense",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet04/tail_defense_02.png",
+      "sha256": "9cfd1b80a1ac8a3bba54ec40d317297d0a2bfa47af8de9d24e9ffeb4d4713d43"
+    },
+    {
+      "cell": 34,
+      "action": "tail_defense",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet04/tail_defense_03.png",
+      "sha256": "ed017cbb3d7730435e8b6e3544a7e47e241667390dfbfbb0516bf69789baefac"
+    },
+    {
+      "cell": 35,
+      "action": "tail_defense",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/stegosaurus/sheet04/tail_defense_04.png",
+      "sha256": "acfa05255003b6798c17e6d7534f2ffb08c722f425dd2e7a6d9a7224ce839e98"
+    }
+  ],
+  "rejected": [
+    "walk",
+    "sit",
+    "sleep",
+    "sniff",
+    "jump",
+    "climb",
+    "cursor_drag"
+  ],
+  "movement": "run",
+  "ground_y": 110
+}

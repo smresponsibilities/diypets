@@ -1,0 +1,369 @@
+{
+  "frames": [
+    {
+      "cell": 0,
+      "action": "idle_blink",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s01_idle_blink/s01_idle_blink_01.png",
+      "sha256": "f0ba1aeb9665bc88e0d7b8bff65f43015b14b0f45e9072e734f85a8044709226"
+    },
+    {
+      "cell": 1,
+      "action": "idle_blink",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s01_idle_blink/s01_idle_blink_02.png",
+      "sha256": "db910fa2a395ee474ed09d1918ec1bf1a5e70d6ce7b69b5634818d09d640a5e3"
+    },
+    {
+      "cell": 2,
+      "action": "idle_blink",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s01_idle_blink/s01_idle_blink_03.png",
+      "sha256": "bf6ed1df5f968c6411bd986ee1ccee97ae7486780678ce6bdff77827ffd47379"
+    },
+    {
+      "cell": 3,
+      "action": "idle_blink",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s01_idle_blink/s01_idle_blink_04.png",
+      "sha256": "19d8f0aa50691ea6b7c3137248c99c18248dd0a9453c183fa6753e37ef4448ef"
+    },
+    {
+      "cell": 4,
+      "action": "run",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s01_run/s01_run_01.png",
+      "sha256": "330c13ee0952e8fbeb95b2e423c0c9361668b40dbd09776ad53e4b2645344107"
+    },
+    {
+      "cell": 5,
+      "action": "run",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s01_run/s01_run_02.png",
+      "sha256": "a8424573d7bdc998cf3c964bc5e795b630fbdb3ad41715a121fa95ece968cf79"
+    },
+    {
+      "cell": 6,
+      "action": "run",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s01_run/s01_run_03.png",
+      "sha256": "7db128268cd6d8f2cf99db61c17739e4e86a87c21ef101f20f6fdc3530140a71"
+    },
+    {
+      "cell": 7,
+      "action": "run",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s01_run/s01_run_04.png",
+      "sha256": "3ad91db0efa305fbed7b2cfa4c028e8a12c11f858f9af269c4993ea6e1c65ef9"
+    },
+    {
+      "cell": 8,
+      "action": "turn",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s01_turn/s01_turn_01.png",
+      "sha256": "789de13eba86a91d7d66161c2cbc6af3fda0e8ba696810b65df5c2e20174b81f"
+    },
+    {
+      "cell": 9,
+      "action": "turn",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s01_turn/s01_turn_02.png",
+      "sha256": "0baf8707021146c46d77c9d12610c61230fdd3627317760b17167faa3af20a18"
+    },
+    {
+      "cell": 10,
+      "action": "turn",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s01_turn/s01_turn_03.png",
+      "sha256": "76555cea9fc4dfceb93754fedc85415f474d49174918601a09c9564feb729747"
+    },
+    {
+      "cell": 11,
+      "action": "turn",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s01_turn/s01_turn_04.png",
+      "sha256": "fc2890d68b103b86eb2d3202dfa65da7db76db9774f141d315cf59098ea8ecd5"
+    },
+    {
+      "cell": 12,
+      "action": "jump",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s02_jump/s02_jump_01.png",
+      "sha256": "c4c594767a98ba6bf1273ede668a79543b63576e8e9a419681ba663aa26408f3"
+    },
+    {
+      "cell": 13,
+      "action": "jump",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s02_jump/s02_jump_02.png",
+      "sha256": "a24418aa73af7fae3d9b5a5e3c726565423ec5f33cbf26fd9905017070c6db6c"
+    },
+    {
+      "cell": 14,
+      "action": "jump",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s02_jump/s02_jump_03.png",
+      "sha256": "08f4f139bf29404fad5e4ffc4d6f29adc992d4fb433fd2a3e3c7a5afe456331c"
+    },
+    {
+      "cell": 15,
+      "action": "jump",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s02_jump/s02_jump_04.png",
+      "sha256": "f1ef9153b6f627b48f8b88779c7cdab771d713045a0e402fc2c29d9186ad5e95"
+    },
+    {
+      "cell": 16,
+      "action": "sit",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s02_sit/s02_sit_01.png",
+      "sha256": "e7e3a9ae922422f3c6dbc874318cabf453e088854c2658ced76da3e2f6d252ed"
+    },
+    {
+      "cell": 17,
+      "action": "sit",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s02_sit/s02_sit_02.png",
+      "sha256": "4dcf244a5aaa9c5264cc16cea3cd8b897d702739e7d167187f2f02f25937bcfb"
+    },
+    {
+      "cell": 18,
+      "action": "sit",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s02_sit/s02_sit_03.png",
+      "sha256": "bd59da479264a4fa62abe4b0ce6623584fc68825ae52804abeca11cd990dae4e"
+    },
+    {
+      "cell": 19,
+      "action": "sit",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s02_sit/s02_sit_04.png",
+      "sha256": "4102b7a9ea4cc4dc02538da0de8cbb7b699c152c011cafe5113fcebd4dd6f2c3"
+    },
+    {
+      "cell": 20,
+      "action": "sleep",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s02_sleep/s02_sleep_01.png",
+      "sha256": "526e3d26acb72df1bde5eb1672a19e3a1192f0213ea5cf12cca13dbbf3a8ee7a"
+    },
+    {
+      "cell": 21,
+      "action": "sleep",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s02_sleep/s02_sleep_02.png",
+      "sha256": "e10f04f38b9c315230eacd9cfbb030a3840ddca2b450c2525018bc3fce708434"
+    },
+    {
+      "cell": 22,
+      "action": "sleep",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s02_sleep/s02_sleep_03.png",
+      "sha256": "20f94617b4f2ca66288a60549a4ce0579df7360926fce8771ec911a538fd743d"
+    },
+    {
+      "cell": 23,
+      "action": "sleep",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s02_sleep/s02_sleep_04.png",
+      "sha256": "4e5c010e5f1bf01b9e203ccc6d3b001d19d0a8f9b7d5080278c32c4e4ee8f42d"
+    },
+    {
+      "cell": 24,
+      "action": "sniff",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s02_sniff/s02_sniff_01.png",
+      "sha256": "d348f4da7b38775d9252949ad72b011631e8371ee0f8fdacf66fff616f685210"
+    },
+    {
+      "cell": 25,
+      "action": "sniff",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s02_sniff/s02_sniff_02.png",
+      "sha256": "498162bb4dbaf529a35f5b3f3ee38ef4c2efb4432601961c1546eac05289f049"
+    },
+    {
+      "cell": 26,
+      "action": "sniff",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s02_sniff/s02_sniff_03.png",
+      "sha256": "9021168cda4d30c49a6485ed0404e64a6e5851a1e99d49d33e4f68daa4b41d75"
+    },
+    {
+      "cell": 27,
+      "action": "sniff",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s02_sniff/s02_sniff_04.png",
+      "sha256": "4375f66aa7988e84a09add7bf82c20ae634868a1d962b462fa132562e1029609"
+    },
+    {
+      "cell": 28,
+      "action": "climb",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s03_climb/s03_climb_01.png",
+      "sha256": "2f33ed8434a6dc55fbfd2328a15013bb5bbe1db70129e4c9c1d82279078d94e3"
+    },
+    {
+      "cell": 29,
+      "action": "climb",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s03_climb/s03_climb_02.png",
+      "sha256": "f797701d135c4722c6cc378032fa6e6978b591983bab5b908c0a047dac61918c"
+    },
+    {
+      "cell": 30,
+      "action": "climb",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s03_climb/s03_climb_03.png",
+      "sha256": "a64e091d641852f7c797a350d965cbaaec29538e6c690e5bf4e5164469a944d2"
+    },
+    {
+      "cell": 31,
+      "action": "climb",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s03_climb/s03_climb_04.png",
+      "sha256": "1fe90d602fb7fdee207a45c1f1a83778b15b6dc5c884ad45622e82ac84705c57"
+    },
+    {
+      "cell": 32,
+      "action": "cursor_drag",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s03_cursor_drag/s03_cursor_drag_01.png",
+      "sha256": "01473216f7b4062fd2e74b41b6905602e1dbe26478a9ca116fe20ae47664ddac"
+    },
+    {
+      "cell": 33,
+      "action": "cursor_drag",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s03_cursor_drag/s03_cursor_drag_02.png",
+      "sha256": "9490c7eed8fe8f26c72ffefb8e76df541ce2782ef90a16300883d54190b1c10f"
+    },
+    {
+      "cell": 34,
+      "action": "cursor_drag",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s03_cursor_drag/s03_cursor_drag_03.png",
+      "sha256": "9dcb10d404fbf32b5fb9f20df88abcaf67688dbac7db6c0809e0815ec0c6f5e7"
+    },
+    {
+      "cell": 35,
+      "action": "cursor_drag",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s03_cursor_drag/s03_cursor_drag_04.png",
+      "sha256": "950bb1b13c66002211f8bd5556206fceda46488a9f343823bbdb851f4ab89ab7"
+    },
+    {
+      "cell": 36,
+      "action": "fall",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s03_fall/s03_fall_01.png",
+      "sha256": "a24a999f9da60fde0cfdf94636a48724d4e1b8bf26b1e40b7f0deaa12c3af3a1"
+    },
+    {
+      "cell": 37,
+      "action": "fall",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s03_fall/s03_fall_02.png",
+      "sha256": "2ac7307cd8f5b67633901972ce4fde8ab1a62fc12f38d5032d3ea129d3b2aaed"
+    },
+    {
+      "cell": 38,
+      "action": "fall",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s03_fall/s03_fall_03.png",
+      "sha256": "1bff3ece779e323d9550823b04ed8dc593d13c52a978c3991247000420be12d7"
+    },
+    {
+      "cell": 39,
+      "action": "fall",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s03_fall/s03_fall_04.png",
+      "sha256": "c9fe12039f998fb08a12b57c4f7388e9b776fb4d4f8ad1774b5d9f429dee9159"
+    },
+    {
+      "cell": 40,
+      "action": "splat",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s03_splat/s03_splat_01.png",
+      "sha256": "5c187aeee1c851ea382b655ef24c800f333be67c6169ebf75a8d821deb23eaed"
+    },
+    {
+      "cell": 41,
+      "action": "splat",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s03_splat/s03_splat_02.png",
+      "sha256": "3d8ad46d6994b119a619d49fe8f581a0c7b59130f86ee426d98961406e518e7d"
+    },
+    {
+      "cell": 42,
+      "action": "splat",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s03_splat/s03_splat_03.png",
+      "sha256": "d7ae508ced5c4b6b53c2efc1234af0873f4df9714a568764e2020d5ff6e122eb"
+    },
+    {
+      "cell": 43,
+      "action": "splat",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s03_splat/s03_splat_04.png",
+      "sha256": "782dc8cedfeda0d57cf291511b600947e8a12e7712a90add8b892ffee0d645eb"
+    },
+    {
+      "cell": 44,
+      "action": "seal_hole",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s04_seal_hole/s04_seal_hole_01.png",
+      "sha256": "3db771600d588f1b7318854cbf2b6a2508703ef225412db85aeee4f33e847c13"
+    },
+    {
+      "cell": 45,
+      "action": "seal_hole",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s04_seal_hole/s04_seal_hole_02.png",
+      "sha256": "7424b94e4bd5280299f1ac774d6fe35046a45bf83a484c609b0e7f07d398a01a"
+    },
+    {
+      "cell": 46,
+      "action": "seal_hole",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s04_seal_hole/s04_seal_hole_03.png",
+      "sha256": "930a7b6624d442a96c50dab0e14b3c5c31af4f38ef4eae82e954be032db65faf"
+    },
+    {
+      "cell": 47,
+      "action": "seal_hole",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s04_seal_hole/s04_seal_hole_04.png",
+      "sha256": "7fc4aa0d82e5fc928c00e7c1f9bed3cc709cee1a5b0da553fe580df05b0e681c"
+    },
+    {
+      "cell": 48,
+      "action": "snow_lair",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s04_snow_lair/s04_snow_lair_01.png",
+      "sha256": "467d652a4b936ac4753a8be84a50251f8ecdfc67bf3022c327b0b448c7bd2be1"
+    },
+    {
+      "cell": 49,
+      "action": "snow_lair",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s04_snow_lair/s04_snow_lair_02.png",
+      "sha256": "ea380f186c8913d67fadcb2da5e7e0feb49c5053badedd341a82fc7d2d306fc2"
+    },
+    {
+      "cell": 50,
+      "action": "snow_lair",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s04_snow_lair/s04_snow_lair_03.png",
+      "sha256": "574a017636b6d29ef5ea45974af1db8369332129c7d3ce46b53810d917f8b0e7"
+    },
+    {
+      "cell": 51,
+      "action": "snow_lair",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s04_snow_lair/s04_snow_lair_04.png",
+      "sha256": "a96af7cf7b2d5d8d229463feeb22b83a5391226f0fcd348d0de50fad8d8b0967"
+    },
+    {
+      "cell": 52,
+      "action": "snow_roll",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s04_snow_roll/s04_snow_roll_01.png",
+      "sha256": "0bf7420190c4b3b41e70b377de4a1c0d661fbb12b1cbfd604bcb2fc2c647e3d7"
+    },
+    {
+      "cell": 53,
+      "action": "snow_roll",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s04_snow_roll/s04_snow_roll_02.png",
+      "sha256": "e06fd3ec9c2288e7b859a2394c241f251e63c6fb784ca86730ae54f89931fec9"
+    },
+    {
+      "cell": 54,
+      "action": "snow_roll",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s04_snow_roll/s04_snow_roll_03.png",
+      "sha256": "d6a9c763bf8b6847e74f9ad3c05fdd744e42c909ce9494e4c85d85e7a7f7e94e"
+    },
+    {
+      "cell": 55,
+      "action": "snow_roll",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s04_snow_roll/s04_snow_roll_04.png",
+      "sha256": "1a1a8bfd9abf4a6d959608a0868508ed87cfddc65161a5ada66a4d7c009bad56"
+    },
+    {
+      "cell": 56,
+      "action": "swim",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s04_swim/s04_swim_01.png",
+      "sha256": "01f4d26b5539cddca5b20097241f7f1cc5e371ed65fcd0d94941e088941d94b3"
+    },
+    {
+      "cell": 57,
+      "action": "swim",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s04_swim/s04_swim_02.png",
+      "sha256": "49bce14a3525b4ad732840d2177b2cb8eef10144471e515e690f104c705dd831"
+    },
+    {
+      "cell": 58,
+      "action": "swim",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s04_swim/s04_swim_03.png",
+      "sha256": "90403aaf07286535e6a6299efe73bbe847d03981df2fa9d4152b44374b529719"
+    },
+    {
+      "cell": 59,
+      "action": "swim",
+      "source": "research/launch-six-approved-staging/protected-edge-review/sprites/polar_bear/s04_swim/s04_swim_04.png",
+      "sha256": "53832491f5ffe4e69fd9bd7f2fb92a2e7cd795455db1849af2b11e54264bd880"
+    }
+  ],
+  "rejected": [
+    "walk"
+  ],
+  "movement": "run",
+  "ground_y": 121
+}

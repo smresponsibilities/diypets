@@ -1,0 +1,391 @@
+{
+  "frames": [
+    {
+      "cell": 0,
+      "action": "idle_blink",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s01_idle_blink_f01.png",
+      "sha256": "781fccad924314a09fb9a4ccf9977b39ddb646a746ae7bebc96c15859505f15c"
+    },
+    {
+      "cell": 1,
+      "action": "idle_blink",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s01_idle_blink_f02.png",
+      "sha256": "aacd14b9adc00b4439e7e3dc83402b2c11bd76ff72b33fe68a5507dcc31629c9"
+    },
+    {
+      "cell": 2,
+      "action": "idle_blink",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s01_idle_blink_f03.png",
+      "sha256": "5adf804ff3218f82f8a79f3b8bc29ddacac92cc014db9cb49153504681c8ce99"
+    },
+    {
+      "cell": 3,
+      "action": "idle_blink",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s01_idle_blink_f04.png",
+      "sha256": "18b48399bdadc4d821bce8f0a7632d2b24ee3f32fe4976a05a2a4d264fcd4bb5"
+    },
+    {
+      "cell": 4,
+      "action": "run",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s01_run_f01.png",
+      "sha256": "a25ebe4d7fd2f27dea9f0c27dfc9314ce0d32d1ffb0cce9916f42b535c2dced2"
+    },
+    {
+      "cell": 5,
+      "action": "run",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s01_run_f02.png",
+      "sha256": "601332554439558c2981b2d2aa6d2dfeb72553aaab0b179a20b8926c86e8789d"
+    },
+    {
+      "cell": 6,
+      "action": "run",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s01_run_f03.png",
+      "sha256": "9a886ba2c11706df87df7669e072d1eebd6c536fde7d6003d03b8f5ef256ce44"
+    },
+    {
+      "cell": 7,
+      "action": "run",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s01_run_f04.png",
+      "sha256": "e0d6f618626c0b6f21a743dacc74cd0eb70f9b0ec8a8d68d8c03b500337de31b"
+    },
+    {
+      "cell": 8,
+      "action": "turn_left_to_right",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s01_turn_left_to_right_f01.png",
+      "sha256": "8140524c4b5276839efc07ec43a4119b8295e23c048f53d1c378f4be80d276cb"
+    },
+    {
+      "cell": 9,
+      "action": "turn_left_to_right",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s01_turn_left_to_right_f02.png",
+      "sha256": "3c2b32aae2c82e80e8477a5d9fc01e4bb5256f04fed52808531720c5a2027cd3"
+    },
+    {
+      "cell": 10,
+      "action": "turn_left_to_right",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s01_turn_left_to_right_f03.png",
+      "sha256": "059a6449e933f0f5705000d3daea41721f0545d33381a26eeab45bdad5f1bb97"
+    },
+    {
+      "cell": 11,
+      "action": "turn_left_to_right",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s01_turn_left_to_right_f04.png",
+      "sha256": "fe4864ba28d578b64fbc2fe3431da28ee09037f6a8ecf053ab7fe6cc25e689a2"
+    },
+    {
+      "cell": 12,
+      "action": "walk",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s01_walk_f01.png",
+      "sha256": "5d839d0f1478239178a4e51ac914b2816d37746c1d7404b53ea470e2cb3d36ab"
+    },
+    {
+      "cell": 13,
+      "action": "walk",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s01_walk_f02.png",
+      "sha256": "c9b944466d25a0490934bc81e0b51a5e9f442742ee4fd5b13947ee7b78fb89eb"
+    },
+    {
+      "cell": 14,
+      "action": "walk",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s01_walk_f03.png",
+      "sha256": "42dddb1bd3131c724c303a271962f6385cb31ec05c9c55d4c09b2b7eb1f103a5"
+    },
+    {
+      "cell": 15,
+      "action": "walk",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s01_walk_f04.png",
+      "sha256": "720ba42f5658ad240bb947f821d1801a28b86df3fd9ed5df92d0b269cd923c92"
+    },
+    {
+      "cell": 16,
+      "action": "jump",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s02_jump_f01.png",
+      "sha256": "cf0098105d19e3177041f84f8ca3c7c5e54a37230f39dbedf649c081e293fef7"
+    },
+    {
+      "cell": 17,
+      "action": "jump",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s02_jump_f02.png",
+      "sha256": "bbf30839225d23bdf12973992b8e9a665ffc86fce87e754e884fa5266bec908f"
+    },
+    {
+      "cell": 18,
+      "action": "jump",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s02_jump_f03.png",
+      "sha256": "988c1055ec244a591028a2e00abf21e4a0e38ebeb8373b27831420e3255f6971"
+    },
+    {
+      "cell": 19,
+      "action": "jump",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s02_jump_f04.png",
+      "sha256": "a6abdbdd9e081219785eb3afe187bf4991ddd2b8f9b339c217c7b2580964c168"
+    },
+    {
+      "cell": 20,
+      "action": "sit",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s02_sit_f01.png",
+      "sha256": "10b44ca106e0e3fc30e4e8dd37dca1ad4bd572d6faa2592250b32aefb5a15aaa"
+    },
+    {
+      "cell": 21,
+      "action": "sit",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s02_sit_f02.png",
+      "sha256": "4ebda487bbf0724c9f467ff32ae1359ab4be5ca8653759519cb6e0e406e64ca5"
+    },
+    {
+      "cell": 22,
+      "action": "sit",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s02_sit_f03.png",
+      "sha256": "8d36dff4201a391e052b20f770da9b241b6df98133bfd22c2a104d7e0116b722"
+    },
+    {
+      "cell": 23,
+      "action": "sit",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s02_sit_f04.png",
+      "sha256": "1a97ee830c5999a00c57d16ec9e802a56bd0e241d00ad6819868fb8510285fb4"
+    },
+    {
+      "cell": 24,
+      "action": "sleep",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s02_sleep_f01.png",
+      "sha256": "a6abdbdd9e081219785eb3afe187bf4991ddd2b8f9b339c217c7b2580964c168"
+    },
+    {
+      "cell": 25,
+      "action": "sleep",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s02_sleep_f02.png",
+      "sha256": "f660e7e7ceea68fed5de6393c3db2a7b8bbb037ad09ba091c334f5eb4452bb45"
+    },
+    {
+      "cell": 26,
+      "action": "sleep",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s02_sleep_f03.png",
+      "sha256": "bd2c35cd508c54d9ef594798d71ae486ddae0c8f491deaf73a5b7726c8f1d9e6"
+    },
+    {
+      "cell": 27,
+      "action": "sleep",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s02_sleep_f04.png",
+      "sha256": "e6cec4c965d7a914b6912bd80a99731fc998dd34bfeb1aa28d52f2099e590ecb"
+    },
+    {
+      "cell": 28,
+      "action": "sniff",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s02_sniff_f01.png",
+      "sha256": "bbf30839225d23bdf12973992b8e9a665ffc86fce87e754e884fa5266bec908f"
+    },
+    {
+      "cell": 29,
+      "action": "sniff",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s02_sniff_f02.png",
+      "sha256": "54d0c20e267a598916b5bc613bc2fcd1fe6a3ce8308ee38f120d4bd3faa0b683"
+    },
+    {
+      "cell": 30,
+      "action": "sniff",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s02_sniff_f03.png",
+      "sha256": "078043854fa31d8053537344ace39253b3128bf2cc595b170cbbc508e094f919"
+    },
+    {
+      "cell": 31,
+      "action": "sniff",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s02_sniff_f04.png",
+      "sha256": "031d8feaea5b5d4aea93725ec2b698b26d078161dd407cfa37785919fdad8df4"
+    },
+    {
+      "cell": 32,
+      "action": "back_view_climb",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s03_back_view_climb_f01.png",
+      "sha256": "7231d94bc10b6b3e990cd62217a1ff022e83971585003a71294a3f4e71a34f7c"
+    },
+    {
+      "cell": 33,
+      "action": "back_view_climb",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s03_back_view_climb_f02.png",
+      "sha256": "0bf0935389fcabdcbdc29de1558eef4048ddf018ba527707e17825bffa6dd721"
+    },
+    {
+      "cell": 34,
+      "action": "back_view_climb",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s03_back_view_climb_f03.png",
+      "sha256": "3d90ecde4dce044db16872e96ea724f3e5991e3f1bd6937f9ec4a34454fadeb3"
+    },
+    {
+      "cell": 35,
+      "action": "back_view_climb",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s03_back_view_climb_f04.png",
+      "sha256": "13f89fa46b5f751bf7c392219ac8dc488dbd55e1e3e33eb4813b4bd1b784e30e"
+    },
+    {
+      "cell": 36,
+      "action": "cursor_drag",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s03_cursor_drag_f01.png",
+      "sha256": "f6cc66bb04a1e166d44b4746c1d9b5fdbc4cd69707562d46d0629ab59df5d6a8"
+    },
+    {
+      "cell": 37,
+      "action": "cursor_drag",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s03_cursor_drag_f02.png",
+      "sha256": "9939540b0ac22f1376674e08f905b87618e6b2e9ec837ecaa96f7b2621ff230f"
+    },
+    {
+      "cell": 38,
+      "action": "cursor_drag",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s03_cursor_drag_f03.png",
+      "sha256": "ce864819d0844b929e4eff272f9f612f9a192c1f30cb06d45fedc711c0651107"
+    },
+    {
+      "cell": 39,
+      "action": "cursor_drag",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s03_cursor_drag_f04.png",
+      "sha256": "62e663faaa4af92217f6d84753baaa492c3003d368845fff2ca3e13b0c3e2d44"
+    },
+    {
+      "cell": 40,
+      "action": "fall",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s03_fall_f01.png",
+      "sha256": "a35e08fff8991d65675f6b5e7c89bda8ab5a3d98ac5094631fb002ebb634b3fc"
+    },
+    {
+      "cell": 41,
+      "action": "fall",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s03_fall_f02.png",
+      "sha256": "0cb9127dc725177e11e5dbc3eea06701c6a0606d8f3381be7fbc8131d9112df9"
+    },
+    {
+      "cell": 42,
+      "action": "fall",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s03_fall_f03.png",
+      "sha256": "f107465b26f3cdd2ef79b398010bf39f63c5bffe4d60cc07f9b7c8b7592e7106"
+    },
+    {
+      "cell": 43,
+      "action": "fall",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s03_fall_f04.png",
+      "sha256": "8040e189960753e30c1a64ff32432a24142f1497aebca1c444769852913a9f19"
+    },
+    {
+      "cell": 44,
+      "action": "splat_recovery",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s03_splat_recovery_f01.png",
+      "sha256": "42e77c54b2dd195e4499e644024a1b38200146896b888a3827b62581caf621bb"
+    },
+    {
+      "cell": 45,
+      "action": "splat_recovery",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s03_splat_recovery_f02.png",
+      "sha256": "efb79c6b86734409b616c776e6c980d3843d9460a270ce5b3f554869bb924349"
+    },
+    {
+      "cell": 46,
+      "action": "splat_recovery",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s03_splat_recovery_f03.png",
+      "sha256": "549f79adc806c0f8d42b1587b931f806fa95173ef2a79068ecfd87eaccbb527d"
+    },
+    {
+      "cell": 47,
+      "action": "splat_recovery",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s03_splat_recovery_f04.png",
+      "sha256": "fbd5f35c4547ac72f3793a1f5a13676c466f5549da438cf062171e01cf2607d2"
+    },
+    {
+      "cell": 48,
+      "action": "play_bow",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s04_play_bow_f01.png",
+      "sha256": "d62e9456a0b9c11e45a4183e91dbf6e562aa4e12800c63cda0216334abaaa024"
+    },
+    {
+      "cell": 49,
+      "action": "play_bow",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s04_play_bow_f02.png",
+      "sha256": "d467c6f4e9f235c32ee6dea5ef61eca7d5f09baf786e50022cbc57e9abf01c8d"
+    },
+    {
+      "cell": 50,
+      "action": "play_bow",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s04_play_bow_f03.png",
+      "sha256": "9cc3325970ba1497388202950b5f4db19132e162855bf53d6ed51c55a90fa7e6"
+    },
+    {
+      "cell": 51,
+      "action": "play_bow",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s04_play_bow_f04.png",
+      "sha256": "02aaae2419896db31ce5ead37d69fdce5b3fb59ce7b528ec6640d5354f757f9d"
+    },
+    {
+      "cell": 52,
+      "action": "retrieve_ball",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s04_retrieve_ball_f01.png",
+      "sha256": "486d13438ee65811976463a8c35b06f893e65cbaf3271c3c76a2e4b1a632cd4d"
+    },
+    {
+      "cell": 53,
+      "action": "retrieve_ball",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s04_retrieve_ball_f02.png",
+      "sha256": "b4844cd77c002bc6abd3279e465fe46e6778d144598fa59aae7f5480f1f9a9a6"
+    },
+    {
+      "cell": 54,
+      "action": "retrieve_ball",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s04_retrieve_ball_f03.png",
+      "sha256": "1cbe4dbbea0e96a16f315f070276ad18872665fa2e723f9f4d0b80222cbaeb8e"
+    },
+    {
+      "cell": 55,
+      "action": "retrieve_ball",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s04_retrieve_ball_f04.png",
+      "sha256": "fc3d0690bbf1c5b58d14127327475f68b435fdd5993a5c38efda4e3ab378499d"
+    },
+    {
+      "cell": 56,
+      "action": "shake_dry",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s04_shake_dry_f01.png",
+      "sha256": "5e13016b1d0fc3e797473e6f322bea9cb8ef67d9d3cd1dfd2f0209cdaad85576"
+    },
+    {
+      "cell": 57,
+      "action": "shake_dry",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s04_shake_dry_f02.png",
+      "sha256": "002b310228899e15c4d48286ee9d14f4a624e9adec161ab7e143c5e0fa7bbe5c"
+    },
+    {
+      "cell": 58,
+      "action": "shake_dry",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s04_shake_dry_f03.png",
+      "sha256": "247f4547895cfb430d0181a90ddbc5df843ea3a2dac7efdf911c51e88f9d2fda"
+    },
+    {
+      "cell": 59,
+      "action": "shake_dry",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s04_shake_dry_f04.png",
+      "sha256": "81bce0b23c1d5561bb0cee797eec355457db6cc19e86e2265cbeff537325b125"
+    },
+    {
+      "cell": 60,
+      "action": "swim_paddle",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s04_swim_paddle_f01.png",
+      "sha256": "2bc8aefbb6bb263b92649249b6d9bc7eee2d37b8275ae0bccaf87ca6fce521aa"
+    },
+    {
+      "cell": 61,
+      "action": "swim_paddle",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s04_swim_paddle_f02.png",
+      "sha256": "039b8528d8ac1828cafc9a7c7bcd5a652c6e32b2ecb7bfcd66e1baa67eb59e06"
+    },
+    {
+      "cell": 62,
+      "action": "swim_paddle",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s04_swim_paddle_f03.png",
+      "sha256": "811aee59b8b661ed03822c283bf33ee09278234f7c895299c7619791854c95b0"
+    },
+    {
+      "cell": 63,
+      "action": "swim_paddle",
+      "source": "research/launch-six-approved-staging/dog-eye-and-speck-review/sprites/dog/golden_retriever_s04_swim_paddle_f04.png",
+      "sha256": "cb68413fb64157f21eed6a9b0aaaa3118c3609baa1e276da076e76732c324ebe"
+    }
+  ],
+  "rejected": [],
+  "movement": "walk",
+  "ground_y": 103
+}

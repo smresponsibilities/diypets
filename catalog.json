@@ -1,0 +1,290 @@
+[
+  {
+    "id": "dog",
+    "name": "Dog",
+    "author": "SM",
+    "category": "made_by_sm",
+    "size_kb": 1027,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/dog/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/dog.png"
+  },
+  {
+    "id": "goat",
+    "name": "Goat",
+    "author": "SM",
+    "category": "made_by_sm",
+    "size_kb": 1188,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/goat/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/goat.png"
+  },
+  {
+    "id": "highland_cow",
+    "name": "Highland Cow",
+    "author": "SM",
+    "category": "made_by_sm",
+    "size_kb": 1039,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/highland_cow/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/highland_cow.png"
+  },
+  {
+    "id": "polar_bear",
+    "name": "Polar Bear",
+    "author": "SM",
+    "category": "made_by_sm",
+    "size_kb": 829,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/polar_bear/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/polar_bear.png"
+  },
+  {
+    "id": "stegosaurus",
+    "name": "Stegosaurus",
+    "author": "SM",
+    "category": "made_by_sm",
+    "size_kb": 544,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/stegosaurus/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/stegosaurus.png"
+  },
+  {
+    "id": "mimiko",
+    "name": "Black Neko Mate",
+    "author": "Madnuttah",
+    "category": "esheep",
+    "size_kb": 179,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/mimiko/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/mimiko.png"
+  },
+  {
+    "id": "blue_ham_ham",
+    "name": "Blue Ham Ham",
+    "author": "michelle!",
+    "category": "esheep",
+    "size_kb": 41,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/blue_ham_ham/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/blue_ham_ham.png"
+  },
+  {
+    "id": "bbunny",
+    "name": "Buster Bunny",
+    "author": "Adriano",
+    "category": "esheep",
+    "size_kb": 33,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/bbunny/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/bbunny.png"
+  },
+  {
+    "id": "esheep64",
+    "name": "eSheep 64bit",
+    "author": "Adriano",
+    "category": "esheep",
+    "size_kb": 157,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/esheep64/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/esheep64.png"
+  },
+  {
+    "id": "fox",
+    "name": "fox mate",
+    "author": "Michelle!",
+    "category": "esheep",
+    "size_kb": 223,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/fox/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/fox.png"
+  },
+  {
+    "id": "grian",
+    "name": "Grian - Minecraft",
+    "author": "RedSparr0w",
+    "category": "esheep",
+    "size_kb": 49,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/grian/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/grian.png"
+  },
+  {
+    "id": "blue_sheep",
+    "name": "gSheep Blue",
+    "author": "Oliver B.",
+    "category": "esheep",
+    "size_kb": 1132,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/blue_sheep/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/blue_sheep.png"
+  },
+  {
+    "id": "green_sheep",
+    "name": "gSheep Green",
+    "author": "Oliver B.",
+    "category": "esheep",
+    "size_kb": 1132,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/green_sheep/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/green_sheep.png"
+  },
+  {
+    "id": "orange_sheep",
+    "name": "gSheep Orange",
+    "author": "Oliver B.",
+    "category": "esheep",
+    "size_kb": 1133,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/orange_sheep/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/orange_sheep.png"
+  },
+  {
+    "id": "pink_sheep",
+    "name": "gSheep Pink",
+    "author": "Oliver B.",
+    "category": "esheep",
+    "size_kb": 1133,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/pink_sheep/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/pink_sheep.png"
+  },
+  {
+    "id": "purple_sheep",
+    "name": "gSheep Purple",
+    "author": "Oliver B.",
+    "category": "esheep",
+    "size_kb": 1132,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/purple_sheep/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/purple_sheep.png"
+  },
+  {
+    "id": "red_sheep",
+    "name": "gSheep Red",
+    "author": "Oliver B.",
+    "category": "esheep",
+    "size_kb": 1133,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/red_sheep/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/red_sheep.png"
+  },
+  {
+    "id": "yellow_sheep",
+    "name": "gSheep Yellow",
+    "author": "Oliver B.",
+    "category": "esheep",
+    "size_kb": 1133,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/yellow_sheep/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/yellow_sheep.png"
+  },
+  {
+    "id": "mareep",
+    "name": "mareep",
+    "author": "michelle!",
+    "category": "esheep",
+    "size_kb": 20,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/mareep/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/mareep.png"
+  },
+  {
+    "id": "mumbojumbo",
+    "name": "MumboJumbo - Minecraft",
+    "author": "RedSparr0w",
+    "category": "esheep",
+    "size_kb": 55,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/mumbojumbo/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/mumbojumbo.png"
+  },
+  {
+    "id": "my_cat",
+    "name": "My Cat",
+    "author": "SM",
+    "category": "esheep",
+    "size_kb": 351,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/my_cat/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/my_cat.png"
+  },
+  {
+    "id": "negima",
+    "name": "Negima",
+    "author": "Adriano",
+    "category": "esheep",
+    "size_kb": 92,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/negima/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/negima.png"
+  },
+  {
+    "id": "neko",
+    "name": "Neko mate",
+    "author": "Adriano",
+    "category": "esheep",
+    "size_kb": 161,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/neko/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/neko.png"
+  },
+  {
+    "id": "pikachu",
+    "name": "Pikachu",
+    "author": "michelle!",
+    "category": "esheep",
+    "size_kb": 19,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/pikachu/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/pikachu.png"
+  },
+  {
+    "id": "pingus",
+    "name": "Pingus",
+    "author": "Adriano Petrucci",
+    "category": "esheep",
+    "size_kb": 118,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/pingus/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/pingus.png"
+  },
+  {
+    "id": "pink_fox",
+    "name": "pink fox mate",
+    "author": "Michelle!",
+    "category": "esheep",
+    "size_kb": 219,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/pink_fox/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/pink_fox.png"
+  },
+  {
+    "id": "pink_neko",
+    "name": "pink neko",
+    "author": "michelle!",
+    "category": "esheep",
+    "size_kb": 151,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/pink_neko/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/pink_neko.png"
+  },
+  {
+    "id": "shiny_sylveon",
+    "name": "Shiny Sylveon",
+    "author": "michelle!",
+    "category": "esheep",
+    "size_kb": 23,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/shiny_sylveon/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/shiny_sylveon.png"
+  },
+  {
+    "id": "skeleton",
+    "name": "Skeleton - Minecraft",
+    "author": "RedSparr0w",
+    "category": "esheep",
+    "size_kb": 47,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/skeleton/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/skeleton.png"
+  },
+  {
+    "id": "ssj-goku",
+    "name": "SSJ Goku",
+    "author": "RedSparr0w",
+    "category": "esheep",
+    "size_kb": 55,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/ssj-goku/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/ssj-goku.png"
+  },
+  {
+    "id": "yellow_neko",
+    "name": "yellow neko",
+    "author": "michelle!",
+    "category": "esheep",
+    "size_kb": 150,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/yellow_neko/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/yellow_neko.png"
+  },
+  {
+    "id": "zombie",
+    "name": "Zombie - Minecraft",
+    "author": "RedSparr0w",
+    "category": "esheep",
+    "size_kb": 62,
+    "xml_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/assets/zombie/deskpet.xml",
+    "icon_url": "https://raw.githubusercontent.com/smresponsibilities/diypets/main/catalog_icons/zombie.png"
+  }
+]

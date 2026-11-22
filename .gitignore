@@ -1,0 +1,10 @@
+/target
+.cargo/
+.thumb_cache/
+settings.toml
+art/
+assets/esheep_ani.gif
+*.tmp
+*.log
+*.ps1
+*.py

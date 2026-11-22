@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Browse Crates.io Package
+    url: https://crates.io/crates/diypets
+    about: Install or view release history on crates.io

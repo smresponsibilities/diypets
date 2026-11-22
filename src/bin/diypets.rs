@@ -1,0 +1,1188 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+#[cfg(not(windows))]
+use std::num::NonZeroU32;
+use std::path::PathBuf;
+use std::rc::Rc;
+use std::time::{Duration, Instant};
+
+use diypets::autostart;
+use diypets::catalog::{default_app_icon, make_square_app_icon};
+use diypets::deskpet_state::{
+    DeskpetState, DeskpetStateId, select_window_floor, window_floor_candidate,
+};
+use diypets::deskpet_xml::DeskpetPack;
+use diypets::settings::{
+    MAX_ACTIVE_PETS, Settings, find_pack_icon, find_pack_xml, resolve_project_root, sibling_binary,
+};
+#[cfg(not(windows))]
+use softbuffer::{Context, Surface};
+use tray_icon::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
+use tray_icon::{Icon as TrayIconImage, TrayIcon, TrayIconBuilder};
+use winit::application::ApplicationHandler;
+use winit::dpi::PhysicalPosition;
+use winit::event::{ElementState, MouseButton, WindowEvent};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::window::{Window, WindowId, WindowLevel};
+
+const DEFAULT_XML_DATA: &str = include_str!("../../assets/highland_cow/deskpet.xml");
+const FRAME_INTERVAL: Duration = Duration::from_millis(16);
+const SETTINGS_POLL_MS: u64 = 500;
+const WINDOW_SCAN_MS: u64 = 80;
+
+fn scaled_height(tile_w: u32, tile_h: u32, pet_size: u32) -> u32 {
+    if tile_w == 0 {
+        return pet_size.max(1);
+    }
+    ((tile_h as f32 * (pet_size as f32 / tile_w as f32)).round() as u32).max(1)
+}
+
+#[cfg(windows)]
+fn scale_nearest_into(
+    src: &[u32],
+    src_w: u32,
+    src_h: u32,
+    dst_w: u32,
+    dst_h: u32,
+    dst: &mut Vec<u32>,
+) {
+    let needed = (dst_w * dst_h) as usize;
+    if dst.len() != needed {
+        dst.resize(needed, 0);
+    }
+    if src_w == 0 || src_h == 0 || dst_w == 0 || dst_h == 0 {
+        return;
+    }
+    for y in 0..dst_h {
+        let src_row = ((y * src_h / dst_h) * src_w) as usize;
+        let dst_row = (y * dst_w) as usize;
+        for x in 0..dst_w {
+            let src_idx = src_row + (x * src_w / dst_w) as usize;
+            dst[dst_row + x as usize] = src[src_idx];
+        }
+    }
+}
+
+#[cfg(windows)]
+#[allow(dead_code)]
+fn scale_nearest(src: &[u32], src_w: u32, src_h: u32, dst_w: u32, dst_h: u32) -> Vec<u32> {
+    let mut dst = Vec::new();
+    scale_nearest_into(src, src_w, src_h, dst_w, dst_h, &mut dst);
+    dst
+}
+
+#[cfg(all(test, windows))]
+mod scaling_tests {
+    use super::{scale_nearest, scaled_height};
+
+    #[test]
+    fn nearest_scaling_keeps_opaque_and_transparent_edges_crisp() {
+        assert_eq!(
+            scale_nearest(&[0xffff8000, 0], 2, 1, 4, 2),
+            vec![
+                0xffff8000, 0xffff8000, 0, 0,
+                0xffff8000, 0xffff8000, 0, 0
+            ]
+        );
+    }
+
+    #[test]
+    fn scaled_height_preserves_aspect_ratio() {
+        assert_eq!(scaled_height(40, 40, 128), 128);
+        assert_eq!(scaled_height(64, 32, 128), 64);
+    }
+}
+
+fn load_pack(pack_id: &str) -> DeskpetPack {
+    if let Some(xml_path) = find_pack_xml(pack_id) {
+        if let Ok(xml_data) = std::fs::read_to_string(&xml_path) {
+            if let Ok(pack) = DeskpetPack::parse(&xml_data) {
+                return pack;
+            }
+        }
+    }
+    DeskpetPack::parse(DEFAULT_XML_DATA).unwrap()
+}
+
+fn pet_icon(id: &str, pack: &DeskpetPack) -> Option<image::RgbaImage> {
+    if let Some(icon_path) = find_pack_icon(id) {
+        if let Ok(img) = image::open(&icon_path) {
+            return Some(make_square_app_icon(&img.to_rgba8(), 64));
+        }
+    }
+    if let Some(first) = pack.frames.first() {
+        let rgba: Vec<u8> = first
+            .iter()
+            .flat_map(|pixel| {
+                let [a, r, g, b] = pixel.to_be_bytes();
+                let straight =
+                    |channel: u8| (u16::from(channel) * 255 / u16::from(a.max(1))).min(255) as u8;
+                [straight(r), straight(g), straight(b), a]
+            })
+            .collect();
+        if let Some(raw) = image::RgbaImage::from_raw(pack.tile_w, pack.tile_h, rgba) {
+            return Some(make_square_app_icon(&raw, 64));
+        }
+    }
+    default_app_icon(64)
+}
+
+#[cfg(windows)]
+fn hwnd_of(window: &Window) -> Option<windows::Win32::Foundation::HWND> {
+    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    let handle = window.window_handle().ok()?;
+    match handle.as_raw() {
+        RawWindowHandle::Win32(h) => Some(windows::Win32::Foundation::HWND(h.hwnd.get() as _)),
+        _ => None,
+    }
+}
+
+#[cfg(windows)]
+fn apply_topmost(window: &Window, topmost: bool) {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetWindowPos,
+    };
+    if let Some(hwnd) = hwnd_of(window) {
+        unsafe {
+            let insert_after = if topmost { HWND_TOPMOST } else { HWND_NOTOPMOST };
+            let _ = SetWindowPos(
+                hwnd,
+                insert_after,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            );
+        }
+    }
+}
+
+#[cfg(windows)]
+struct LayeredSurface {
+    hdc_mem: windows::Win32::Graphics::Gdi::HDC,
+    hbmp: windows::Win32::Graphics::Gdi::HBITMAP,
+    hbmp_old: windows::Win32::Graphics::Gdi::HGDIOBJ,
+    bits: *mut u32,
+    width: u32,
+    height: u32,
+}
+
+#[cfg(windows)]
+impl LayeredSurface {
+    fn new(width: u32, height: u32) -> Option<Self> {
+        use windows::Win32::Graphics::Gdi::{
+            BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleDC, CreateDIBSection,
+            DIB_RGB_COLORS, DeleteDC, SelectObject,
+        };
+        unsafe {
+            let hdc_mem = CreateCompatibleDC(None);
+            if hdc_mem.is_invalid() {
+                return None;
+            }
+            let bmi = BITMAPINFO {
+                bmiHeader: BITMAPINFOHEADER {
+                    biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                    biWidth: width as i32,
+                    biHeight: -(height as i32),
+                    biPlanes: 1,
+                    biBitCount: 32,
+                    biCompression: BI_RGB.0,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let mut bits: *mut std::ffi::c_void = std::ptr::null_mut();
+            let Ok(hbmp) = CreateDIBSection(None, &bmi, DIB_RGB_COLORS, &mut bits, None, 0) else {
+                let _ = DeleteDC(hdc_mem);
+                return None;
+            };
+            if bits.is_null() {
+                let _ = windows::Win32::Graphics::Gdi::DeleteObject(hbmp);
+                let _ = DeleteDC(hdc_mem);
+                return None;
+            }
+            let hbmp_old = SelectObject(hdc_mem, hbmp);
+            Some(Self {
+                hdc_mem,
+                hbmp,
+                hbmp_old,
+                bits: bits as *mut u32,
+                width,
+                height,
+            })
+        }
+    }
+
+    fn present(&mut self, window: &Window, buffer: &[u32], x: i32, y: i32) {
+        use windows::Win32::Foundation::{COLORREF, POINT, SIZE};
+        use windows::Win32::Graphics::Gdi::{AC_SRC_ALPHA, AC_SRC_OVER, BLENDFUNCTION};
+        use windows::Win32::UI::WindowsAndMessaging::{ULW_ALPHA, UpdateLayeredWindow};
+
+        let Some(hwnd) = hwnd_of(window) else { return };
+        let pixel_count = (self.width * self.height) as usize;
+        if buffer.len() < pixel_count {
+            return;
+        }
+        unsafe {
+            std::ptr::copy_nonoverlapping(buffer.as_ptr(), self.bits, pixel_count);
+            let pt_src = POINT { x: 0, y: 0 };
+            let pt_dst = POINT { x, y };
+            let size = SIZE {
+                cx: self.width as i32,
+                cy: self.height as i32,
+            };
+            let blend = BLENDFUNCTION {
+                BlendOp: AC_SRC_OVER as u8,
+                BlendFlags: 0,
+                SourceConstantAlpha: 255,
+                AlphaFormat: AC_SRC_ALPHA as u8,
+            };
+            let _ = UpdateLayeredWindow(
+                hwnd,
+                None,
+                Some(&pt_dst as *const _),
+                Some(&size as *const _),
+                self.hdc_mem,
+                Some(&pt_src as *const _),
+                COLORREF(0),
+                Some(&blend as *const _),
+                ULW_ALPHA,
+            );
+        }
+    }
+}
+
+#[cfg(windows)]
+impl Drop for LayeredSurface {
+    fn drop(&mut self) {
+        use windows::Win32::Graphics::Gdi::{DeleteDC, DeleteObject, SelectObject};
+        unsafe {
+            SelectObject(self.hdc_mem, self.hbmp_old);
+            let _ = DeleteObject(self.hbmp);
+            let _ = DeleteDC(self.hdc_mem);
+        }
+    }
+}
+
+#[cfg(windows)]
+fn prevent_focus_stealing(window: &Window, topmost: bool) {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GWL_EXSTYLE, GetWindowLongW, SetWindowLongW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
+        WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT,
+    };
+
+    if let Some(hwnd) = hwnd_of(window) {
+        unsafe {
+            let style = GetWindowLongW(hwnd, GWL_EXSTYLE);
+            let mut new_style = (style
+                | WS_EX_NOACTIVATE.0 as i32
+                | WS_EX_TOOLWINDOW.0 as i32
+                | WS_EX_LAYERED.0 as i32)
+                & !(WS_EX_NOREDIRECTIONBITMAP.0 as i32)
+                & !(WS_EX_TRANSPARENT.0 as i32);
+            if topmost {
+                new_style |= WS_EX_TOPMOST.0 as i32;
+            } else {
+                new_style &= !(WS_EX_TOPMOST.0 as i32);
+            }
+            SetWindowLongW(hwnd, GWL_EXSTYLE, new_style);
+
+            if let Some(mut prime) = LayeredSurface::new(1, 1) {
+                prime.present(window, &[0u32], 0, 0);
+            }
+        }
+        apply_topmost(window, topmost);
+    }
+}
+
+#[cfg(windows)]
+fn get_work_area() -> Option<windows::Win32::Foundation::RECT> {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        SPI_GETWORKAREA, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SystemParametersInfoW,
+    };
+    let mut rect = windows::Win32::Foundation::RECT::default();
+    unsafe {
+        if SystemParametersInfoW(
+            SPI_GETWORKAREA,
+            0,
+            Some(&mut rect as *mut _ as _),
+            SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+        )
+        .is_ok()
+        {
+            return Some(rect);
+        }
+    }
+    None
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RenderKey {
+    frame_idx: usize,
+    moving_left: bool,
+    opacity_u8: u8,
+    x: i32,
+    y: i32,
+    dst_w: u32,
+    dst_h: u32,
+}
+
+struct PetInstance {
+    pack_id: String,
+    window: Rc<Window>,
+    #[cfg(not(windows))]
+    surface: Option<Surface<Rc<Window>, Rc<Window>>>,
+    #[cfg(windows)]
+    layered: Option<LayeredSurface>,
+    #[cfg(windows)]
+    buffer: Vec<u32>,
+    #[cfg(windows)]
+    scaled_buf: Vec<u32>,
+    state: DeskpetState,
+    last_tick: u64,
+    last_window_scan: u64,
+    cached_floor_y: Option<f32>,
+    cached_wall_right: Option<f32>,
+    cursor_pos: (f32, f32),
+    cursor_velocity: (f32, f32),
+    drag_sample_ms: u64,
+    is_dragging: bool,
+    last_render: Option<RenderKey>,
+}
+
+struct DeskpetApp {
+    pets: Vec<PetInstance>,
+    desired_herd: Vec<String>,
+    pet_size: u32,
+    walk_speed: i32,
+    is_topmost: bool,
+    climb_windows: bool,
+    click_through: bool,
+    start_on_login: bool,
+    settings_path: PathBuf,
+    last_settings_mod: Option<std::time::SystemTime>,
+    start_time: Instant,
+    next_frame: Instant,
+    last_settings_poll: u64,
+    tray: Option<TrayIcon>,
+    settings_process: Option<std::process::Child>,
+    creator_process: Option<std::process::Child>,
+}
+
+impl DeskpetApp {
+    fn spawn_sibling(slot: &mut Option<std::process::Child>, binary_stem: &str) {
+        if let Some(child) = slot.as_mut() {
+            if matches!(child.try_wait(), Ok(None)) {
+                return;
+            }
+        }
+        if let Some(exe) = sibling_binary(binary_stem) {
+            let mut cmd = std::process::Command::new(exe);
+            cmd.current_dir(resolve_project_root());
+            if let Ok(child) = cmd.spawn() {
+                *slot = Some(child);
+            }
+        }
+    }
+
+    fn persist_current_settings(&mut self) {
+        let mut s = Settings::load_sanitized(&self.settings_path);
+        s.always_on_top = self.is_topmost;
+        s.start_on_login = self.start_on_login;
+        if let Some(first) = self.desired_herd.first() {
+            s.pet_pack = first.clone();
+            s.extra_pets = self.desired_herd[1..].to_vec();
+        }
+        if s.save(&self.settings_path).is_ok() {
+            self.last_settings_mod = std::fs::metadata(&self.settings_path)
+                .and_then(|m| m.modified())
+                .ok();
+        }
+    }
+
+    fn spawn_pet_instance(
+        &self,
+        event_loop: &ActiveEventLoop,
+        pack_id: &str,
+        slot_index: usize,
+        now_ms: u64,
+    ) -> PetInstance {
+        let pack = load_pack(pack_id);
+        let icon_img = pet_icon(pack_id, &pack);
+
+        let mut state = DeskpetState::new(pack);
+        state.pet_size = self.pet_size;
+        state.walk_speed = self.walk_speed;
+        if slot_index > 0 {
+            state.x = 180.0 + ((slot_index as f32 * 190.0) % 980.0);
+            state.y = 40.0 + ((slot_index as f32 * 45.0) % 180.0);
+            state.is_moving_left = slot_index % 2 == 0;
+        }
+
+        let scaled_w = state.pet_size;
+        let scaled_h = scaled_height(state.pack.tile_w, state.pack.tile_h, scaled_w);
+
+        let attr = Window::default_attributes()
+            .with_title(format!("diypets - {pack_id}"))
+            .with_window_icon(icon_img.and_then(|img| {
+                winit::window::Icon::from_rgba(img.to_vec(), img.width(), img.height()).ok()
+            }))
+            .with_inner_size(winit::dpi::PhysicalSize::new(scaled_w, scaled_h))
+            .with_resizable(false)
+            .with_decorations(false)
+            .with_transparent(cfg!(not(windows)))
+            .with_window_level(if self.is_topmost {
+                WindowLevel::AlwaysOnTop
+            } else {
+                WindowLevel::Normal
+            });
+
+        let window = Rc::new(event_loop.create_window(attr).unwrap());
+
+        #[cfg(not(windows))]
+        let surface = {
+            let context = Context::new(window.clone()).unwrap();
+            let mut surface = Surface::new(&context, window.clone()).unwrap();
+            surface
+                .resize(
+                    NonZeroU32::new(scaled_w).unwrap(),
+                    NonZeroU32::new(scaled_h).unwrap(),
+                )
+                .unwrap();
+            Some(surface)
+        };
+
+        window
+            .set_cursor_hittest(!self.click_through)
+            .unwrap_or(());
+        window.set_visible(true);
+
+        #[cfg(windows)]
+        let (layered, buffer, scaled_buf) = {
+            prevent_focus_stealing(&window, self.is_topmost);
+            let buffer = vec![0; (state.pack.tile_w * state.pack.tile_h) as usize];
+            let scaled_buf = vec![0; (scaled_w * scaled_h) as usize];
+            let mut layered = LayeredSurface::new(scaled_w, scaled_h);
+            if let Some(l) = &mut layered {
+                l.present(
+                    &window,
+                    &scaled_buf,
+                    state.x.round() as i32,
+                    state.y.round() as i32,
+                );
+            }
+            (layered, buffer, scaled_buf)
+        };
+
+        window.request_redraw();
+
+        PetInstance {
+            pack_id: pack_id.to_string(),
+            window,
+            #[cfg(not(windows))]
+            surface,
+            #[cfg(windows)]
+            layered,
+            #[cfg(windows)]
+            buffer,
+            #[cfg(windows)]
+            scaled_buf,
+            state,
+            last_tick: now_ms,
+            last_window_scan: 0,
+            cached_floor_y: None,
+            cached_wall_right: None,
+            cursor_pos: (0.0, 0.0),
+            cursor_velocity: (0.0, 0.0),
+            drag_sample_ms: 1,
+            is_dragging: false,
+            last_render: None,
+        }
+    }
+
+    fn sync_herd(&mut self, event_loop: &ActiveEventLoop, now_ms: u64) {
+        if self.desired_herd.is_empty() {
+            self.desired_herd.push("highland_cow".to_string());
+        }
+        self.desired_herd.truncate(MAX_ACTIVE_PETS);
+
+        // Drop extra pet windows if herd shrank
+        if self.pets.len() > self.desired_herd.len() {
+            self.pets.truncate(self.desired_herd.len());
+        }
+
+        // Update existing slots if their pack ID changed
+        for i in 0..self.pets.len() {
+            let wanted = self.desired_herd[i].clone();
+            if self.pets[i].pack_id != wanted {
+                let pack = load_pack(&wanted);
+                if let Some(img) = pet_icon(&wanted, &pack) {
+                    if i == 0 {
+                        if let Some(tray) = &self.tray {
+                            let icon =
+                                TrayIconImage::from_rgba(img.to_vec(), img.width(), img.height())
+                                    .ok();
+                            let _ = tray.set_icon(icon);
+                        }
+                    }
+                    self.pets[i].window.set_window_icon(
+                        winit::window::Icon::from_rgba(img.to_vec(), img.width(), img.height())
+                            .ok(),
+                    );
+                }
+                let prev_x = self.pets[i].state.x;
+                let prev_y = self.pets[i].state.y;
+                let mut st = DeskpetState::new(pack);
+                st.pet_size = self.pet_size;
+                st.walk_speed = self.walk_speed;
+                st.x = prev_x;
+                st.y = prev_y;
+
+                #[cfg(windows)]
+                {
+                    self.pets[i].buffer = vec![0; (st.pack.tile_w * st.pack.tile_h) as usize];
+                }
+                self.pets[i].pack_id = wanted;
+                self.pets[i].state = st;
+                self.pets[i].last_render = None;
+
+                let scaled_w = self.pet_size;
+                let scaled_h = scaled_height(
+                    self.pets[i].state.pack.tile_w,
+                    self.pets[i].state.pack.tile_h,
+                    scaled_w,
+                );
+                let _ = self.pets[i]
+                    .window
+                    .request_inner_size(winit::dpi::PhysicalSize::new(scaled_w, scaled_h));
+                #[cfg(not(windows))]
+                if let Some(surface) = &mut self.pets[i].surface {
+                    if let (Some(w), Some(h)) =
+                        (NonZeroU32::new(scaled_w), NonZeroU32::new(scaled_h))
+                    {
+                        let _ = surface.resize(w, h);
+                    }
+                }
+            }
+        }
+
+        // Spawn newly added pet windows
+        while self.pets.len() < self.desired_herd.len() {
+            let idx = self.pets.len();
+            let id = self.desired_herd[idx].clone();
+            let inst = self.spawn_pet_instance(event_loop, &id, idx, now_ms);
+            self.pets.push(inst);
+        }
+    }
+
+    fn reload_settings_if_changed(&mut self, event_loop: &ActiveEventLoop, now_ms: u64) {
+        if now_ms.saturating_sub(self.last_settings_poll) < SETTINGS_POLL_MS {
+            return;
+        }
+        self.last_settings_poll = now_ms;
+
+        let Ok(metadata) = std::fs::metadata(&self.settings_path) else {
+            return;
+        };
+        let Ok(modified) = metadata.modified() else {
+            return;
+        };
+        if self.last_settings_mod == Some(modified) {
+            return;
+        }
+        self.last_settings_mod = Some(modified);
+
+        let settings = Settings::load_sanitized(&self.settings_path);
+        let topmost_changed = self.is_topmost != settings.always_on_top;
+        self.is_topmost = settings.always_on_top;
+        self.climb_windows = settings.climb_windows;
+        self.click_through = settings.click_through;
+        self.pet_size = settings.pet_size;
+        self.walk_speed = settings.walk_speed;
+        if self.start_on_login != settings.start_on_login {
+            self.start_on_login = settings.start_on_login;
+            let _ = autostart::set_enabled(self.start_on_login);
+        }
+
+        self.desired_herd = settings.active_herd();
+        self.sync_herd(event_loop, now_ms);
+
+        for pet in &mut self.pets {
+            pet.state.pet_size = self.pet_size;
+            pet.state.walk_speed = self.walk_speed;
+            pet.cached_floor_y = None;
+            pet.cached_wall_right = None;
+            pet.last_render = None;
+
+            if topmost_changed {
+                pet.window.set_window_level(if self.is_topmost {
+                    WindowLevel::AlwaysOnTop
+                } else {
+                    WindowLevel::Normal
+                });
+                #[cfg(windows)]
+                apply_topmost(&pet.window, self.is_topmost);
+            }
+            pet.window
+                .set_cursor_hittest(!self.click_through)
+                .unwrap_or(());
+
+            let scaled_w = self.pet_size;
+            let scaled_h = scaled_height(pet.state.pack.tile_w, pet.state.pack.tile_h, scaled_w);
+            let _ = pet
+                .window
+                .request_inner_size(winit::dpi::PhysicalSize::new(scaled_w, scaled_h));
+            #[cfg(not(windows))]
+            if let Some(surface) = &mut pet.surface {
+                if let (Some(w), Some(h)) = (NonZeroU32::new(scaled_w), NonZeroU32::new(scaled_h)) {
+                    let _ = surface.resize(w, h);
+                }
+            }
+        }
+    }
+
+    fn process_tray_events(&mut self, event_loop: &ActiveEventLoop, now_ms: u64) {
+        let _ = tray_icon::TrayIconEvent::receiver().try_recv();
+        while let Ok(tray_event) = tray_icon::menu::MenuEvent::receiver().try_recv() {
+            match tray_event.id.0.as_str() {
+                "quit" => event_loop.exit(),
+                "add_pet" => {
+                    if self.desired_herd.len() < MAX_ACTIVE_PETS {
+                        let clone_id = self
+                            .desired_herd
+                            .first()
+                            .cloned()
+                            .unwrap_or_else(|| "highland_cow".to_string());
+                        self.desired_herd.push(clone_id);
+                        self.sync_herd(event_loop, now_ms);
+                        self.persist_current_settings();
+                    }
+                }
+                "remove_pet" => {
+                    if self.desired_herd.len() > 1 {
+                        self.desired_herd.pop();
+                        self.sync_herd(event_loop, now_ms);
+                        self.persist_current_settings();
+                    }
+                }
+                "sleep" => {
+                    for pet in &mut self.pets {
+                        pet.state
+                            .set_state(DeskpetStateId::Custom("sleep".to_string()));
+                    }
+                }
+                "settings" => {
+                    Self::spawn_sibling(&mut self.settings_process, "diypets-settings");
+                }
+                "creator" => {
+                    Self::spawn_sibling(&mut self.creator_process, "diypets-creator");
+                }
+                "topmost" => {
+                    self.is_topmost = !self.is_topmost;
+                    for pet in &self.pets {
+                        pet.window.set_window_level(if self.is_topmost {
+                            WindowLevel::AlwaysOnTop
+                        } else {
+                            WindowLevel::Normal
+                        });
+                        #[cfg(windows)]
+                        apply_topmost(&pet.window, self.is_topmost);
+                    }
+                    self.persist_current_settings();
+                }
+                "autostart" => {
+                    self.start_on_login = !self.start_on_login;
+                    if autostart::set_enabled(self.start_on_login).is_ok() {
+                        self.persist_current_settings();
+                    } else {
+                        self.start_on_login = !self.start_on_login;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+impl ApplicationHandler for DeskpetApp {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        let now_ms = self.start_time.elapsed().as_millis() as u64;
+        if self.pets.is_empty() {
+            self.sync_herd(event_loop, now_ms);
+        }
+
+        if self.tray.is_none() {
+            let primary_id = self
+                .desired_herd
+                .first()
+                .map(String::as_str)
+                .unwrap_or("highland_cow");
+            let image = self
+                .pets
+                .first()
+                .and_then(|p| pet_icon(primary_id, &p.state.pack))
+                .or_else(|| default_app_icon(64));
+
+            let menu = Menu::new();
+            let add_pet = MenuItem::with_id("add_pet", "Add Another Pet (+1)", true, None);
+            let remove_pet = MenuItem::with_id("remove_pet", "Remove Extra Pet (-1)", true, None);
+            let sleep = MenuItem::with_id("sleep", "Sleep All", true, None);
+            let creator = MenuItem::with_id("creator", "DIYPets Creator", true, None);
+            let settings = MenuItem::with_id("settings", "Application Settings", true, None);
+            let topmost = CheckMenuItem::with_id(
+                "topmost",
+                "Always on Top",
+                true,
+                self.is_topmost,
+                None,
+            );
+            let autostart_item = CheckMenuItem::with_id(
+                "autostart",
+                "Start on Login",
+                true,
+                self.start_on_login,
+                None,
+            );
+            let quit = MenuItem::with_id("quit", "Quit", true, None);
+
+            let _ = menu.append(&add_pet);
+            let _ = menu.append(&remove_pet);
+            let _ = menu.append(&sleep);
+            let _ = menu.append(&PredefinedMenuItem::separator());
+            let _ = menu.append(&creator);
+            let _ = menu.append(&settings);
+            let _ = menu.append(&topmost);
+            let _ = menu.append(&autostart_item);
+            let _ = menu.append(&PredefinedMenuItem::separator());
+            let _ = menu.append(&quit);
+
+            let mut builder = TrayIconBuilder::new()
+                .with_tooltip("DIYPets")
+                .with_menu(Box::new(menu));
+            if let Some(img) = &image {
+                if let Ok(icon) = TrayIconImage::from_rgba(img.to_vec(), img.width(), img.height())
+                {
+                    builder = builder.with_icon(icon);
+                }
+            }
+            self.tray = builder.build().map_err(|e| eprintln!("Tray icon: {e}")).ok();
+        }
+
+        self.next_frame = Instant::now();
+    }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let now = Instant::now();
+        if now >= self.next_frame {
+            self.next_frame = now + FRAME_INTERVAL;
+            let now_ms = self.start_time.elapsed().as_millis() as u64;
+            self.process_tray_events(event_loop, now_ms);
+            self.reload_settings_if_changed(event_loop, now_ms);
+            for pet in &self.pets {
+                pet.window.request_redraw();
+            }
+        }
+        event_loop.set_control_flow(ControlFlow::WaitUntil(self.next_frame));
+    }
+
+    fn window_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        window_id: WindowId,
+        event: WindowEvent,
+    ) {
+        let Some(pet_idx) = self.pets.iter().position(|p| p.window.id() == window_id) else {
+            return;
+        };
+
+        match event {
+            WindowEvent::CloseRequested => {
+                if self.pets.len() > 1 {
+                    self.pets.remove(pet_idx);
+                    if pet_idx < self.desired_herd.len() {
+                        self.desired_herd.remove(pet_idx);
+                    }
+                    self.persist_current_settings();
+                } else {
+                    event_loop.exit();
+                }
+            }
+            WindowEvent::CursorMoved { position, .. } => {
+                let pet = &mut self.pets[pet_idx];
+                let px = position.x as f32;
+                let py = position.y as f32;
+                if !pet.is_dragging {
+                    pet.cursor_velocity = (px - pet.cursor_pos.0, py - pet.cursor_pos.1);
+                }
+                pet.cursor_pos = (px, py);
+            }
+            WindowEvent::MouseInput {
+                state,
+                button: MouseButton::Left,
+                ..
+            } => {
+                let pet = &mut self.pets[pet_idx];
+                if state == ElementState::Pressed {
+                    pet.is_dragging = true;
+                    pet.cursor_velocity = (0.0, 0.0);
+                    pet.state.is_tossing = false;
+                    pet.state.set_state(DeskpetStateId::Drag);
+                } else {
+                    pet.is_dragging = false;
+                    pet.state.release_drag(
+                        pet.cursor_velocity.0,
+                        pet.cursor_velocity.1,
+                        pet.drag_sample_ms,
+                    );
+                }
+                pet.window.request_redraw();
+            }
+            WindowEvent::RedrawRequested => {
+                let now = self.start_time.elapsed().as_millis() as u64;
+
+                let mut min_x: f32 = 0.0;
+                let mut max_x: f32 = 0.0;
+                let mut min_y: f32 = 0.0;
+                let mut max_y: f32 = 0.0;
+                for monitor in event_loop.available_monitors() {
+                    let pos = monitor.position();
+                    let size = monitor.size();
+                    min_x = min_x.min(pos.x as f32);
+                    min_y = min_y.min(pos.y as f32);
+                    max_x = max_x.max((pos.x + size.width as i32) as f32);
+                    max_y = max_y.max((pos.y + size.height as i32) as f32);
+                }
+
+                // Collect all our pet HWNDs so pets never treat each other's transparent boxes as solid floors
+                #[cfg(windows)]
+                let own_hwnds: Vec<windows::Win32::Foundation::HWND> = self
+                    .pets
+                    .iter()
+                    .filter_map(|p| hwnd_of(&p.window))
+                    .collect();
+
+                let climb_windows = self.climb_windows;
+                let pet = &mut self.pets[pet_idx];
+
+                let delta = now.saturating_sub(pet.last_tick);
+                pet.last_tick = now;
+
+                let scaled_w = pet.state.pet_size;
+                let scaled_h =
+                    scaled_height(pet.state.pack.tile_w, pet.state.pack.tile_h, scaled_w);
+                let ground_height = pet.state.ground_height();
+
+                let mut base_floor_y = max_y - ground_height;
+                #[cfg(windows)]
+                if let Some(rect) = get_work_area() {
+                    base_floor_y = (rect.bottom as f32) - ground_height;
+                }
+
+                let mut floor_y = pet.cached_floor_y.unwrap_or(base_floor_y);
+                let mut wall_right = pet.cached_wall_right.unwrap_or(max_x);
+
+                if !climb_windows {
+                    floor_y = base_floor_y;
+                    wall_right = max_x;
+                    pet.cached_floor_y = Some(floor_y);
+                    pet.cached_wall_right = Some(wall_right);
+                } else if !pet.is_dragging
+                    && (pet.cached_floor_y.is_none()
+                        || now.saturating_sub(pet.last_window_scan) >= WINDOW_SCAN_MS)
+                {
+                    pet.last_window_scan = now;
+                    floor_y = base_floor_y;
+                    wall_right = max_x;
+
+                    #[cfg(windows)]
+                    {
+                        use windows::Win32::Foundation::POINT;
+                        use windows::Win32::Graphics::Dwm::{DWMWA_CLOAKED, DwmGetWindowAttribute};
+                        use windows::Win32::UI::WindowsAndMessaging::{
+                            GA_ROOT, GWL_EXSTYLE, GetAncestor, GetWindowLongW, GetWindowRect,
+                            IsIconic, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT, WindowFromPoint,
+                        };
+
+                        let center_x = pet.state.x as i32 + (scaled_w / 2) as i32;
+                        let feet_y = (pet.state.y + ground_height) as i32 + 2;
+
+                        unsafe {
+                            let mut hwnd = WindowFromPoint(POINT {
+                                x: center_x,
+                                y: feet_y,
+                            });
+
+                            if !hwnd.is_invalid() {
+                                let root = GetAncestor(hwnd, GA_ROOT);
+                                if !root.is_invalid() {
+                                    hwnd = root;
+                                }
+
+                                let style = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
+                                let mut cloaked = 0u32;
+                                let is_cloaked = DwmGetWindowAttribute(
+                                    hwnd,
+                                    DWMWA_CLOAKED,
+                                    &mut cloaked as *mut _ as _,
+                                    std::mem::size_of_val(&cloaked) as u32,
+                                )
+                                .is_ok()
+                                    && cloaked != 0;
+
+                                if !own_hwnds.contains(&hwnd)
+                                    && !IsIconic(hwnd).as_bool()
+                                    && !is_cloaked
+                                    && style & (WS_EX_TRANSPARENT.0 | WS_EX_TOOLWINDOW.0) == 0
+                                {
+                                    let mut rect = windows::Win32::Foundation::RECT::default();
+                                    if GetWindowRect(hwnd, &mut rect).is_ok() {
+                                        let win_y = rect.top as f32;
+                                        let win_x = rect.left as f32;
+                                        let win_h = (rect.bottom - rect.top) as f32;
+
+                                        let mut is_fullscreen = false;
+                                        for monitor in event_loop.available_monitors() {
+                                            let pos = monitor.position();
+                                            let size = monitor.size();
+                                            if rect.left <= pos.x
+                                                && rect.top <= pos.y
+                                                && rect.right >= pos.x + size.width as i32
+                                                && rect.bottom >= pos.y + size.height as i32
+                                            {
+                                                is_fullscreen = true;
+                                                break;
+                                            }
+                                        }
+
+                                        if !is_fullscreen {
+                                            if let Some(window_floor) = window_floor_candidate(
+                                                win_y,
+                                                ground_height,
+                                                pet.state.y + ground_height,
+                                                min_y,
+                                            ) {
+                                                floor_y = select_window_floor(
+                                                    floor_y,
+                                                    Some(window_floor),
+                                                );
+                                            }
+
+                                            if win_y > 10.0
+                                                && pet.state.y + (scaled_h as f32) > win_y
+                                                && pet.state.y < win_y + win_h
+                                                && pet.state.x < win_x
+                                            {
+                                                wall_right =
+                                                    wall_right.min(win_x - (scaled_w as f32));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    pet.cached_floor_y = Some(floor_y);
+                    pet.cached_wall_right = Some(wall_right);
+                }
+
+                if pet.is_dragging {
+                    #[cfg(windows)]
+                    {
+                        use windows::Win32::Foundation::POINT;
+                        use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+                        let mut pt = POINT::default();
+                        unsafe {
+                            let _ = GetCursorPos(&mut pt);
+                        }
+                        let new_x = pt.x as f32 - (scaled_w as f32 / 2.0);
+                        let new_y = pt.y as f32 - 10.0;
+                        pet.cursor_velocity = (new_x - pet.state.x, new_y - pet.state.y);
+                        pet.drag_sample_ms = delta.max(1);
+                        pet.state.x = new_x;
+                        pet.state.y = new_y;
+                    }
+                } else {
+                    pet.state.screen_w = max_x - min_x;
+                    pet.state.screen_h = max_y - min_y;
+                    pet.state.area_h = floor_y + ground_height;
+                    pet.state.tick(delta, floor_y, wall_right);
+                }
+
+                let frame_idx = pet.state.current_frame().unwrap_or(0) as usize;
+                let pos_x = pet.state.x.round() as i32;
+                let pos_y = pet.state.y.round() as i32;
+                let render_key = RenderKey {
+                    frame_idx,
+                    moving_left: pet.state.is_moving_left,
+                    opacity_u8: (pet.state.opacity.clamp(0.0, 1.0) * 255.0).round() as u8,
+                    x: pos_x,
+                    y: pos_y,
+                    dst_w: scaled_w,
+                    dst_h: scaled_h,
+                };
+
+                if pet.last_render == Some(render_key) {
+                    return;
+                }
+                pet.last_render = Some(render_key);
+
+                pet.window
+                    .set_outer_position(PhysicalPosition::new(pos_x, pos_y));
+
+                let w = pet.state.pack.tile_w as usize;
+                let h = pet.state.pack.tile_h as usize;
+
+                #[cfg(not(windows))]
+                if let Some(surface) = &mut pet.surface {
+                    let mut buffer = surface.buffer_mut().unwrap();
+                    buffer.fill(0);
+                    if frame_idx < pet.state.pack.frames.len() {
+                        let frame_data = &pet.state.pack.frames[frame_idx];
+                        let dst_w = scaled_w as usize;
+                        let dst_h = scaled_h as usize;
+                        for y in 0..dst_h {
+                            let src_y = (y * h) / dst_h;
+                            for x in 0..dst_w {
+                                let i = y * dst_w + x;
+                                if i >= buffer.len() {
+                                    break;
+                                }
+                                let base_src_x = (x * w) / dst_w;
+                                let src_x = if pet.state.is_moving_left {
+                                    base_src_x
+                                } else {
+                                    w.saturating_sub(1) - base_src_x
+                                };
+                                let src_i = src_y * w + src_x;
+                                if src_i >= frame_data.len() {
+                                    continue;
+                                }
+                                let mut pixel = frame_data[src_i];
+                                if pet.state.opacity < 1.0 {
+                                    let a = (pixel >> 24) & 0xFF;
+                                    let r = (pixel >> 16) & 0xFF;
+                                    let g = (pixel >> 8) & 0xFF;
+                                    let b = pixel & 0xFF;
+                                    let new_a = (a as f32 * pet.state.opacity) as u32;
+                                    let pr = (r as f32 * pet.state.opacity) as u32;
+                                    let pg = (g as f32 * pet.state.opacity) as u32;
+                                    let pb = (b as f32 * pet.state.opacity) as u32;
+                                    pixel = (new_a << 24) | (pr << 16) | (pg << 8) | pb;
+                                }
+                                buffer[i] = pixel;
+                            }
+                        }
+                    }
+                    buffer.present().unwrap();
+                }
+
+                #[cfg(windows)]
+                {
+                    pet.buffer.fill(0);
+                    if frame_idx < pet.state.pack.frames.len() {
+                        let frame_data = &pet.state.pack.frames[frame_idx];
+                        for y in 0..h {
+                            for x in 0..w {
+                                let i = y * w + x;
+                                if i >= pet.buffer.len() {
+                                    break;
+                                }
+                                let src_x = if !pet.state.is_moving_left {
+                                    w.saturating_sub(1) - x
+                                } else {
+                                    x
+                                };
+                                let src_i = y * w + src_x;
+                                if src_i >= frame_data.len() {
+                                    continue;
+                                }
+                                let mut pixel = frame_data[src_i];
+                                if pet.state.opacity < 1.0 {
+                                    let a = (pixel >> 24) & 0xFF;
+                                    let r = (pixel >> 16) & 0xFF;
+                                    let g = (pixel >> 8) & 0xFF;
+                                    let b = pixel & 0xFF;
+                                    let new_a = (a as f32 * pet.state.opacity) as u32;
+                                    let pr = (r as f32 * pet.state.opacity) as u32;
+                                    let pg = (g as f32 * pet.state.opacity) as u32;
+                                    let pb = (b as f32 * pet.state.opacity) as u32;
+                                    pixel = (new_a << 24) | (pr << 16) | (pg << 8) | pb;
+                                }
+                                pet.buffer[i] = pixel;
+                            }
+                        }
+                    }
+
+                    scale_nearest_into(
+                        &pet.buffer,
+                        pet.state.pack.tile_w,
+                        pet.state.pack.tile_h,
+                        scaled_w,
+                        scaled_h,
+                        &mut pet.scaled_buf,
+                    );
+
+                    let needs_recreate = match &pet.layered {
+                        Some(l) => l.width != scaled_w || l.height != scaled_h,
+                        None => true,
+                    };
+                    if needs_recreate {
+                        pet.layered = LayeredSurface::new(scaled_w, scaled_h);
+                    }
+                    if let Some(layered) = &mut pet.layered {
+                        layered.present(&pet.window, &pet.scaled_buf, pos_x, pos_y);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+impl Drop for DeskpetApp {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.settings_process.take() {
+            let _ = child.kill();
+        }
+        if let Some(mut child) = self.creator_process.take() {
+            let _ = child.kill();
+        }
+    }
+}
+
+fn main() {
+    #[cfg(windows)]
+    unsafe {
+        let _ = windows::Win32::UI::WindowsAndMessaging::SetProcessDPIAware();
+    }
+
+    let settings_path = Settings::default_path();
+    let settings = Settings::load_sanitized(&settings_path);
+    let last_settings_mod = std::fs::metadata(&settings_path)
+        .and_then(|m| m.modified())
+        .ok();
+
+    let mut app = DeskpetApp {
+        pets: Vec::new(),
+        desired_herd: settings.active_herd(),
+        pet_size: settings.pet_size,
+        walk_speed: settings.walk_speed,
+        is_topmost: settings.always_on_top,
+        climb_windows: settings.climb_windows,
+        click_through: settings.click_through,
+        start_on_login: autostart::is_enabled() || settings.start_on_login,
+        settings_path,
+        last_settings_mod,
+        start_time: Instant::now(),
+        next_frame: Instant::now(),
+        last_settings_poll: 0,
+        tray: None,
+        settings_process: None,
+        creator_process: None,
+    };
+
+    let event_loop = EventLoop::new().unwrap();
+    let _ = event_loop.run_app(&mut app);
+}
