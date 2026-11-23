@@ -55,12 +55,13 @@ pub fn is_fullscreen_app_active(own_hwnds: &[isize], monitors: &[(i32, i32, i32,
     use windows::Win32::Foundation::RECT;
     use windows::Win32::Graphics::Dwm::{DWMWA_CLOAKED, DwmGetWindowAttribute};
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetClassNameW, GetForegroundWindow, GetWindowRect, IsIconic,
+        GWL_STYLE, GetClassNameW, GetForegroundWindow, GetWindowLongW, GetWindowRect, IsIconic, IsZoomed,
+        WS_CAPTION, WS_THICKFRAME,
     };
 
     unsafe {
         let fg = GetForegroundWindow();
-        if fg.is_invalid() || own_hwnds.contains(&(fg.0 as isize)) || IsIconic(fg).as_bool() {
+        if fg.is_invalid() || own_hwnds.contains(&(fg.0 as isize)) || IsIconic(fg).as_bool() || IsZoomed(fg).as_bool() {
             return false;
         }
 
@@ -89,16 +90,21 @@ pub fn is_fullscreen_app_active(own_hwnds: &[isize], monitors: &[(i32, i32, i32,
             }
         }
 
+        let style = GetWindowLongW(fg, GWL_STYLE) as u32;
+        if (style & WS_CAPTION.0) != 0 && (style & WS_THICKFRAME.0) != 0 {
+            return false;
+        }
+
         let mut rect = RECT::default();
         if GetWindowRect(fg, &mut rect).is_err() {
             return false;
         }
 
         for &(mx, my, mr, mb) in monitors {
-            if rect.left <= mx + 2
-                && rect.top <= my + 2
-                && rect.right >= mr - 2
-                && rect.bottom >= mb - 2
+            if rect.left <= mx
+                && rect.top <= my
+                && rect.right >= mr
+                && rect.bottom >= mb
             {
                 return true;
             }

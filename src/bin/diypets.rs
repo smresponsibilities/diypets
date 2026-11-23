@@ -1186,8 +1186,11 @@ impl DeskpetApp {
             return;
         }
         self.last_visible = should_show;
-        for pet in &self.pets {
+        for pet in &mut self.pets {
             pet.window.set_visible(should_show);
+            if should_show {
+                pet.last_render = None;
+            }
         }
         if let Some(b) = &self.bubble {
             b.window.set_visible(should_show);

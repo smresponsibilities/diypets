@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-time="night">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -9,7 +9,7 @@
 <link rel="canonical" href="https://shivammahajan.com/diypets/" />
 
 <meta property="og:type" content="website" />
-<meta property="og:site_name" content="SM'S DEX — Shivam Mahajan" />
+<meta property="og:site_name" content="Shivam Mahajan" />
 <meta property="og:title" content="DIYPets — Make Your Own Desktop Pet in Pure Rust" />
 <meta property="og:description" content="~7.8 MB RAM cross-platform Rust desktop mascot engine with Multi-Pet Herd, Play Mode, 6-tool MCP server, and built-in 2D/SVG Studio." />
 <meta property="og:url" content="https://shivammahajan.com/diypets/" />
@@ -34,301 +34,359 @@
   "operatingSystem": "Windows, macOS, Linux",
   "applicationCategory": "DesktopEnhancementApplication",
   "license": "https://opensource.org/licenses/MIT",
-  "author": {
-    "@type": "Person",
-    "name": "Shivam Mahajan",
-    "url": "https://shivammahajan.com"
-  },
+  "author": { "@type": "Person", "name": "Shivam Mahajan", "url": "https://shivammahajan.com" },
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
 }
 </script>
 
 <style>
-  :root {
-    --paper: #f4f1ea;
-    --surface: #ffffff;
-    --surface-alt: #ebe6da;
-    --ink: #141414;
-    --muted: #52524e;
-    --red: #d83a2e;
-    --amber: #e07a16;
-    --green: #16803c;
-    --blue: #1d4ed8;
-    --mono: "IBM Plex Mono", "JetBrains Mono", Consolas, Menlo, monospace;
-    --sans: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  @font-face {
+    font-family: "Departure Mono";
+    src: url("https://shivammahajan.com/fonts/departure-mono-latin.woff2") format("woff2");
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
   }
 
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  html { scroll-behavior: smooth; }
+  /* Exact tokens from shivammahajan.com/_astro/Base.B5x-U7oH.css */
+  :root {
+    --border-w: 2px;
+    --radius: 4px;
+    --bg: #0b0e12;
+    --panel: #161b22;
+    --border: #30363d;
+    --ink: #e6edf3;
+    --dim: #f5f1dc;
+    --screen: #0d1117;
+    --font-display: "Departure Mono", ui-monospace, Consolas, monospace;
+    --font-body: "Departure Mono", ui-monospace, Consolas, monospace;
+    --t-normal: #a8a77a;
+    --t-fire: #ee8130;
+    --t-water: #6390f0;
+    --t-electric: #f7d02c;
+    --t-grass: #7ac74c;
+    --t-ice: #96d9d6;
+    --t-fighting: #c22e28;
+    --t-ground: #e2bf65;
+    --t-dragon: #6f35fc;
+    --t-steel: #b7b7ce;
+  }
+  html[data-time="dawn"]   { --time-deep:#2d163c; --time-panel:#5d2451; --time-accent:#ffb36b; --time-soft:#ffd1bd; }
+  html[data-time="day"]    { --time-deep:#073c58; --time-panel:#0c6685; --time-accent:#ffd75e; --time-soft:#d8f6ff; }
+  html[data-time="sunset"] { --time-deep:#35102d; --time-panel:#8b2348; --time-accent:#ffb347; --time-soft:#ffe0c2; }
+  html[data-time="night"]  { --time-deep:#0c1230; --time-panel:#22205c; --time-accent:#7ee8fa; --time-soft:#e0e4ff; }
+
+  *, *::before, *::after { box-sizing: border-box; -webkit-font-smoothing: antialiased; }
+  html {
+    color-scheme: dark;
+    scroll-behavior: smooth;
+    scrollbar-width: auto;
+    scrollbar-color: var(--time-accent, #ffd75e) var(--time-deep, #09131d);
+  }
+  html::-webkit-scrollbar { width: 14px; }
+  html::-webkit-scrollbar-track { background: var(--time-deep, #09131d); border-left: 2px solid #05070b; }
+  html::-webkit-scrollbar-thumb { background: var(--time-accent, #ffd75e); border: 2px solid var(--time-deep, #09131d); }
   body {
-    background: var(--paper);
+    margin: 0;
+    background: var(--bg);
     color: var(--ink);
-    font-family: var(--sans);
-    min-height: 100vh;
-    padding-bottom: 130px;
+    font-family: var(--font-body);
+    font-size: 14px;
+    line-height: 1.5;
+    padding-bottom: 132px;
     overflow-x: hidden;
   }
+  ::selection { background: var(--time-accent); color: #0b0e12; }
 
-  /* SM'S DEX Editorial Top Bar */
+  /* Top Portfolio Bar */
   .topbar {
-    position: sticky; top: 0; z-index: 40;
-    background: var(--paper);
-    border-bottom: 2px solid var(--ink);
+    position: sticky; top: 0; z-index: 50;
+    background: color-mix(in srgb, var(--time-deep) 88%, #0b0e12);
+    border-bottom: 2px solid color-mix(in srgb, var(--time-accent) 45%, var(--border));
+    backdrop-filter: blur(8px);
   }
   .topbar-inner {
-    max-width: 1040px; margin: 0 auto; padding: 11px 20px;
-    display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    flex-wrap: wrap;
+    max-width: 960px; margin: 0 auto; padding: 10px 20px;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
   }
   .crumb {
-    display: inline-flex; align-items: center; gap: 8px;
-    font-family: var(--mono); font-size: 12.5px; font-weight: 700;
+    display: inline-flex; align-items: center; gap: 8px; font-size: 12px; letter-spacing: 0.06em;
   }
-  .crumb a { color: var(--muted); text-decoration: none; }
-  .crumb a:hover { color: var(--ink); text-decoration: underline; }
-  .crumb .cur { color: var(--ink); }
-  .led {
-    width: 9px; height: 9px; border-radius: 50%;
-    background: var(--red); border: 1.5px solid var(--ink); display: inline-block;
-  }
-  .nav-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .nav-link {
-    font-family: var(--mono); font-size: 12px; font-weight: 700;
-    color: var(--ink); text-decoration: none;
-    padding: 5px 10px; border: 2px solid var(--ink); background: var(--surface);
-  }
-  .nav-link:hover { background: var(--ink); color: var(--surface); }
-  .sfx-btn {
-    font-family: var(--mono); font-size: 12px; font-weight: 700; cursor: pointer;
-    padding: 5px 10px; border: 2px solid var(--ink); background: var(--surface-alt); color: var(--ink);
-  }
-  .sfx-btn.on { background: var(--green); color: #fff; }
+  .crumb a { color: var(--time-soft); text-decoration: none; }
+  .crumb a:hover { color: var(--time-accent); text-decoration: underline; }
+  .crumb .sep { opacity: 0.45; }
+  .crumb .cur { color: var(--time-accent); }
 
-  .wrap { max-width: 1040px; margin: 0 auto; padding: 28px 20px 24px; }
+  .top-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .chip-btn {
+    background: var(--screen); color: var(--ink);
+    border: 1px solid color-mix(in srgb, var(--time-accent) 40%, var(--border));
+    border-radius: 4px; padding: 5px 10px; font-family: var(--font-body); font-size: 11px;
+    cursor: pointer; text-decoration: none; letter-spacing: 0.05em;
+  }
+  .chip-btn:hover { border-color: var(--time-accent); color: var(--time-accent); }
+  .chip-btn.on { background: var(--time-accent); color: #0b0e12; border-color: var(--time-accent); }
 
-  /* Two-Column Editorial Hero */
-  .hero {
-    display: grid;
-    grid-template-columns: 1.35fr 1fr;
-    gap: 20px;
-    align-items: start;
+  .wrap { max-width: 960px; margin: 0 auto; padding: 26px 20px 16px; }
+
+  /* Exact .printed-project Collector Card from shivammahajan.com/_astro/ProjectCard.CHVngJ3D.css */
+  .printed-project {
+    color: #eae3d8;
+    isolation: isolate;
+    border-radius: 16px;
+    position: relative;
+    overflow: hidden;
+    box-shadow: inset 0 0 0 5px #292729, inset 0 0 0 6px #bc9d6a55, 0 18px 32px #0006;
+    background: linear-gradient(135deg, #3b3735, #242428 35%, #29282b 70%, #494037);
+    border: 1px solid #8e8172;
+    padding: 12px;
     margin-bottom: 24px;
   }
-  @media (max-width: 820px) { .hero { grid-template-columns: 1fr; } }
+  .printed-header {
+    display: flex; align-items: center; gap: 14px;
+    padding: 10px 16px 14px;
+    flex-wrap: wrap;
+  }
+  .printed-header img { width: 42px; height: 42px; image-rendering: pixelated; border-radius: 6px; }
+  .printed-header h1 {
+    letter-spacing: -0.025em;
+    color: #eee8dc;
+    margin: 0;
+    font: 600 clamp(22px, 3vw, 30px)/1.15 Arial, sans-serif;
+  }
+  .printed-number {
+    margin-left: auto; text-align: right;
+    color: #c8b6a1; letter-spacing: 0.1em; font: 10px/1.4 var(--font-body);
+  }
+  .printed-number strong {
+    color: #d6b299; font: 22px/1 Georgia, serif; display: block;
+  }
 
-  .kicker {
-    display: inline-block;
-    font-family: var(--mono); font-size: 11.5px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: 0.06em;
-    background: var(--ink); color: var(--paper);
-    padding: 4px 9px; margin-bottom: 12px;
+  .printed-body {
+    border: 1px solid #d5b48655;
+    border-radius: 4px;
+    display: grid;
+    grid-template-columns: 44% 56%;
+    overflow: hidden;
+    box-shadow: 0 6px 14px #0005;
   }
-  h1 {
-    font-size: clamp(2.1rem, 4.4vw, 3.15rem);
-    line-height: 1.04; letter-spacing: -0.03em; font-weight: 800;
-    margin-bottom: 12px;
-  }
-  .lead {
-    font-size: 1rem; line-height: 1.55; color: var(--muted);
-    max-width: 560px; margin-bottom: 18px;
-  }
-  .cta-row { display: flex; flex-wrap: wrap; gap: 10px; }
+  @media (max-width: 780px) { .printed-body { grid-template-columns: 1fr; } }
 
-  .tbtn {
-    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-    font-family: var(--mono); font-size: 12.5px; font-weight: 700;
-    padding: 9px 14px; border: 2px solid var(--ink);
-    background: var(--surface); color: var(--ink);
-    text-decoration: none; cursor: pointer;
-    box-shadow: 3px 3px 0 var(--ink);
-    transition: transform .08s, box-shadow .08s;
+  /* Left Deep-Teal Showcase Stage */
+  .printed-art {
+    background: radial-gradient(at 45% 35%, #385057, #172c32 72%);
+    padding: 26px 20px 24px;
+    display: flex; flex-direction: column; justify-content: space-between; gap: 18px;
+    position: relative;
   }
-  .tbtn:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--ink); }
-  .tbtn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink); }
-  .tbtn.primary { background: var(--red); color: #fff; }
-  .tbtn.active { background: var(--ink); color: #fff; }
+  .art-top {
+    display: flex; justify-content: space-between; align-items: center;
+    font: 10px/1.4 var(--font-body); color: #c6ac90; letter-spacing: 0.08em;
+  }
+  .art-sprites {
+    display: flex; align-items: flex-end; justify-content: center; gap: 10px;
+    padding: 16px 0 8px;
+    border-bottom: 1px solid #c5b29144;
+  }
+  .art-sprites canvas { image-rendering: pixelated; width: 58px; height: 58px; }
+  .vitals-mini {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  }
+  .vital-cell {
+    background: #13242bb3;
+    border: 1px solid #c5b29144;
+    border-radius: 6px;
+    padding: 8px 10px;
+  }
+  .vital-k { font: 9px/1.3 var(--font-body); color: #c6ac90; letter-spacing: 0.08em; text-transform: uppercase; }
+  .vital-v { font: 13px/1.3 var(--font-body); color: #eee8dc; margin-top: 2px; }
 
-  /* Hardware Spec Sheet Card */
-  .spec-box {
-    background: var(--surface);
-    border: 2px solid var(--ink);
-    box-shadow: 4px 4px 0 var(--ink);
+  /* Right Archival Paper Editorial Column */
+  .printed-paper {
+    color: #35413f;
+    background: #eee8dc;
+    padding: 24px 24px 22px;
+    display: flex; flex-direction: column; justify-content: space-between;
   }
-  .spec-head {
-    background: var(--ink); color: var(--paper);
-    padding: 8px 12px; font-family: var(--mono); font-size: 11.5px; font-weight: 700;
-    display: flex; justify-content: space-between;
+  .printed-meta {
+    text-transform: uppercase;
+    border-bottom: 1px solid #c9c0b1;
+    display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+    padding-bottom: 10px; margin-bottom: 16px;
+    color: #695c4b; font: 10px/1.5 var(--font-body); letter-spacing: 0.05em;
   }
-  .spec-grid {
-    display: grid; grid-template-columns: 1fr 1fr;
+  .printed-headline {
+    letter-spacing: -0.03em; color: #293e42;
+    margin: 0 0 14px; font: 32px/1.05 Georgia, serif;
   }
-  .spec-cell {
-    padding: 10px 12px; border-bottom: 1.5px solid var(--ink); border-right: 1.5px solid var(--ink);
+  .printed-headline em { color: #89684e; font-style: italic; }
+  .printed-details {
+    color: #4c5048; font: 14px/1.65 Arial, sans-serif; margin-bottom: 18px;
   }
-  .spec-cell:nth-child(2n) { border-right: none; }
-  .spec-cell:nth-last-child(-n+2) { border-bottom: none; }
-  .spec-k { font-family: var(--mono); font-size: 10.5px; color: var(--muted); text-transform: uppercase; }
-  .spec-v { font-family: var(--mono); font-size: 14px; font-weight: 800; margin-top: 2px; }
+  .paper-links { display: flex; flex-wrap: wrap; gap: 8px; }
+  .paper-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 13px; text-decoration: none;
+    font: 700 11.5px/1 var(--font-body); letter-spacing: 0.04em;
+    border: 1px solid #263e43; color: #263e43; background: transparent;
+    cursor: pointer; transition: background .12s, color .12s;
+  }
+  .paper-btn:hover { background: #263e43; color: #eee8dc; }
+  .paper-btn.solid { background: #263e43; color: #eee8dc; }
+  .paper-btn.solid:hover { background: #172c32; }
 
-  /* Zero-Scrollbar Install Strip */
-  .install-panel {
-    background: var(--surface);
-    border: 2px solid var(--ink);
-    box-shadow: 4px 4px 0 var(--ink);
+  .printed-footer {
+    display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 12px 10px 2px;
+    color: #d7c4ac; font: 10px/1.5 var(--font-body); letter-spacing: 0.06em;
+  }
+
+  /* Banner-Card Style Interactive Dex Console (Matches Base.B5x-U7oH.css .banner-card) */
+  .dex-panel {
+    border: 2px solid var(--time-accent, #ffd75e);
+    background: var(--time-deep, #0a111d);
+    color: var(--ink);
+    border-radius: 6px;
+    box-shadow: 6px 6px #05070b;
+    overflow: hidden;
+    margin-bottom: 24px;
+  }
+  .dex-head {
+    background: color-mix(in srgb, var(--time-accent) 10%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--time-accent) 30%, transparent);
+    padding: 10px 14px;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+    font-size: 12px; letter-spacing: 0.08em;
+  }
+  .dex-head strong { color: var(--time-accent); }
+  .dex-body { padding: 16px; }
+
+  /* Active Herd Strip */
+  .herd-bar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    padding: 9px 11px; margin-bottom: 14px;
+    background: var(--screen); border: 1px solid var(--border); border-radius: 4px;
+  }
+  .herd-lbl { font-size: 11px; color: var(--dim); opacity: 0.8; letter-spacing: 0.06em; }
+  .slot-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--panel); border: 1px solid color-mix(in srgb, var(--time-accent) 45%, var(--border));
+    border-radius: 4px; padding: 3px 8px; font-size: 11px;
+  }
+  .slot-pill button {
+    background: transparent; color: #f87171; border: none; cursor: pointer;
+    font-family: var(--font-body); font-size: 12px; padding: 0 2px;
+  }
+
+  /* 5 Roster Entries */
+  .roster-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(156px, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .pet-entry {
+    background: var(--screen);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    transition: border-color .15s;
+  }
+  .pet-entry:hover { border-color: var(--time-accent); }
+  .entry-top {
+    width: 100%; display: flex; justify-content: space-between; align-items: center;
+    font-size: 10px; color: var(--dim); opacity: 0.8;
+  }
+  .type-badge {
+    font-size: 9px; padding: 2px 6px; border-radius: 3px; color: #0b0e12;
+    font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  }
+  .entry-stage {
+    width: 100%; height: 74px;
+    background: #090d13;
+    border: 1px solid #222936;
+    border-radius: 4px;
+    display: flex; align-items: flex-end; justify-content: center; padding-bottom: 4px;
+  }
+  .entry-stage canvas { image-rendering: pixelated; width: 62px; height: 62px; }
+  .entry-name { font-size: 12px; color: var(--ink); }
+  .entry-btns { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .pbtn {
+    background: var(--panel); color: var(--ink);
+    border: 1px solid var(--border); border-radius: 4px;
+    padding: 5px 0; font-family: var(--font-body); font-size: 11px; cursor: pointer;
+  }
+  .pbtn.add:hover { border-color: var(--t-grass); color: var(--t-grass); }
+  .pbtn.del:hover { border-color: var(--t-fighting); color: #f87171; }
+
+  /* Controls Bar */
+  .controls-bar {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    padding-top: 14px; border-top: 1px solid color-mix(in srgb, var(--time-accent) 25%, var(--border));
+  }
+  .ctrl-btn {
+    background: var(--panel); color: var(--ink);
+    border: 1px solid color-mix(in srgb, var(--time-accent) 45%, var(--border));
+    border-radius: 4px; padding: 7px 12px;
+    font-family: var(--font-body); font-size: 11.5px; cursor: pointer;
+  }
+  .ctrl-btn:hover { border-color: var(--time-accent); color: var(--time-accent); }
+  .ctrl-btn.primary { background: var(--time-accent); color: #0b0e12; border-color: var(--time-accent); }
+  .ctrl-btn.on { background: var(--time-panel); border-color: var(--time-accent); color: var(--time-soft); }
+  .ctrl-input {
+    background: var(--screen); color: var(--ink);
+    border: 1px solid var(--border); border-radius: 4px;
+    padding: 7px 10px; font-family: var(--font-body); font-size: 11.5px; width: 180px;
+  }
+  .ctrl-input:focus { outline: none; border-color: var(--time-accent); }
+  .slider-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--screen); border: 1px solid var(--border); border-radius: 4px;
+    padding: 5px 10px; font-size: 11px; color: var(--dim);
+  }
+  .slider-chip input { width: 72px; accent-color: var(--time-accent); }
+
+  /* Install & MCP Strip */
+  .install-box {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    border-radius: 6px;
+    overflow: hidden;
     margin-bottom: 24px;
   }
   .install-tabs {
-    display: flex; flex-wrap: wrap; border-bottom: 2px solid var(--ink); background: var(--surface-alt);
+    display: flex; flex-wrap: wrap; border-bottom: 1px solid var(--border); background: var(--screen);
   }
   .itab {
-    font-family: var(--mono); font-size: 12px; font-weight: 700;
-    padding: 8px 14px; border: none; border-right: 2px solid var(--ink);
-    background: transparent; color: var(--muted); cursor: pointer;
+    background: transparent; border: none; border-right: 1px solid var(--border);
+    color: var(--dim); opacity: 0.7; padding: 8px 13px;
+    font-family: var(--font-body); font-size: 11px; cursor: pointer;
   }
-  .itab.active { background: var(--ink); color: var(--surface); }
-  .install-row {
+  .itab.active { opacity: 1; color: var(--time-accent); background: var(--panel); }
+  .install-code-row {
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    padding: 12px 14px; background: #181a1f; color: #f4f1ea;
+    padding: 12px 14px;
   }
-  .install-row pre {
-    font-family: var(--mono); font-size: 12.5px; line-height: 1.5;
+  .install-code-row pre {
+    margin: 0; font-family: var(--font-body); font-size: 12px; color: var(--time-soft);
     white-space: pre-wrap; word-break: break-all; flex: 1;
-  }
-  .copy-btn {
-    flex-shrink: 0; font-family: var(--mono); font-size: 11.5px; font-weight: 700;
-    padding: 6px 12px; border: 2px solid #f4f1ea; background: transparent; color: #f4f1ea; cursor: pointer;
-  }
-  .copy-btn:hover { background: #f4f1ea; color: #141414; }
-
-  /* Tactile Herd Console */
-  .console {
-    background: var(--surface);
-    border: 2px solid var(--ink);
-    box-shadow: 5px 5px 0 var(--ink);
-    margin-bottom: 24px;
-  }
-  .console-head {
-    background: var(--red); color: #fff;
-    border-bottom: 2px solid var(--ink);
-    padding: 10px 14px;
-    display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
-    font-family: var(--mono); font-size: 12.5px; font-weight: 700;
-  }
-  .herd-stat {
-    background: var(--ink); color: #fff; padding: 3px 9px; font-size: 11.5px;
-  }
-  .console-body { padding: 16px; }
-
-  .active-strip {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
-    padding: 10px 12px; background: var(--surface-alt);
-    border: 2px solid var(--ink); margin-bottom: 14px;
-  }
-  .strip-lbl { font-family: var(--mono); font-size: 11px; font-weight: 700; text-transform: uppercase; }
-  .slot-chip {
-    display: inline-flex; align-items: center; gap: 6px;
-    background: var(--surface); border: 2px solid var(--ink);
-    padding: 3px 7px; font-family: var(--mono); font-size: 11.5px; font-weight: 700;
-  }
-  .slot-chip button {
-    border: 1.5px solid var(--ink); background: var(--red); color: #fff;
-    width: 18px; height: 18px; font-weight: 800; cursor: pointer; line-height: 1;
-  }
-
-  /* Dex-Style Roster Grid */
-  .roster {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
-    gap: 12px; margin-bottom: 16px;
-  }
-  .dex-card {
-    background: var(--paper);
-    border: 2px solid var(--ink);
-    padding: 10px;
-    display: flex; flex-direction: column; align-items: center;
-  }
-  .dex-top {
-    width: 100%; display: flex; justify-content: space-between;
-    font-family: var(--mono); font-size: 10.5px; font-weight: 700; color: var(--muted);
-    margin-bottom: 6px;
-  }
-  .dex-screen {
-    width: 100%; height: 78px;
-    background: var(--surface);
-    border: 2px solid var(--ink);
-    display: flex; align-items: flex-end; justify-content: center;
-    padding-bottom: 4px; margin-bottom: 8px;
-  }
-  .dex-screen canvas { image-rendering: pixelated; width: 64px; height: 64px; }
-  .dex-name { font-weight: 800; font-size: 13.5px; margin-bottom: 8px; }
-  .dex-btns { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-  .mini-btn {
-    font-family: var(--mono); font-size: 11.5px; font-weight: 700;
-    padding: 5px 0; border: 2px solid var(--ink); cursor: pointer;
-    background: var(--surface); color: var(--ink);
-  }
-  .mini-btn.add:hover { background: var(--green); color: #fff; }
-  .mini-btn.rem:hover { background: var(--red); color: #fff; }
-
-  /* Controls Deck */
-  .deck {
-    display: flex; flex-wrap: wrap; gap: 9px; align-items: center;
-    padding-top: 14px; border-top: 2px dashed var(--ink);
-  }
-  .deck input[type="text"] {
-    font-family: var(--mono); font-size: 12.5px;
-    padding: 8px 10px; border: 2px solid var(--ink); background: var(--paper); color: var(--ink);
-    width: 195px;
-  }
-  .slider-box {
-    display: inline-flex; align-items: center; gap: 7px;
-    font-family: var(--mono); font-size: 11.5px; font-weight: 700;
-    padding: 6px 10px; border: 2px solid var(--ink); background: var(--paper);
-  }
-  .slider-box input { width: 78px; accent-color: var(--red); }
-
-  /* Editorial Architecture Grid */
-  .arch-grid {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-    gap: 14px; margin-bottom: 26px;
-  }
-  .arch-card {
-    background: var(--surface);
-    border: 2px solid var(--ink);
-    box-shadow: 3px 3px 0 var(--ink);
-    padding: 15px;
-  }
-  .arch-num {
-    font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--red);
-    margin-bottom: 4px;
-  }
-  .arch-card h3 { font-size: 15px; font-weight: 800; margin-bottom: 6px; }
-  .arch-card p { font-size: 13px; line-height: 1.5; color: var(--muted); }
-  .arch-card code {
-    font-family: var(--mono); font-size: 11.5px;
-    background: var(--surface-alt); padding: 1px 4px; border: 1px solid #c9c3b6; color: var(--ink);
   }
 
   footer {
-    border-top: 2px solid var(--ink); padding-top: 14px;
+    border-top: 1px solid var(--border); padding-top: 14px;
     display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px;
-    font-family: var(--mono); font-size: 12px; color: var(--muted);
+    font-size: 11.5px; color: var(--dim); opacity: 0.8;
   }
-  footer a { color: var(--ink); font-weight: 700; text-decoration: none; }
+  footer a { color: var(--time-accent); text-decoration: none; }
   footer a:hover { text-decoration: underline; }
 
-  /* Grounded Solid Hardware Taskbar (exact 34px floor surface) */
-  .taskbar {
-    position: fixed; left: 0; right: 0; bottom: 0; height: 34px;
-    background: var(--ink); color: var(--paper);
-    border-top: 2px solid var(--ink);
-    z-index: 9990;
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 0 16px; font-family: var(--mono); font-size: 11.5px;
-    pointer-events: none;
+  /* Subtle Floor Hairline at Bottom of Viewport (Zero floating black bar covering content!) */
+  .floor-line {
+    position: fixed; left: 0; right: 0; bottom: 0; height: 3px;
+    background: linear-gradient(90deg, transparent, var(--time-accent), transparent);
+    opacity: 0.65; pointer-events: none; z-index: 9990;
   }
-  .tb-dot { display: inline-block; width: 8px; height: 8px; background: #22c55e; border-radius: 50%; margin-right: 7px; }
-
   #pet-stage {
     position: fixed; left: 0; top: 0; width: 100vw; height: 100vh;
     pointer-events: none; z-index: 9999;
@@ -337,139 +395,143 @@
 </head>
 <body>
 <canvas id="pet-stage"></canvas>
-<div class="taskbar">
-  <span><span class="tb-dot"></span>DIYPets Desktop Floor · Grab &amp; toss any pet</span>
-  <span>Feet calibrated to 0px · Bottom-anchored Squash &amp; Stretch</span>
-</div>
+<div class="floor-line"></div>
 
 <header class="topbar">
   <div class="topbar-inner">
     <div class="crumb">
-      <span class="led"></span>
-      <a href="https://shivammahajan.com">SM'S DEX</a>
-      <span>/</span>
-      <a href="https://shivammahajan.com/projects/">Projects</a>
-      <span>/</span>
-      <span class="cur">DIYPets v0.3.0</span>
+      <a href="https://shivammahajan.com">SHIVAMMAHAJAN.COM</a>
+      <span class="sep">/</span>
+      <span class="cur">DIYPETS v0.3.0</span>
     </div>
-    <div class="nav-right">
-      <button class="sfx-btn" id="sfx-btn" onclick="toggleSfx()">SFX: OFF</button>
-      <a class="nav-link" href="https://crates.io/crates/diypets">crates.io</a>
-      <a class="nav-link" href="https://github.com/smresponsibilities/diypets">GitHub ↗</a>
+    <div class="top-actions">
+      <button class="chip-btn" id="time-btn" onclick="cycleTime()" title="Switch portfolio time-of-day palette">TIME: AUTO</button>
+      <a class="chip-btn" href="https://crates.io/crates/diypets">CRATES.IO</a>
+      <a class="chip-btn" href="https://github.com/smresponsibilities/diypets">GITHUB ↗</a>
     </div>
   </div>
 </header>
 
 <main class="wrap">
-  <section class="hero">
-    <div>
-      <div class="kicker">Open-Source Rust Desktop Engine</div>
-      <h1>Make your own desktop pet — in pure Rust.</h1>
-      <p class="lead">
-        A zero-runtime desktop mascot engine with Multi-Pet Herd Mode, Play Mode physics, a 6-tool stdio &amp; HTTP MCP server for AI agents, 4× EPX RotSprite rotation, and a built-in 2D/SVG Pet Studio.
-      </p>
-      <div class="cta-row">
-        <a class="tbtn primary" href="https://github.com/smresponsibilities/diypets/releases/latest">Download v0.3.0</a>
-        <a class="tbtn" href="https://github.com/smresponsibilities/diypets">View Source</a>
-        <a class="tbtn" href="https://shivammahajan.com">← Back to Portfolio</a>
+  <!-- Authentic .printed-project Collector Card (Exact shivammahajan.com ProjectCard styling) -->
+  <section class="printed-project">
+    <div class="printed-header">
+      <img src="og-image.png" alt="DIYPets Highland Cow" />
+      <h1>DIYPets</h1>
+      <div class="printed-number">RELEASE<strong>v0.3.0</strong></div>
+    </div>
+
+    <div class="printed-body">
+      <div class="printed-art">
+        <div class="art-top"><span>PURE RUST ENGINE</span><span>WIN · MAC · LINUX</span></div>
+        <div class="art-sprites" id="hero-sprites"></div>
+        <div class="vitals-mini">
+          <div class="vital-cell"><div class="vital-k">Idle RAM</div><div class="vital-v">~7.8 MB</div></div>
+          <div class="vital-cell"><div class="vital-k">MCP Server</div><div class="vital-v">6 Tools (stdio)</div></div>
+          <div class="vital-cell"><div class="vital-k">Rotation</div><div class="vital-v">4× EPX RotSprite</div></div>
+          <div class="vital-cell"><div class="vital-k">Catalog</div><div class="vital-v">5 + 27 eSheep</div></div>
+        </div>
+      </div>
+
+      <div class="printed-paper">
+        <div>
+          <div class="printed-meta">
+            <span>RUST · EGUI · MCP · 2D SVG</span>
+            <span>MIT / APACHE-2.0</span>
+          </div>
+          <h2 class="printed-headline">Make your own <em>desktop pet</em> — in pure Rust.</h2>
+          <div class="printed-details">
+            <p>A zero-runtime desktop mascot engine with Multi-Pet Herd Mode (up to 8 pets with independent sizes &amp; speeds), Play Mode physics, Fullscreen Auto-Hide, and a built-in 2D/SVG Pet Studio.</p>
+            <p>Plug Claude Desktop, Cursor, or Claude Code straight into <code>diypets mcp</code> to celebrate builds, drop bouncy balls, or spawn pets live on your desktop.</p>
+          </div>
+        </div>
+        <div class="paper-links">
+          <a class="paper-btn solid" href="https://github.com/smresponsibilities/diypets/releases/latest">DOWNLOAD v0.3.0</a>
+          <a class="paper-btn" href="https://github.com/smresponsibilities/diypets">SOURCE CODE</a>
+          <a class="paper-btn" href="https://shivammahajan.com">← PORTFOLIO</a>
+        </div>
       </div>
     </div>
 
-    <aside class="spec-box" aria-label="Engine Specifications">
-      <div class="spec-head"><span>SYSTEM SPECS</span><span>v0.3.0</span></div>
-      <div class="spec-grid">
-        <div class="spec-cell"><div class="spec-k">Idle RAM</div><div class="spec-v">~7.8 MB</div></div>
-        <div class="spec-cell"><div class="spec-k">Runtime Deps</div><div class="spec-v">0 (Native)</div></div>
-        <div class="spec-cell"><div class="spec-k">Agent API</div><div class="spec-v">6 MCP Tools</div></div>
-        <div class="spec-cell"><div class="spec-k">Platforms</div><div class="spec-v">Win·Mac·Lin</div></div>
-        <div class="spec-cell"><div class="spec-k">Roster</div><div class="spec-v">5 + 27 eSheep</div></div>
-        <div class="spec-cell"><div class="spec-k">License</div><div class="spec-v">MIT / Apache</div></div>
-      </div>
-    </aside>
+    <div class="printed-footer">
+      <span>BUILT BY SHIVAM MAHAJAN</span>
+      <span>GRAB &amp; TOSS ANY PET AT THE BOTTOM OF YOUR SCREEN</span>
+    </div>
   </section>
 
-  <!-- Zero-Scrollbar Install & MCP Box -->
-  <section class="install-panel">
+  <!-- Interactive Herd Console (Exact .banner-card styling from Base.B5x-U7oH.css) -->
+  <section class="dex-panel" id="playground">
+    <div class="dex-head">
+      <strong>LIVE HERD PLAYGROUND</strong>
+      <span id="herd-count">ACTIVE: 3 / 8</span>
+    </div>
+    <div class="dex-body">
+      <div class="herd-bar" id="herd-bar"></div>
+      <div class="roster-grid" id="roster-grid"></div>
+
+      <div class="controls-bar">
+        <button class="ctrl-btn primary" onclick="dropBall()">DROP BALL</button>
+        <button class="ctrl-btn" id="follow-btn" onclick="toggleFollow()">FOLLOW CURSOR: OFF</button>
+        <button class="ctrl-btn" onclick="headpatAll()">HEADPAT ALL</button>
+        <input class="ctrl-input" id="bubble-input" type="text" value="Build passed!" maxlength="30" onkeydown="if(event.key==='Enter')sayBubble()" />
+        <button class="ctrl-btn" onclick="sayBubble()">SAY</button>
+        <label class="slider-chip">SIZE <input type="range" min="56" max="128" value="84" oninput="petSize=Number(this.value)" /></label>
+        <label class="slider-chip">SPEED <input type="range" min="1" max="10" value="4" oninput="petSpeed=Number(this.value)" /></label>
+        <button class="ctrl-btn" onclick="resetHerd()">RESET</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Install & MCP Commands -->
+  <section class="install-box">
     <div class="install-tabs">
-      <button class="itab active" onclick="setTab('win', this)">Windows (PS)</button>
-      <button class="itab" onclick="setTab('unix', this)">macOS / Linux</button>
-      <button class="itab" onclick="setTab('cargo', this)">Cargo</button>
-      <button class="itab" onclick="setTab('mcp', this)">Claude / Cursor MCP</button>
+      <button class="itab active" onclick="setTab('win', this)">WINDOWS (PS)</button>
+      <button class="itab" onclick="setTab('unix', this)">MACOS / LINUX</button>
+      <button class="itab" onclick="setTab('cargo', this)">CARGO</button>
+      <button class="itab" onclick="setTab('mcp', this)">CLAUDE / CURSOR MCP</button>
     </div>
-    <div class="install-row">
+    <div class="install-code-row">
       <pre id="install-code">irm https://raw.githubusercontent.com/smresponsibilities/diypets/main/install.ps1 | iex</pre>
-      <button class="copy-btn" id="copy-btn" onclick="copyCode()">COPY</button>
+      <button class="chip-btn" id="copy-btn" onclick="copyCode()">COPY</button>
     </div>
-  </section>
-
-  <!-- Interactive Playground Console (Top edge acts as a crisp perch ledge when enabled) -->
-  <section class="console" id="playground" data-ledge="true">
-    <div class="console-head">
-      <span>LIVE HERD CONSOLE · PLAYABLE BROWSER DEMO</span>
-      <span class="herd-stat" id="herd-count">HERD: 3 / 8</span>
-    </div>
-    <div class="console-body">
-      <div class="active-strip" id="active-strip"></div>
-      <div class="roster" id="roster"></div>
-
-      <div class="deck">
-        <button class="tbtn primary" onclick="dropBall()">Drop Bouncy Ball</button>
-        <button class="tbtn" id="follow-btn" onclick="toggleFollow()">Follow Cursor: OFF</button>
-        <button class="tbtn" id="ledge-btn" onclick="toggleLedges()">Console Perch: OFF</button>
-        <button class="tbtn" onclick="headpatAll()">Headpat All</button>
-        <input type="text" id="bubble-input" value="Build passed!" maxlength="32" onkeydown="if(event.key==='Enter')sayBubble()" />
-        <button class="tbtn" onclick="sayBubble()">Say</button>
-        <label class="slider-box">SIZE <input type="range" min="56" max="132" value="84" oninput="petSize=Number(this.value)" /></label>
-        <label class="slider-box">SPEED <input type="range" min="1" max="10" value="4" oninput="petSpeed=Number(this.value)" /></label>
-        <button class="tbtn" onclick="resetHerd()">Reset</button>
-      </div>
-    </div>
-  </section>
-
-  <!-- 4 Core Architecture Pillars -->
-  <section class="arch-grid">
-    <article class="arch-card">
-      <div class="arch-num">01 / AGENT MCP</div>
-      <h3>Native stdio &amp; HTTP Server</h3>
-      <p>Run <code>diypets mcp</code> in Claude Desktop, Cursor, or Claude Code to trigger reactions, speech bubbles, bouncy balls, or herd spawns.</p>
-    </article>
-    <article class="arch-card">
-      <div class="arch-num">02 / PIXEL ENGINE</div>
-      <h3>RotSprite &amp; Squash Physics</h3>
-      <p>4× EPX (Scale2x) RotSprite preserves crisp 1px outlines during limb rotation, paired with bottom-anchored Squash &amp; Stretch and Fullscreen Auto-Hide.</p>
-    </article>
-    <article class="arch-card">
-      <div class="arch-num">03 / STUDIO V4</div>
-      <h3>Draw, Rig &amp; Test in Sandbox</h3>
-      <p>Built-in 128×128 editor with Marquee Select, 1-Click Auto-Outline, Mirror X, Onion Skinning, 2D SVG Auto-Rigging, and a live Sandbox.</p>
-    </article>
-    <article class="arch-card">
-      <div class="arch-num">04 / OPEN FORMAT</div>
-      <h3>eSheep XML Compatible</h3>
-      <p>Ships with 5 pixel-verified originals and lazy-loads 27+ classic eSheep community packs on demand in one click inside Settings.</p>
-    </article>
   </section>
 
   <footer>
-    <span>Built by <a href="https://shivammahajan.com">Shivam Mahajan</a> · Dual-licensed MIT / Apache-2.0</span>
+    <span>Built by <a href="https://shivammahajan.com">Shivam Mahajan</a> · MIT / Apache-2.0</span>
     <span><a href="https://github.com/smresponsibilities/diypets">GitHub</a> · <a href="https://crates.io/crates/diypets">crates.io</a></span>
   </footer>
 </main>
 
 <script>
+// Exact time-of-day theme selector matching shivammahajan.com
+const TIMES = ["dawn", "day", "sunset", "night"];
+function autoTimeTheme() {
+  const h = new Date().getHours();
+  if (h >= 5 && h < 9) return "dawn";
+  if (h >= 9 && h < 17) return "day";
+  if (h >= 17 && h < 20) return "sunset";
+  return "night";
+}
+let timeIdx = TIMES.indexOf(autoTimeTheme());
+function applyTime(idx) {
+  timeIdx = (idx + TIMES.length) % TIMES.length;
+  document.documentElement.setAttribute("data-time", TIMES[timeIdx]);
+  document.getElementById("time-btn").textContent = "TIME: " + TIMES[timeIdx].toUpperCase();
+}
+function cycleTime() { applyTime(timeIdx + 1); }
+applyTime(timeIdx);
+
 const SNIPPETS = {
   win: "irm https://raw.githubusercontent.com/smresponsibilities/diypets/main/install.ps1 | iex",
   unix: "curl -fsSL https://raw.githubusercontent.com/smresponsibilities/diypets/main/install.sh | bash",
   cargo: "cargo install diypets && diypets",
   mcp: '{\n  "mcpServers": {\n    "diypets": { "command": "diypets", "args": ["mcp"] }\n  }\n}'
 };
-
 function setTab(k, btn) {
   document.querySelectorAll(".itab").forEach(b => b.classList.remove("active"));
   btn.classList.add("active");
   document.getElementById("install-code").textContent = SNIPPETS[k];
 }
-
 function copyCode() {
   navigator.clipboard.writeText(document.getElementById("install-code").textContent);
   const b = document.getElementById("copy-btn");
@@ -477,48 +539,19 @@ function copyCode() {
   setTimeout(() => { b.textContent = "COPY"; }, 1200);
 }
 
-// Zero-Asset 8-Bit Web Audio Synth (strictly opt-in, honoring SM'S DEX no-autoplay rule)
-let audioCtx = null;
-let sfxOn = false;
-function toggleSfx() {
-  sfxOn = !sfxOn;
-  const b = document.getElementById("sfx-btn");
-  b.textContent = `SFX: ${sfxOn ? "ON" : "OFF"}`;
-  b.classList.toggle("on", sfxOn);
-  if (sfxOn) beep(520, 0.06, "square");
-}
-function beep(freq, dur, type = "square") {
-  if (!sfxOn) return;
-  try {
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = type;
-    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-    gain.gain.setValueAtTime(0.045, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.start();
-    osc.stop(audioCtx.currentTime + dur);
-  } catch (_) {}
-}
-
 const PACKS = [
-  { no: "01", id: "highland_cow", name: "Highland Cow", role: "Quadruped" },
-  { no: "02", id: "dog", name: "Dog", role: "Quadruped" },
-  { no: "03", id: "polar_bear", name: "Polar Bear", role: "Quadruped" },
-  { no: "04", id: "goat", name: "Goat", role: "Quadruped" },
-  { no: "05", id: "stegosaurus", name: "Stegosaurus", role: "Dinosaur" }
+  { no: "001", id: "highland_cow", name: "Highland Cow", type: "FIRE", color: "#ee8130" },
+  { no: "002", id: "dog",          name: "Dog",          type: "GROUND", color: "#e2bf65" },
+  { no: "003", id: "polar_bear",   name: "Polar Bear",   type: "ICE", color: "#96d9d6" },
+  { no: "004", id: "goat",         name: "Goat",         type: "NORMAL", color: "#a8a77a" },
+  { no: "005", id: "stegosaurus",  name: "Stegosaurus",  type: "GRASS", color: "#7ac74c" }
 ];
 
 const sprites = {};
 let petSize = 84;
 let petSpeed = 4;
 let followCursor = false;
-let consolePerch = false;
 let mouseX = window.innerWidth * 0.5;
-let mouseY = window.innerHeight * 0.5;
 let pets = [];
 let ball = null;
 let dragPet = null;
@@ -526,121 +559,75 @@ let lastMX = 0, lastMY = 0;
 
 const canvas = document.getElementById("pet-stage");
 const ctx = canvas.getContext("2d");
-
-function resize() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-}
+function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
 window.addEventListener("resize", resize);
 resize();
 
-function getPerchLedge() {
-  if (!consolePerch) return null;
-  const el = document.getElementById("playground");
-  if (!el) return null;
-  const r = el.getBoundingClientRect();
-  if (r.top > 72 && r.top < canvas.height - 96) {
-    return { left: r.left + 8, right: r.right - 8, top: r.top };
-  }
-  return null;
-}
-
 function syncUI() {
-  document.getElementById("herd-count").textContent = `HERD: ${pets.length} / 8`;
-  const strip = document.getElementById("active-strip");
-  strip.innerHTML = `<span class="strip-lbl">Active Herd:</span>`;
+  document.getElementById("herd-count").textContent = `ACTIVE: ${pets.length} / 8`;
+  const bar = document.getElementById("herd-bar");
+  bar.innerHTML = `<span class="herd-lbl">HERD:</span>`;
   pets.forEach((p, idx) => {
     const meta = PACKS.find(x => x.id === p.id);
-    const chip = document.createElement("span");
-    chip.className = "slot-chip";
-    chip.innerHTML = `<span style="cursor:pointer" title="Click to hop" onclick="hopPet(${idx})">#${idx + 1} ${meta ? meta.name : p.id}</span>` +
+    const pill = document.createElement("span");
+    pill.className = "slot-pill";
+    pill.innerHTML = `<span style="cursor:pointer" onclick="hopPet(${idx})">#${idx + 1} ${meta ? meta.name : p.id}</span>` +
       (pets.length > 1 ? `<button title="Remove" onclick="removeSlot(${idx})">×</button>` : "");
-    strip.appendChild(chip);
+    bar.appendChild(pill);
   });
 }
 
 function hopPet(idx) {
   const p = pets[idx];
   if (!p) return;
-  p.vy = -340;
-  p.sqX = 0.86; p.sqY = 1.16;
+  p.vy = -330; p.sqX = 0.86; p.sqY = 1.15;
   p.heartsUntil = performance.now() + 2000;
-  beep(640, 0.07);
 }
 
 function addPet(id, px = null) {
   if (pets.length >= 8) return;
-  const dockTop = canvas.height - 34;
-  const x = px !== null ? px : Math.max(24, Math.min(canvas.width - petSize - 24, 90 + ((pets.length * 170) % Math.max(240, canvas.width - 200))));
+  const floorY = canvas.height - 3 - petSize;
+  const x = px !== null ? px : Math.max(24, Math.min(canvas.width - petSize - 24, 90 + ((pets.length * 165) % Math.max(260, canvas.width - 200))));
   pets.push({
-    id,
-    x,
-    y: dockTop - petSize - 90 - (pets.length % 3) * 28,
+    id, x, y: floorY - 75 - (pets.length % 3) * 24,
     vx: (pets.length % 2 === 0 ? 1 : -1) * (petSpeed * 22),
-    vy: 0,
-    dir: pets.length % 2 === 0 ? 1 : -1,
-    frame: pets.length % 4,
-    frameT: 0,
-    sqX: 1, sqY: 1,
-    heartsUntil: 0,
-    cooldown: 0,
-    bubble: null,
-    bubbleUntil: 0,
-    airborne: true
+    vy: 0, dir: pets.length % 2 === 0 ? 1 : -1,
+    frame: pets.length % 4, frameT: 0,
+    sqX: 1, sqY: 1, heartsUntil: 0, cooldown: 0,
+    bubble: null, bubbleUntil: 0, airborne: true
   });
-  beep(440 + pets.length * 40, 0.06);
   syncUI();
 }
 
 function removeSlot(idx) {
   if (pets.length <= 1) return;
   pets.splice(idx, 1);
-  beep(260, 0.05);
   syncUI();
 }
-
 function removePet(id) {
   const idx = pets.map(p => p.id).lastIndexOf(id);
   if (idx !== -1) removeSlot(idx);
 }
-
 function resetHerd() {
   pets = [];
   addPet("highland_cow", 140);
-  addPet("dog", Math.min(canvas.width - 220, 420));
-  addPet("stegosaurus", Math.min(canvas.width - 140, 680));
+  addPet("dog", Math.min(canvas.width - 220, 400));
+  addPet("stegosaurus", Math.min(canvas.width - 140, 660));
 }
-
 function dropBall() {
   ball = {
-    x: canvas.width * 0.5,
-    y: 80,
-    vx: (Math.random() < 0.5 ? -1 : 1) * 250,
-    vy: -40,
-    until: performance.now() + 20000,
-    lastKick: 0
+    x: canvas.width * 0.5, y: 76,
+    vx: (Math.random() < 0.5 ? -1 : 1) * 250, vy: -40,
+    until: performance.now() + 20000, lastKick: 0
   };
-  beep(720, 0.06);
 }
-
 function toggleFollow() {
   followCursor = !followCursor;
   const b = document.getElementById("follow-btn");
-  b.textContent = `Follow Cursor: ${followCursor ? "ON" : "OFF"}`;
-  b.classList.toggle("active", followCursor);
+  b.textContent = `FOLLOW CURSOR: ${followCursor ? "ON" : "OFF"}`;
+  b.classList.toggle("on", followCursor);
 }
-
-function toggleLedges() {
-  consolePerch = !consolePerch;
-  const b = document.getElementById("ledge-btn");
-  b.textContent = `Console Perch: ${consolePerch ? "ON" : "OFF"}`;
-  b.classList.toggle("active", consolePerch);
-}
-
-function headpatAll() {
-  pets.forEach((_, i) => hopPet(i));
-}
-
+function headpatAll() { pets.forEach((_, i) => hopPet(i)); }
 function sayBubble() {
   const txt = (document.getElementById("bubble-input").value || "Build passed!").trim();
   if (!txt || pets.length === 0) return;
@@ -658,62 +645,67 @@ function hitPet(mx, my) {
 }
 
 window.addEventListener("mousemove", e => {
-  mouseX = e.clientX; mouseY = e.clientY;
+  mouseX = e.clientX;
   if (dragPet) {
     dragPet.vx = (e.clientX - lastMX) * 22;
     dragPet.vy = (e.clientY - lastMY) * 22;
     dragPet.x = Math.max(0, Math.min(canvas.width - petSize, e.clientX - petSize * 0.5));
-    dragPet.y = Math.max(48, Math.min(canvas.height - 34 - petSize, e.clientY - petSize * 0.4));
+    dragPet.y = Math.max(48, Math.min(canvas.height - 3 - petSize, e.clientY - petSize * 0.4));
     document.body.style.cursor = "grabbing";
   } else {
     document.body.style.cursor = hitPet(e.clientX, e.clientY) ? "grab" : "";
   }
   lastMX = e.clientX; lastMY = e.clientY;
 });
-
 window.addEventListener("mousedown", e => {
   const hit = hitPet(e.clientX, e.clientY);
-  if (hit) {
-    dragPet = hit;
-    hit.airborne = true;
-    document.body.style.cursor = "grabbing";
-    e.preventDefault();
-  }
+  if (hit) { dragPet = hit; hit.airborne = true; document.body.style.cursor = "grabbing"; e.preventDefault(); }
 });
-
 window.addEventListener("mouseup", () => {
   if (dragPet) {
     dragPet.vx = Math.max(-520, Math.min(520, dragPet.vx));
     dragPet.vy = Math.max(-560, Math.min(480, dragPet.vy));
-    dragPet = null;
-    document.body.style.cursor = "";
+    dragPet = null; document.body.style.cursor = "";
   }
 });
 
-// Build Dex Roster
-const rosterEl = document.getElementById("roster");
-PACKS.forEach(pk => {
+// Build Roster + Hero Sprite Preview
+const rosterEl = document.getElementById("roster-grid");
+const heroStrip = document.getElementById("hero-sprites");
+PACKS.forEach((pk, idx) => {
   const img = new Image();
   img.src = `sprites/${pk.id}.png`;
   sprites[pk.id] = img;
 
   const card = document.createElement("div");
-  card.className = "dex-card";
+  card.className = "pet-entry";
   card.innerHTML = `
-    <div class="dex-top"><span>#${pk.no}</span><span>${pk.role}</span></div>
-    <div class="dex-screen"><canvas width="64" height="64" id="prev-${pk.id}"></canvas></div>
-    <div class="dex-name">${pk.name}</div>
-    <div class="dex-btns">
-      <button class="mini-btn add" onclick="addPet('${pk.id}')">+ ADD</button>
-      <button class="mini-btn rem" onclick="removePet('${pk.id}')">- DEL</button>
+    <div class="entry-top"><span>#${pk.no}</span><span class="type-badge" style="background:${pk.color}">${pk.type}</span></div>
+    <div class="entry-stage"><canvas width="62" height="62" id="prev-${pk.id}"></canvas></div>
+    <div class="entry-name">${pk.name}</div>
+    <div class="entry-btns">
+      <button class="pbtn add" onclick="addPet('${pk.id}')">+ ADD</button>
+      <button class="pbtn del" onclick="removePet('${pk.id}')">- DEL</button>
     </div>
   `;
   rosterEl.appendChild(card);
 
+  if (idx < 3) {
+    const hc = document.createElement("canvas");
+    hc.width = 58; hc.height = 58; hc.id = `hero-${pk.id}`;
+    heroStrip.appendChild(hc);
+  }
+
   img.onload = () => {
     const pc = document.getElementById(`prev-${pk.id}`).getContext("2d");
     pc.imageSmoothingEnabled = false;
-    pc.drawImage(img, 0, 0, img.width / 4, img.height, 0, 0, 64, 64);
+    pc.drawImage(img, 0, 0, img.width / 4, img.height, 0, 0, 62, 62);
+    const hc = document.getElementById(`hero-${pk.id}`);
+    if (hc) {
+      const hctx = hc.getContext("2d");
+      hctx.imageSmoothingEnabled = false;
+      hctx.drawImage(img, 0, 0, img.width / 4, img.height, 0, 0, 58, 58);
+    }
   };
 });
 
@@ -727,73 +719,67 @@ function loop(now) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.imageSmoothingEnabled = false;
 
-  // Exact floor: top pixel of the 34px taskbar (0px air gap because sprites are foot-flush!)
-  const dockTop = canvas.height - 34;
-  const floorY = dockTop - petSize;
-  const perch = getPerchLedge();
+  const floorLineY = canvas.height - 3;
+  const floorY = floorLineY - petSize;
 
-  // Ball physics
   if (ball) {
     if (now > ball.until) {
       ball = null;
     } else {
-      const prevBY = ball.y;
       ball.vy += 980 * dt;
       ball.x += ball.vx * dt;
       ball.y += ball.vy * dt;
       if (ball.x < 12) { ball.x = 12; ball.vx = Math.abs(ball.vx) * 0.84; }
       if (ball.x > canvas.width - 12) { ball.x = canvas.width - 12; ball.vx = -Math.abs(ball.vx) * 0.84; }
-      if (perch && ball.x >= perch.left && ball.x <= perch.right && prevBY + 11 <= perch.top + 8 && ball.y + 11 >= perch.top && ball.vy > 0) {
-        ball.y = perch.top - 11;
-        ball.vy = Math.abs(ball.vy) > 65 ? -Math.abs(ball.vy) * 0.72 : 0;
-        ball.vx *= 0.98;
-      }
-      if (ball.y > dockTop - 11) {
-        ball.y = dockTop - 11;
+      if (ball.y > floorLineY - 11) {
+        ball.y = floorLineY - 11;
         ball.vy = Math.abs(ball.vy) > 65 ? -Math.abs(ball.vy) * 0.74 : 0;
         ball.vx *= 0.985;
       }
-
-      ctx.beginPath();
-      ctx.arc(ball.x, ball.y, 11, 0, Math.PI * 2);
-      ctx.fillStyle = "#d83a2e";
-      ctx.fill();
-      ctx.lineWidth = 2.5;
-      ctx.strokeStyle = "#141414";
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(ball.x - 3.5, ball.y - 3.5, 2.8, 0, Math.PI * 2);
-      ctx.fillStyle = "#ffffff";
-      ctx.fill();
+      ctx.beginPath(); ctx.arc(ball.x, ball.y, 11, 0, Math.PI * 2);
+      ctx.fillStyle = "#ee8130"; ctx.fill();
+      ctx.lineWidth = 2.5; ctx.strokeStyle = "#0b0e12"; ctx.stroke();
+      ctx.beginPath(); ctx.arc(ball.x - 3.5, ball.y - 3.5, 2.8, 0, Math.PI * 2);
+      ctx.fillStyle = "#fff5e4"; ctx.fill();
     }
   }
 
-  // Pet-to-Pet Herd Greetings
+  // Non-stacking horizontal separation + Herd greetings
+  const minGap = petSize * 0.86;
   for (let i = 0; i < pets.length; i++) {
     for (let j = i + 1; j < pets.length; j++) {
       const a = pets[i], b = pets[j];
       if (a === dragPet || b === dragPet || a.airborne || b.airborne) continue;
-      if (now < a.cooldown || now < b.cooldown) continue;
-      if (Math.abs(a.y - b.y) > 20) continue;
       const dx = b.x - a.x;
-      if (Math.abs(dx) < petSize * 0.45 && ((dx >= 0 && a.dir > 0 && b.dir < 0) || (dx < 0 && a.dir < 0 && b.dir > 0))) {
-        a.cooldown = now + 5500; b.cooldown = now + 5500;
-        const aLeft = a.x <= b.x;
-        a.dir = aLeft ? -1 : 1; b.dir = aLeft ? 1 : -1;
-        a.vy = -210; b.vy = -210;
-        a.sqX = 0.88; a.sqY = 1.14; b.sqX = 0.88; b.sqY = 1.14;
-        a.heartsUntil = now + 1700; b.heartsUntil = now + 1700;
-        beep(580, 0.05);
+      const dist = Math.abs(dx);
+
+      // Push apart gently so Follow Cursor / Ball Chase NEVER stacks pets into a single blob!
+      if (dist < minGap) {
+        const push = (minGap - dist) * 0.5 * Math.min(1, dt * 10);
+        const sign = dx >= 0 ? 1 : -1;
+        a.x = Math.max(4, Math.min(canvas.width - petSize - 4, a.x - sign * push));
+        b.x = Math.max(4, Math.min(canvas.width - petSize - 4, b.x + sign * push));
+      }
+
+      if (!followCursor && !ball && now >= a.cooldown && now >= b.cooldown && dist < petSize * 0.75) {
+        if ((dx >= 0 && a.dir > 0 && b.dir < 0) || (dx < 0 && a.dir < 0 && b.dir > 0)) {
+          a.cooldown = now + 5500; b.cooldown = now + 5500;
+          const aLeft = a.x <= b.x;
+          a.dir = aLeft ? -1 : 1; b.dir = aLeft ? 1 : -1;
+          a.vy = -210; b.vy = -210;
+          a.sqX = 0.88; a.sqY = 1.14; b.sqX = 0.88; b.sqY = 1.14;
+          a.heartsUntil = now + 1700; b.heartsUntil = now + 1700;
+        }
       }
     }
   }
 
-  for (const p of pets) {
+  const n = pets.length;
+  pets.forEach((p, idx) => {
     p.sqX += (1 - p.sqX) * Math.min(1, dt * 13);
     p.sqY += (1 - p.sqY) * Math.min(1, dt * 13);
 
     if (p !== dragPet) {
-      const prevFoot = p.y + petSize;
       p.vy += 980 * dt;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
@@ -801,28 +787,24 @@ function loop(now) {
       if (p.x < 4) { p.x = 4; p.dir = 1; }
       if (p.x > canvas.width - petSize - 4) { p.x = canvas.width - petSize - 4; p.dir = -1; }
 
-      let surfY = null;
-      const cx = p.x + petSize * 0.5;
-      if (perch && cx >= perch.left && cx <= perch.right && prevFoot <= perch.top + 10 && p.y + petSize >= perch.top && p.vy >= 0) {
-        surfY = perch.top - petSize;
-      }
-      if (surfY === null && p.y >= floorY) {
-        surfY = floorY;
-      }
-
-      if (surfY !== null) {
+      if (p.y >= floorY) {
         if (p.airborne && p.vy > 140) { p.sqX = 1.16; p.sqY = 0.84; }
-        p.y = surfY;
+        p.y = floorY;
         p.vy = 0;
         p.airborne = false;
 
         let targetX = null;
-        if (ball) targetX = ball.x - petSize * 0.5;
-        else if (followCursor) targetX = mouseX - petSize * 0.5;
+        if (ball) {
+          targetX = ball.x - petSize * 0.5;
+        } else if (followCursor) {
+          // Each pet gets its own spaced formation slot around the cursor!
+          const slotOffset = (idx - (n - 1) * 0.5) * (petSize * 0.96);
+          targetX = Math.max(8, Math.min(canvas.width - petSize - 8, mouseX - petSize * 0.5 + slotOffset));
+        }
 
         if (targetX !== null) {
           const dx = targetX - p.x;
-          if (Math.abs(dx) > 18) {
+          if (Math.abs(dx) > 12) {
             p.dir = dx > 0 ? 1 : -1;
             p.vx = p.dir * (petSpeed * 32);
           } else {
@@ -839,12 +821,9 @@ function loop(now) {
         const dx = ball.x - (p.x + petSize * 0.5);
         const dy = ball.y - (p.y + petSize * 0.72);
         if (Math.abs(dx) < 36 && Math.abs(dy) < 42) {
-          ball.vy = -440;
-          ball.vx = dx >= 0 ? 270 : -270;
+          ball.vy = -440; ball.vx = dx >= 0 ? 270 : -270;
           ball.lastKick = now;
-          p.heartsUntil = now + 1800;
-          p.sqX = 0.88; p.sqY = 1.14;
-          beep(780, 0.06);
+          p.heartsUntil = now + 1800; p.sqX = 0.88; p.sqY = 1.14;
         }
       }
     }
@@ -854,8 +833,7 @@ function loop(now) {
 
     const img = sprites[p.id];
     if (img && img.complete && img.width > 0) {
-      const fw = img.width / 4;
-      const fh = img.height;
+      const fw = img.width / 4, fh = img.height;
       const breath = (!p.airborne && Math.abs(p.vx) < 5) ? Math.sin(now * 0.004) * 0.02 : 0;
       const dw = petSize * (p.sqX - breath * 0.5);
       const dh = petSize * (p.sqY + breath);
@@ -875,27 +853,28 @@ function loop(now) {
 
     if (now < p.heartsUntil) {
       const prog = 1 - (p.heartsUntil - now) / 2200;
-      ctx.fillStyle = "#d83a2e";
+      ctx.fillStyle = "#f43f5e";
       ctx.font = "bold 16px sans-serif";
       ctx.fillText("♥", p.x + petSize * 0.34, p.y - prog * 26);
       ctx.fillText("♥", p.x + petSize * 0.62, p.y - ((prog + 0.32) % 1) * 26);
     }
 
     if (p.bubble && now < p.bubbleUntil) {
-      ctx.font = "bold 11.5px Consolas, monospace";
+      const acc = getComputedStyle(document.documentElement).getPropertyValue("--time-accent").trim() || "#ffd75e";
+      ctx.font = '11px "Departure Mono", Consolas, monospace';
       const tw = ctx.measureText(p.bubble).width;
       const bw = tw + 20, bh = 26;
       const bx = Math.max(8, Math.min(canvas.width - bw - 8, p.x + petSize * 0.5 - bw * 0.5));
       const by = Math.max(54, p.y - bh - 8);
-      ctx.fillStyle = "#ffffff";
-      ctx.strokeStyle = "#141414";
+      ctx.fillStyle = "#0d1117";
+      ctx.strokeStyle = acc;
       ctx.lineWidth = 2;
       ctx.fillRect(bx, by, bw, bh);
       ctx.strokeRect(bx, by, bw, bh);
-      ctx.fillStyle = "#141414";
+      ctx.fillStyle = "#e6edf3";
       ctx.fillText(p.bubble, bx + 10, by + 17);
     }
-  }
+  });
 
   requestAnimationFrame(loop);
 }
