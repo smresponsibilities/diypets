@@ -1,4 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://shivammahajan.com/diypets/sitemap.xml

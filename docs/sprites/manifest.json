@@ -1,0 +1,42 @@
+[
+  {
+    "no": "01",
+    "id": "highland_cow",
+    "name": "Highland Cow",
+    "role": "Quadruped",
+    "frames": 4,
+    "size": 108
+  },
+  {
+    "no": "02",
+    "id": "dog",
+    "name": "Dog",
+    "role": "Quadruped",
+    "frames": 4,
+    "size": 115
+  },
+  {
+    "no": "03",
+    "id": "polar_bear",
+    "name": "Polar Bear",
+    "role": "Quadruped",
+    "frames": 4,
+    "size": 114
+  },
+  {
+    "no": "04",
+    "id": "goat",
+    "name": "Goat",
+    "role": "Quadruped",
+    "frames": 4,
+    "size": 110
+  },
+  {
+    "no": "05",
+    "id": "stegosaurus",
+    "name": "Stegosaurus",
+    "role": "Dinosaur",
+    "frames": 4,
+    "size": 115
+  }
+]
