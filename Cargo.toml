@@ -1,6 +1,6 @@
 [package]
 name = "diypets"
-version = "0.1.6"
+version = "0.2.0"
 edition = "2024"
 description = "Make your own desktop pet - lightweight cross-platform Rust mascot engine with a built-in 2D/SVG Pet Creator Studio and lazy-loaded eSheep XML packs."
 license = "MIT OR Apache-2.0"
@@ -27,6 +27,11 @@ include = [
     "catalog.json",
     "catalog_icons/**",
     "src/**",
+    "tests/**",
+    "assets/dog/deskpet.xml",
+    "assets/polar_bear/deskpet.xml",
+    "assets/goat/deskpet.xml",
+    "assets/stegosaurus/deskpet.xml",
     "assets/deskpet.xml",
     "assets/highland_cow/deskpet.xml",
     "assets/highland_cow/icon.png",
@@ -58,12 +63,12 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 softbuffer = "0.4"
 winit = "0.30"
 tray-icon = "0.19"
-toml = "0.8"
+toml = "1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ureq = { version = "2", default-features = false, features = ["tls"] }
 roxmltree = "0.21.1"
-base64 = "0.23.1"
+base64 = "0.22"
 rand = "0.8"
 eframe = { version = "0.36.2", default-features = false, features = ["default_fonts", "glow"] }
 rfd = "0.17.2"

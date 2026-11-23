@@ -96,6 +96,40 @@ fn eval_arithmetic(expr: &str) -> Result<f64, ()> {
     Ok(val)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HerdEncounter {
+    Greet,
+    BumpTurn,
+}
+
+/// Detect when two pets walking toward each other on the same floor meet.
+pub fn detect_herd_encounter(
+    ax: f32,
+    ay: f32,
+    a_moving_left: bool,
+    bx: f32,
+    by: f32,
+    b_moving_left: bool,
+    seed: u64,
+) -> Option<HerdEncounter> {
+    if (ay - by).abs() > 38.0 {
+        return None;
+    }
+    let dx = bx - ax;
+    if dx.abs() > 46.0 {
+        return None;
+    }
+    let approaching = (dx >= 0.0 && !a_moving_left && b_moving_left)
+        || (dx < 0.0 && a_moving_left && !b_moving_left);
+    if !approaching {
+        return None;
+    }
+    if seed % 2 == 0 {
+        Some(HerdEncounter::Greet)
+    } else {
+        Some(HerdEncounter::BumpTurn)
+    }
+}
 #[derive(Clone, Debug, PartialEq)]
 pub enum DeskpetStateId {
     Drag,
@@ -752,6 +786,29 @@ mod window_floor_tests {
             "fast walk should step frames quicker (fast={}, slow={})",
             fast.sequence_index,
             slow.sequence_index
+        );
+    }
+
+    #[test]
+    fn herd_encounter_detects_approaching_pets_and_ignores_distant_or_diverging() {
+        use super::{HerdEncounter, detect_herd_encounter};
+        assert_eq!(
+            detect_herd_encounter(200.0, 500.0, false, 232.0, 505.0, true, 0),
+            Some(HerdEncounter::Greet)
+        );
+        assert_eq!(
+            detect_herd_encounter(200.0, 500.0, false, 232.0, 505.0, true, 1),
+            Some(HerdEncounter::BumpTurn)
+        );
+        assert_eq!(
+            detect_herd_encounter(200.0, 500.0, true, 232.0, 505.0, false, 0),
+            None,
+            "pets walking away from each other should not collide"
+        );
+        assert_eq!(
+            detect_herd_encounter(200.0, 500.0, false, 232.0, 200.0, true, 0),
+            None,
+            "pets on different window floors should not collide"
         );
     }
 

@@ -54,6 +54,7 @@ enum StudioTab {
     Animate,
     Export,
     ImportSheet,
+    Sandbox,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -74,6 +75,7 @@ enum Tool {
     Line,
     Rect,
     Circle,
+    Select,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -283,6 +285,21 @@ struct StudioApp {
     sheet_walk_count: u32,
     sheet_fps_ms: u32,
     sheet_name: String,
+    unsaved_changes: bool,
+    confirm_close_modal: bool,
+    allow_close: bool,
+    sb_x: f32,
+    sb_y: f32,
+    sb_vx: f32,
+    sb_vy: f32,
+    sb_facing_right: bool,
+    sb_dragging: bool,
+    sb_t: f32,
+    sb_ball: Option<(f32, f32, f32, f32)>,
+    sb_tex: Option<egui::TextureHandle>,
+    sel_rect: Option<(usize, usize, usize, usize)>,
+    sel_drag_start: Option<(usize, usize)>,
+    clipboard_pixels: Option<(usize, usize, Vec<[u8; 4]>)>,
 }
 
 impl Default for StudioApp {
@@ -341,6 +358,21 @@ impl Default for StudioApp {
             sheet_walk_count: 4,
             sheet_fps_ms: 140,
             sheet_name: "sheet_pet".to_string(),
+            unsaved_changes: false,
+            confirm_close_modal: false,
+            allow_close: false,
+            sb_x: 180.0,
+            sb_y: 120.0,
+            sb_vx: 85.0,
+            sb_vy: 0.0,
+            sb_facing_right: true,
+            sb_dragging: false,
+            sb_t: 0.0,
+            sb_ball: None,
+            sb_tex: None,
+            sel_rect: None,
+            sel_drag_start: None,
+            clipboard_pixels: None,
         }
     }
 }
@@ -351,6 +383,7 @@ impl StudioApp {
         self.sheet_dirty = true;
         self.rig_dirty = true;
         self.kf_thumbs_dirty = true;
+        self.unsaved_changes = true;
     }
 
     fn push_undo(&mut self) {
@@ -586,6 +619,81 @@ impl StudioApp {
         for y in 0..BOARD_SIZE {
             for x in 0..(BOARD_SIZE / 2) {
                 buf.swap(y * BOARD_SIZE + x, y * BOARD_SIZE + (BOARD_SIZE - 1 - x));
+            }
+        }
+        self.mark_dirty();
+    }
+
+    fn copy_selection(&mut self) {
+        let (x0, y0, x1, y1) = self.sel_rect.unwrap_or((0, 0, BOARD_SIZE - 1, BOARD_SIZE - 1));
+        let w = x1 - x0 + 1;
+        let h = y1 - y0 + 1;
+        let src = self.active_buf();
+        let mut data = Vec::with_capacity(w * h);
+        for y in y0..=y1 {
+            for x in x0..=x1 {
+                data.push(src[y * BOARD_SIZE + x]);
+            }
+        }
+        self.clipboard_pixels = Some((w, h, data));
+        self.status_msg = Some((format!("Copied {w}x{h} selection."), false));
+    }
+
+    fn paste_clipboard(&mut self) {
+        let Some((w, h, data)) = self.clipboard_pixels.clone() else {
+            return;
+        };
+        let (ox, oy) = self
+            .sel_rect
+            .map(|(x0, y0, _, _)| (x0, y0))
+            .unwrap_or(((BOARD_SIZE.saturating_sub(w)) / 2, (BOARD_SIZE.saturating_sub(h)) / 2));
+        self.push_undo();
+        let dst = self.active_buf_mut();
+        for dy in 0..h {
+            let ty = oy + dy;
+            if ty >= BOARD_SIZE {
+                break;
+            }
+            for dx in 0..w {
+                let tx = ox + dx;
+                if tx >= BOARD_SIZE {
+                    break;
+                }
+                let px = data[dy * w + dx];
+                if px[3] > 0 {
+                    dst[ty * BOARD_SIZE + tx] = px;
+                }
+            }
+        }
+        self.mark_dirty();
+        self.status_msg = Some((format!("Pasted {w}x{h} region."), false));
+    }
+
+    fn flip_selection_h(&mut self) {
+        let Some((x0, y0, x1, y1)) = self.sel_rect else {
+            self.flip_layer_h();
+            return;
+        };
+        self.push_undo();
+        let buf = self.active_buf_mut();
+        let span = x1 - x0 + 1;
+        for y in y0..=y1 {
+            for dx in 0..(span / 2) {
+                buf.swap(y * BOARD_SIZE + (x0 + dx), y * BOARD_SIZE + (x1 - dx));
+            }
+        }
+        self.mark_dirty();
+    }
+
+    fn clear_selection_pixels(&mut self) {
+        let Some((x0, y0, x1, y1)) = self.sel_rect else {
+            return;
+        };
+        self.push_undo();
+        let buf = self.active_buf_mut();
+        for y in y0..=y1 {
+            for x in x0..=x1 {
+                buf[y * BOARD_SIZE + x] = [0, 0, 0, 0];
             }
         }
         self.mark_dirty();
@@ -1155,6 +1263,49 @@ impl eframe::App for StudioApp {
         self.sync_canvas_textures(&ctx);
         if self.tab == StudioTab::Rig { self.sync_rig_composite(&ctx); }
         if self.tab == StudioTab::Animate { self.sync_keyframe_thumbs(&ctx); }
+        if self.tab == StudioTab::Draw {
+            if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::C)) {
+                self.copy_selection();
+            }
+            if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::V)) {
+                self.paste_clipboard();
+            }
+            if self.sel_rect.is_some() && ctx.input(|i| i.key_pressed(egui::Key::Delete)) {
+                self.clear_selection_pixels();
+            }
+            if self.sel_rect.is_some() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+                self.sel_rect = None;
+            }
+        }
+        if ctx.input(|i| i.viewport().close_requested()) && self.unsaved_changes && !self.allow_close {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.confirm_close_modal = true;
+        }
+        if self.confirm_close_modal {
+            egui::Window::new("Unsaved Changes")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+                .show(&ctx, |ui| {
+                    ui.label("You have unsaved edits in DIYPets Studio.");
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        if ui.button("Export & Save").clicked() {
+                            self.request_export(false);
+                            self.unsaved_changes = false;
+                            self.confirm_close_modal = false;
+                        }
+                        if ui.button("Discard & Close").clicked() {
+                            self.allow_close = true;
+                            self.confirm_close_modal = false;
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                        }
+                        if ui.button("Cancel").clicked() {
+                            self.confirm_close_modal = false;
+                        }
+                    });
+                });
+        }
 
         let wants_kb = ctx.egui_wants_keyboard_input();
         ctx.input(|i| {
@@ -1207,6 +1358,7 @@ impl eframe::App for StudioApp {
                 ui.selectable_value(&mut self.tab, StudioTab::Animate, "3. Custom Anims");
                 ui.selectable_value(&mut self.tab, StudioTab::Export, "4. Export & Share");
                 ui.selectable_value(&mut self.tab, StudioTab::ImportSheet, "5. Sprite Sheet");
+                ui.selectable_value(&mut self.tab, StudioTab::Sandbox, "6. Sandbox");
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.add(egui::Button::new(egui::RichText::new("Run on Desktop").strong().color(egui::Color32::WHITE)).fill(egui::Color32::from_rgb(46, 134, 86))).clicked() { self.request_export(true); }
@@ -1241,7 +1393,7 @@ impl eframe::App for StudioApp {
         });
 
         // RIGHT PANEL: Live Preview + Layer & Face Stack (always accessible in Draw/Rig/Animate)
-        if !matches!(self.tab, StudioTab::Export | StudioTab::ImportSheet) {
+        if !matches!(self.tab, StudioTab::Export | StudioTab::ImportSheet | StudioTab::Sandbox) {
             egui::Panel::right("v2_right").show(ui, |ui| {
                 ui.set_width(268.0);
                 egui::ScrollArea::vertical().show(ui, |ui| {
@@ -1473,8 +1625,17 @@ impl eframe::App for StudioApp {
                     }
                     ui.horizontal(|ui| {
                         if ui.small_button("Flip H").clicked() {
-                            self.flip_layer_h();
+                            self.flip_selection_h();
                         }
+                            if ui.small_button("Copy").clicked() {
+                                self.copy_selection();
+                            }
+                            if ui.small_button("Paste").clicked() {
+                                self.paste_clipboard();
+                            }
+                            if self.sel_rect.is_some() && ui.small_button("Del").clicked() {
+                                self.clear_selection_pixels();
+                            }
                         if ui.small_button("<-").clicked() {
                             self.nudge_layer(-2, 0);
                         }
@@ -1640,7 +1801,31 @@ impl eframe::App for StudioApp {
                     }
                 }
 
-                StudioTab::ImportSheet => {
+                StudioTab::Sandbox => {
+                    ui.label(egui::RichText::new("Live Physics Sandbox").strong());
+                    ui.label(egui::RichText::new("Grab and toss your rigged pet onto the mini window ledge or drop a bouncy ball before exporting.").size(11.0).color(egui::Color32::GRAY));
+                    ui.add_space(8.0);
+                    if ui.button("Drop Bouncy Ball").clicked() {
+                        self.sb_ball = Some((260.0, 48.0, -140.0, -40.0));
+                    }
+                    if ui.button("Toss Pet Up").clicked() {
+                        self.sb_vy = -340.0;
+                        self.sb_vx = if self.sb_facing_right { 130.0 } else { -130.0 };
+                    }
+                    if ui.button("Reset Position").clicked() {
+                        self.sb_x = 180.0;
+                        self.sb_y = 80.0;
+                        self.sb_vx = 85.0;
+                        self.sb_vy = 0.0;
+                        self.sb_ball = None;
+                    }
+                    ui.separator();
+                    if ui.button("Export & Run on Desktop").clicked() {
+                        self.request_export(true);
+                        self.unsaved_changes = false;
+                    }
+                }
+            StudioTab::ImportSheet => {
                     ui.label(egui::RichText::new("PNG Sprite Sheet Importer").strong());
                     ui.label(egui::RichText::new("Drop any Aseprite / itch.io / Piskel PNG grid and turn it into a desktop pet in 10 seconds.").size(11.0).color(egui::Color32::GRAY));
                     ui.add_space(6.0);
@@ -1727,6 +1912,165 @@ impl eframe::App for StudioApp {
 
         // CENTER STAGE
         egui::CentralPanel::default().show(ui, |ui| match self.tab {
+            StudioTab::Sandbox => {
+                ui.heading("Live Physics Sandbox (Drag & Toss Your Pet)");
+                let avail = ui.available_size().max(egui::vec2(420.0, 320.0));
+                let (rect, resp) = ui.allocate_exact_size(avail, egui::Sense::click_and_drag());
+                let painter = ui.painter_at(rect);
+
+                // Mini desktop backdrop, elevated window ledge, and taskbar floor
+                painter.rect_filled(rect, 8.0, egui::Color32::from_rgb(18, 21, 28));
+                let floor_y = rect.height() - 34.0;
+                let ledge_x0 = rect.width() * 0.46;
+                let ledge_x1 = rect.width() * 0.88;
+                let ledge_y = rect.height() * 0.52;
+
+                // Mini window ledge
+                let win_r = egui::Rect::from_min_max(
+                    egui::pos2(rect.min.x + ledge_x0, rect.min.y + ledge_y),
+                    egui::pos2(rect.min.x + ledge_x1, rect.min.y + floor_y - 12.0),
+                );
+                painter.rect_filled(win_r, 8.0, egui::Color32::from_rgb(30, 34, 44));
+                painter.rect_stroke(win_r, 8.0, egui::Stroke::new(1.5, egui::Color32::from_rgb(68, 76, 94)), egui::StrokeKind::Inside);
+                let tb_r = egui::Rect::from_min_max(win_r.min, egui::pos2(win_r.max.x, win_r.min.y + 22.0));
+                painter.rect_filled(tb_r, 6.0, egui::Color32::from_rgb(44, 48, 60));
+                for (di, col) in [
+                    egui::Color32::from_rgb(255, 95, 87),
+                    egui::Color32::from_rgb(254, 188, 46),
+                    egui::Color32::from_rgb(40, 200, 64),
+                ].into_iter().enumerate() {
+                    painter.circle_filled(egui::pos2(tb_r.min.x + 14.0 + di as f32 * 14.0, tb_r.min.y + 11.0), 4.0, col);
+                }
+
+                // Taskbar floor
+                let bar_r = egui::Rect::from_min_max(egui::pos2(rect.min.x, rect.min.y + floor_y), rect.max);
+                painter.rect_filled(bar_r, 0.0, egui::Color32::from_rgb(28, 32, 42));
+                painter.line_segment([egui::pos2(rect.min.x, rect.min.y + floor_y), egui::pos2(rect.max.x, rect.min.y + floor_y)], egui::Stroke::new(1.5, egui::Color32::from_rgb(58, 66, 84)));
+
+                let dt = ui.ctx().input(|i| i.stable_dt).clamp(0.005, 0.05);
+                let pet_sz = 96.0;
+                self.sb_t += dt;
+
+                // Drag & toss interaction
+                if resp.drag_started() {
+                    if let Some(p) = resp.interact_pointer_pos() {
+                        let local = p - rect.min;
+                        if (local.x - (self.sb_x + pet_sz * 0.5)).abs() < 64.0
+                            && (local.y - (self.sb_y + pet_sz * 0.5)).abs() < 64.0
+                        {
+                            self.sb_dragging = true;
+                        }
+                    }
+                }
+                if self.sb_dragging {
+                    if let Some(p) = resp.interact_pointer_pos() {
+                        let local = p - rect.min;
+                        let nx = (local.x - pet_sz * 0.5).clamp(0.0, (rect.width() - pet_sz).max(0.0));
+                        let ny = (local.y - pet_sz * 0.4).clamp(0.0, (floor_y - pet_sz).max(0.0));
+                        self.sb_vx = (nx - self.sb_x) / dt;
+                        self.sb_vy = (ny - self.sb_y) / dt;
+                        self.sb_x = nx;
+                        self.sb_y = ny;
+                    }
+                    if resp.drag_stopped() {
+                        self.sb_dragging = false;
+                        self.sb_vx = self.sb_vx.clamp(-420.0, 420.0);
+                        self.sb_vy = self.sb_vy.clamp(-480.0, 420.0);
+                    }
+                } else {
+                    let prev_foot = self.sb_y + pet_sz;
+                    self.sb_vy += 760.0 * dt;
+                    self.sb_x += self.sb_vx * dt;
+                    self.sb_y += self.sb_vy * dt;
+
+                    let max_x = (rect.width() - pet_sz).max(0.0);
+                    if self.sb_x <= 0.0 {
+                        self.sb_x = 0.0;
+                        self.sb_vx = self.sb_vx.abs().max(72.0);
+                        self.sb_facing_right = true;
+                    } else if self.sb_x >= max_x {
+                        self.sb_x = max_x;
+                        self.sb_vx = -self.sb_vx.abs().max(72.0);
+                        self.sb_facing_right = false;
+                    }
+
+                    // Ledge collision
+                    let cx = self.sb_x + pet_sz * 0.5;
+                    let on_ledge = cx >= ledge_x0 && cx <= ledge_x1 && prev_foot <= ledge_y + 10.0 && self.sb_y + pet_sz >= ledge_y && self.sb_vy >= 0.0;
+                    if on_ledge {
+                        self.sb_y = ledge_y - pet_sz;
+                        self.sb_vy = 0.0;
+                        let speed = 78.0;
+                        self.sb_vx = if self.sb_facing_right { speed } else { -speed };
+                    } else if self.sb_y + pet_sz >= floor_y {
+                        self.sb_y = floor_y - pet_sz;
+                        self.sb_vy = 0.0;
+                        let speed = 82.0;
+                        self.sb_vx = if self.sb_facing_right { speed } else { -speed };
+                    }
+                }
+
+                // Bouncy ball physics + pet chase/kick
+                if let Some((bx, by, bvx, bvy)) = &mut self.sb_ball {
+                    *bvy += 780.0 * dt;
+                    *bx += *bvx * dt;
+                    *by += *bvy * dt;
+                    if *bx < 12.0 { *bx = 12.0; *bvx = bvx.abs() * 0.82; }
+                    if *bx > rect.width() - 12.0 { *bx = rect.width() - 12.0; *bvx = -bvx.abs() * 0.82; }
+                    if *by > floor_y - 11.0 {
+                        *by = floor_y - 11.0;
+                        *bvy = if bvy.abs() > 45.0 { -bvy.abs() * 0.72 } else { 0.0 };
+                        *bvx *= 0.985;
+                    }
+                    let dx = *bx - (self.sb_x + pet_sz * 0.5);
+                    let dy = *by - (self.sb_y + pet_sz * 0.75);
+                    if !self.sb_dragging {
+                        if dx.abs() < 30.0 && dy.abs() < 34.0 {
+                            *bvy = -340.0;
+                            *bvx = if dx >= 0.0 { 220.0 } else { -220.0 };
+                        } else if dx.abs() > 16.0 {
+                            self.sb_facing_right = dx > 0.0;
+                            self.sb_vx = if self.sb_facing_right { 125.0 } else { -125.0 };
+                        }
+                    }
+                    let bpos = egui::pos2(rect.min.x + *bx, rect.min.y + *by);
+                    painter.circle_filled(bpos, 11.0, egui::Color32::from_rgb(242, 104, 62));
+                    painter.circle_stroke(bpos, 11.0, egui::Stroke::new(2.0, egui::Color32::from_rgb(42, 24, 24)));
+                    painter.circle_filled(bpos + egui::vec2(-3.0, -3.0), 3.0, egui::Color32::from_rgb(255, 244, 224));
+                }
+
+                // Render live rigged pet texture
+                let pose = self.project.live_pose(self.preview_clip, self.sb_t);
+                let pm = self.project.render_pose(pose);
+                let side = pm.width() as usize;
+                let off = (side - BOARD_SIZE) / 2;
+                let mut pixels = Vec::with_capacity(BOARD_SIZE * BOARD_SIZE);
+                for y in 0..BOARD_SIZE {
+                    for x in 0..BOARD_SIZE {
+                        let sx = if self.sb_facing_right { BOARD_SIZE - 1 - x } else { x };
+                        let p = pm.pixels()[(off + y) * side + (off + sx)];
+                        pixels.push(egui::Color32::from_rgba_premultiplied(p.red(), p.green(), p.blue(), p.alpha()));
+                    }
+                }
+                let img = egui::ColorImage {
+                    size: [BOARD_SIZE, BOARD_SIZE],
+                    source_size: egui::vec2(BOARD_SIZE as f32, BOARD_SIZE as f32),
+                    pixels,
+                };
+                if let Some(t) = &mut self.sb_tex {
+                    t.set(img, egui::TextureOptions::NEAREST);
+                } else {
+                    self.sb_tex = Some(ui.ctx().load_texture("v3_sandbox_pet", img, egui::TextureOptions::NEAREST));
+                }
+                if let Some(t) = &self.sb_tex {
+                    let pr = egui::Rect::from_min_size(
+                        egui::pos2(rect.min.x + self.sb_x, rect.min.y + self.sb_y),
+                        egui::vec2(pet_sz, pet_sz),
+                    );
+                    painter.image(t.id(), pr, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), egui::Color32::WHITE);
+                }
+                ui.ctx().request_repaint();
+            }
             StudioTab::ImportSheet => {
                 ui.heading("Sprite Sheet Grid Preview");
                 if let Some(tex) = &self.sheet_import_tex {
@@ -2144,6 +2488,20 @@ impl eframe::App for StudioApp {
                                             self.current_color = rgba_to_c32(picked);
                                             self.tool = Tool::Brush;
                                         }
+                                    }
+                                }
+                                Tool::Select => {
+                                    if response.drag_started() {
+                                        self.sel_drag_start = Some((lx, ly));
+                                        self.sel_rect = Some((lx, ly, lx, ly));
+                                    }
+                                    if response.dragged() {
+                                        if let Some((sx, sy)) = self.sel_drag_start {
+                                            self.sel_rect = Some((sx.min(lx), sy.min(ly), sx.max(lx), sy.max(ly)));
+                                        }
+                                    }
+                                    if response.drag_stopped() {
+                                        self.sel_drag_start = None;
                                     }
                                 }
                                 Tool::Line | Tool::Rect | Tool::Circle => {

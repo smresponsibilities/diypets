@@ -324,6 +324,185 @@ pub fn send_cli_react(mood: &str, text: Option<&str>) -> Result<String, String> 
     })
 }
 
+
+fn mcp_tools_manifest() -> serde_json::Value {
+    serde_json::json!({
+        "tools": [
+            {
+                "name": "react_pet",
+                "description": "Make your DIYPets desktop pets react (happy/hearts, hop, sleep, walk, ball) with an optional speech bubble",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "mood": { "type": "string", "enum": ["happy", "hop", "sleep", "walk", "ball"] },
+                        "text": { "type": "string" },
+                        "duration_ms": { "type": "integer", "minimum": 1000, "maximum": 15000 }
+                    },
+                    "required": ["mood"]
+                }
+            },
+            {
+                "name": "say",
+                "description": "Show a floating speech bubble above the primary desktop pet without forcing a hop",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "text": { "type": "string" },
+                        "duration_ms": { "type": "integer", "minimum": 1000, "maximum": 15000 }
+                    },
+                    "required": ["text"]
+                }
+            },
+            {
+                "name": "drop_ball",
+                "description": "Drop a bouncy pixel toy ball onto the desktop for all pets to chase and kick",
+                "inputSchema": { "type": "object", "properties": {} }
+            },
+            {
+                "name": "spawn_pet",
+                "description": "Add another pet to the active desktop herd (up to 8)",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "pack_id": { "type": "string" }
+                    }
+                }
+            },
+            {
+                "name": "set_follow_cursor",
+                "description": "Enable or disable Play Mode cursor chasing across the active herd",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "enabled": { "type": "boolean" }
+                    },
+                    "required": ["enabled"]
+                }
+            },
+            {
+                "name": "list_herd",
+                "description": "List all currently active desktop pets in the herd",
+                "inputSchema": { "type": "object", "properties": {} }
+            }
+        ]
+    })
+}
+
+fn forward_mcp_to_daemon(json_line: &str) -> Result<String, String> {
+    let addr: SocketAddr = format!("127.0.0.1:{DEFAULT_PORT}").parse().unwrap();
+    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_secs(1))
+        .map_err(|_| "DIYPets desktop app is not running (could not connect to 127.0.0.1:3721). Launch `diypets` first.".to_string())?;
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+
+    let req = format!(
+        "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:{DEFAULT_PORT}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{json_line}",
+        json_line.len()
+    );
+    stream.write_all(req.as_bytes()).map_err(|e| e.to_string())?;
+    let mut resp = String::new();
+    let _ = stream.read_to_string(&mut resp);
+    resp.split_once("\r\n\r\n")
+        .or_else(|| resp.split_once("\n\n"))
+        .map(|(_, b)| b.trim().to_string())
+        .filter(|b| !b.is_empty())
+        .ok_or_else(|| "Empty HTTP response from DIYPets daemon".to_string())
+}
+
+/// Process a single newline-delimited JSON-RPC 2.0 line for `diypets mcp` stdio mode.
+/// Returns `None` for JSON-RPC notifications (which must not emit a response).
+pub fn process_stdio_mcp_line(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+        return Some(
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": serde_json::Value::Null,
+                "error": { "code": -32700, "message": "Parse error" }
+            })
+            .to_string(),
+        );
+    };
+    let method = v.get("method").and_then(|m| m.as_str()).unwrap_or("");
+    let id = v.get("id").cloned();
+
+    // Strict JSON-RPC 2.0: notifications have no `id` and expect no reply
+    if method.starts_with("notifications/") || id.is_none() {
+        return None;
+    }
+    let id = id.unwrap();
+
+    match method {
+        "initialize" => Some(
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {
+                    "protocolVersion": "2024-11-05",
+                    "serverInfo": { "name": "diypets", "version": env!("CARGO_PKG_VERSION") },
+                    "capabilities": { "tools": {} }
+                }
+            })
+            .to_string(),
+        ),
+        "ping" => Some(
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {}
+            })
+            .to_string(),
+        ),
+        "tools/list" => Some(
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": mcp_tools_manifest()
+            })
+            .to_string(),
+        ),
+        "tools/call" => match forward_mcp_to_daemon(trimmed) {
+            Ok(body) => Some(body),
+            Err(msg) => Some(
+                serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": {
+                        "isError": true,
+                        "content": [{ "type": "text", "text": msg }]
+                    }
+                })
+                .to_string(),
+            ),
+        },
+        _ => Some(
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": { "code": -32601, "message": format!("Method not found: {method}") }
+            })
+            .to_string(),
+        ),
+    }
+}
+
+/// Run the blocking `stdio` MCP JSON-RPC 2.0 server (`diypets mcp`) for Claude Desktop, Cursor, and Claude Code.
+pub fn run_stdio_mcp_bridge() {
+    use std::io::BufRead;
+    let stdin = std::io::stdin();
+    let mut stdout = std::io::stdout().lock();
+    for line in stdin.lock().lines().map_while(Result::ok) {
+        if let Some(reply) = process_stdio_mcp_line(&line) {
+            if writeln!(stdout, "{reply}").is_err() {
+                break;
+            }
+            let _ = stdout.flush();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -360,5 +539,25 @@ mod tests {
         let mcp_list = "POST /mcp HTTP/1.1\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"list_herd\",\"arguments\":{}}}";
         let list_resp = handle_http_request_with_herd(mcp_list, &tx, &herd);
         assert!(list_resp.contains("highland_cow"));
+    }
+    #[test]
+    fn stdio_mcp_bridge_handles_handshake_notifications_and_tools_list() {
+        let init = process_stdio_mcp_line(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#).unwrap();
+        assert!(init.contains("\"protocolVersion\":\"2024-11-05\""));
+        assert!(init.contains("\"name\":\"diypets\""));
+
+        assert_eq!(
+            process_stdio_mcp_line(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#),
+            None,
+            "notifications must not emit a stdout response"
+        );
+
+        let list = process_stdio_mcp_line(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#).unwrap();
+        assert!(list.contains("react_pet"));
+        assert!(list.contains("drop_ball"));
+        assert!(list.contains("list_herd"));
+
+        let ping = process_stdio_mcp_line(r#"{"jsonrpc":"2.0","id":3,"method":"ping"}"#).unwrap();
+        assert!(ping.contains("\"result\":{}"));
     }
 }

@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.0] - 2026-11-23
+### Added
+- **Native `stdio` MCP Server (`diypets mcp`):** Direct JSON-RPC 2.0 stdin/stdout bridge for Claude Desktop, Cursor, and Claude Code (`"command": "diypets", "args": ["mcp"]`) exposing all 6 tools (`react_pet`, `say`, `drop_ball`, `spawn_pet`, `set_follow_cursor`, `list_herd`).
+- **Fullscreen Auto-Hide & Quiet Mode:** Automatically hides pets and pauses physics during fullscreen games, videos, and screen shares, plus a manual **Quiet Mode (Hide Pets)** tray toggle.
+- **Pet-to-Pet Herd Interactions:** Pets meeting on the same floor perform friendly greeting hops with pixel hearts or polite bump-turns instead of walking through each other.
+- **Cross-Platform Parity (`src/platform.rs`):** Added macOS CoreGraphics global cursor tracking, smooth non-Windows dragging, cross-platform pixel hearts in softbuffer, and non-blocking right-click pet menus (`osascript` / `zenity`).
+- **Studio V3 Hardening (`diypets-creator`):** Added **`6. Sandbox`** live physics playground (drag/toss onto a mini window ledge + bouncy ball), **Marquee Select** (`Copy`/`Paste`/`Flip H`/`Del` + `Ctrl+C`/`Ctrl+V`), and an **Unsaved Changes** close guard.
+
+### Changed
+- **Faster `cargo install`:** Deduped `toml` (`1.x`) and `base64` (`0.22`) in `Cargo.toml` to trim duplicate crates from the dependency tree.
 ## [0.1.6] - 2026-11-23
 ### Added
 - **Play Mode (`T-044`):** Drop a bouncy physics pixel ball (`Drop Bouncy Ball` in tray/right-click menu, `diypets ball`, or MCP `drop_ball`) that your herd chases and kicks with floating hearts, plus a **Follow Cursor** toggle.

@@ -520,7 +520,8 @@ impl MyApp {
         let mcp_snippet = r#"{
   "mcpServers": {
     "diypets": {
-      "url": "http://127.0.0.1:3721/mcp"
+      "command": "diypets",
+      "args": ["mcp"]
     }
   }
 }"#

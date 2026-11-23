@@ -14,8 +14,10 @@ use diypets::autostart;
 use diypets::bubble::{render_pixel_ball_argb, render_speech_bubble_argb};
 use diypets::catalog::{default_app_icon, make_square_app_icon};
 use diypets::deskpet_state::{
-    DeskpetState, DeskpetStateId, select_window_floor, window_floor_candidate,
+    DeskpetState, DeskpetStateId, HerdEncounter, detect_herd_encounter, select_window_floor,
+    window_floor_candidate,
 };
+use diypets::platform;
 use diypets::deskpet_xml::DeskpetPack;
 use diypets::settings::{
     MAX_ACTIVE_PETS, Settings, find_pack_icon, find_pack_xml, pack_search_dirs,
@@ -381,17 +383,8 @@ fn show_pet_context_menu(
     }
 }
 
-#[cfg(not(windows))]
-fn show_pet_context_menu(
-    _window: &Window,
-    _can_clone: bool,
-    _can_dismiss: bool,
-    _follow_cursor: bool,
-) -> i32 {
-    7 // Drop bouncy ball on right-click
-}
 
-#[cfg(windows)]
+
 fn stamp_hearts_argb(buf: &mut [u32], w: u32, h: u32, progress: f32) {
     const HEART: [&str; 6] = [
         ".##.##.",
@@ -680,12 +673,14 @@ struct PetInstance {
     #[cfg(windows)]
     standing_window: Option<(isize, i32, i32)>,
     cursor_pos: (f32, f32),
+    drag_grab_offset: (f32, f32),
     cursor_velocity: (f32, f32),
     drag_sample_ms: u64,
     is_dragging: bool,
     heart_until_ms: u64,
     rub_accum: f32,
     last_rub_ms: u64,
+    last_interact_ms: u64,
     last_render: Option<RenderKey>,
 }
 
@@ -701,6 +696,11 @@ struct DeskpetApp {
     click_through: bool,
     start_on_login: bool,
     follow_cursor: bool,
+    auto_hide_fullscreen: bool,
+    quiet_mode: bool,
+    fullscreen_hidden: bool,
+    last_visible: bool,
+    last_fullscreen_check: u64,
     settings_path: PathBuf,
     last_settings_mod: Option<std::time::SystemTime>,
     start_time: Instant,
@@ -709,6 +709,8 @@ struct DeskpetApp {
     tray: Option<TrayIcon>,
     settings_process: Option<std::process::Child>,
     creator_process: Option<std::process::Child>,
+    #[allow(dead_code)]
+    agent_tx: mpsc::Sender<AgentCommand>,
     agent_rx: mpsc::Receiver<AgentCommand>,
     shared_herd: SharedHerd,
     bubble: Option<SpeechBubbleOverlay>,
@@ -744,6 +746,7 @@ impl DeskpetApp {
         s.always_on_top = self.is_topmost;
         s.start_on_login = self.start_on_login;
         s.follow_cursor = self.follow_cursor;
+        s.auto_hide_fullscreen = self.auto_hide_fullscreen;
         if let Some(first) = self.desired_herd.first() {
             s.pet_pack = first.clone();
             s.extra_pets = self.desired_herd[1..].to_vec();
@@ -866,12 +869,14 @@ impl DeskpetApp {
             #[cfg(windows)]
             standing_window: None,
             cursor_pos: (0.0, 0.0),
+            drag_grab_offset: (64.0, 24.0),
             cursor_velocity: (0.0, 0.0),
             drag_sample_ms: 1,
             is_dragging: false,
             heart_until_ms: 0,
             rub_accum: 0.0,
             last_rub_ms: 0,
+            last_interact_ms: 0,
             last_render: None,
         }
     }
@@ -975,6 +980,7 @@ impl DeskpetApp {
         self.climb_windows = settings.climb_windows;
         self.click_through = settings.click_through;
         self.follow_cursor = settings.follow_cursor;
+        self.auto_hide_fullscreen = settings.auto_hide_fullscreen;
         self.pet_size = settings.pet_size;
         self.walk_speed = settings.walk_speed;
         if self.start_on_login != settings.start_on_login {
@@ -1053,6 +1059,8 @@ impl DeskpetApp {
                     }
                 }
                 "say" => {}
+                "open_settings" => Self::spawn_sibling(&mut self.settings_process, "diypets-settings"),
+                "open_creator" => Self::spawn_sibling(&mut self.creator_process, "diypets-creator"),
                 "follow" | "follow_cursor" => {
                     self.follow_cursor = cmd.enabled.unwrap_or(!self.follow_cursor);
                     self.persist_current_settings();
@@ -1096,6 +1104,10 @@ impl DeskpetApp {
                 "quit" => event_loop.exit(),
                 "drop_ball" => {
                     self.drop_toy_ball(event_loop, now_ms);
+                }
+                "quiet_mode" => {
+                    self.quiet_mode = !self.quiet_mode;
+                    self.sync_visibility();
                 }
                 "follow_cursor" => {
                     self.follow_cursor = !self.follow_cursor;
@@ -1154,6 +1166,122 @@ impl DeskpetApp {
                     }
                 }
                 _ => {}
+            }
+        }
+    }
+
+    fn sync_visibility(&mut self) {
+        let should_show = !self.quiet_mode && !self.fullscreen_hidden;
+        if should_show == self.last_visible {
+            return;
+        }
+        self.last_visible = should_show;
+        for pet in &self.pets {
+            pet.window.set_visible(should_show);
+        }
+        if let Some(b) = &self.bubble {
+            b.window.set_visible(should_show);
+        }
+        if let Some(ball) = &self.ball {
+            ball.window.set_visible(should_show);
+        }
+    }
+
+    fn check_fullscreen_auto_hide(&mut self, event_loop: &ActiveEventLoop, now_ms: u64) {
+        if !self.auto_hide_fullscreen {
+            self.fullscreen_hidden = false;
+            self.sync_visibility();
+            return;
+        }
+        if now_ms.saturating_sub(self.last_fullscreen_check) < 350 {
+            return;
+        }
+        self.last_fullscreen_check = now_ms;
+
+        let monitors: Vec<(i32, i32, i32, i32)> = event_loop
+            .available_monitors()
+            .map(|m| {
+                let p = m.position();
+                let s = m.size();
+                (p.x, p.y, p.x + s.width as i32, p.y + s.height as i32)
+            })
+            .collect();
+
+        #[cfg(windows)]
+        let own_hwnds: Vec<isize> = {
+            let mut v: Vec<isize> = self
+                .pets
+                .iter()
+                .filter_map(|p| hwnd_of(&p.window).map(|h| h.0 as isize))
+                .collect();
+            if let Some(b) = &self.bubble
+                && let Some(h) = hwnd_of(&b.window)
+            {
+                v.push(h.0 as isize);
+            }
+            if let Some(ball) = &self.ball
+                && let Some(h) = hwnd_of(&ball.window)
+            {
+                v.push(h.0 as isize);
+            }
+            v
+        };
+        #[cfg(not(windows))]
+        let own_hwnds: Vec<isize> = Vec::new();
+
+        self.fullscreen_hidden = platform::is_fullscreen_app_active(&own_hwnds, &monitors);
+        self.sync_visibility();
+    }
+
+    fn step_herd_interactions(&mut self, now_ms: u64) {
+        let count = self.pets.len();
+        if count < 2 {
+            return;
+        }
+        for i in 0..count {
+            for j in (i + 1)..count {
+                let can_i = !self.pets[i].is_dragging
+                    && self.pets[i].state.current_anim_id != "13"
+                    && now_ms.saturating_sub(self.pets[i].last_interact_ms) >= 6000;
+                let can_j = !self.pets[j].is_dragging
+                    && self.pets[j].state.current_anim_id != "13"
+                    && now_ms.saturating_sub(self.pets[j].last_interact_ms) >= 6000;
+                if !can_i || !can_j {
+                    continue;
+                }
+                let ax = self.pets[i].state.x + self.pets[i].state.pet_size as f32 * 0.5;
+                let ay = self.pets[i].state.y + self.pets[i].state.ground_height();
+                let bx = self.pets[j].state.x + self.pets[j].state.pet_size as f32 * 0.5;
+                let by = self.pets[j].state.y + self.pets[j].state.ground_height();
+
+                let Some(kind) = detect_herd_encounter(
+                    ax,
+                    ay,
+                    self.pets[i].state.is_moving_left,
+                    bx,
+                    by,
+                    self.pets[j].state.is_moving_left,
+                    now_ms / 100 + (i + j) as u64,
+                ) else {
+                    continue;
+                };
+
+                self.pets[i].last_interact_ms = now_ms;
+                self.pets[j].last_interact_ms = now_ms;
+                let a_on_left = ax <= bx;
+                self.pets[i].state.is_moving_left = a_on_left;
+                self.pets[j].state.is_moving_left = !a_on_left;
+
+                if matches!(kind, HerdEncounter::Greet) {
+                    self.pets[i].heart_until_ms = now_ms + 1800;
+                    self.pets[j].heart_until_ms = now_ms + 1800;
+                    self.pets[i].state.is_tossing = true;
+                    self.pets[i].state.toss_force_x = if a_on_left { -2.2 } else { 2.2 };
+                    self.pets[i].state.toss_vert_vel = -7.5;
+                    self.pets[j].state.is_tossing = true;
+                    self.pets[j].state.toss_force_x = if a_on_left { 2.2 } else { -2.2 };
+                    self.pets[j].state.toss_vert_vel = -7.5;
+                }
             }
         }
     }
@@ -1218,26 +1346,17 @@ impl DeskpetApp {
                 }
             }
         } else if self.follow_cursor {
-            #[cfg(windows)]
-            {
-                use windows::Win32::Foundation::POINT;
-                use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
-                let mut pt = POINT::default();
-                unsafe {
-                    if GetCursorPos(&mut pt).is_ok() {
-                        let cx = pt.x as f32;
-                        for pet in &mut self.pets {
-                            if pet.is_dragging || pet.state.current_anim_id == "13" {
-                                continue;
-                            }
-                            let pet_cx = pet.state.x + pet.state.pet_size as f32 * 0.5;
-                            let dx = cx - pet_cx;
-                            if dx.abs() > 48.0 {
-                                pet.state.is_moving_left = dx < 0.0;
-                                if matches!(pet.state.current_anim_id.as_str(), "2" | "12") {
-                                    pet.state.set_state(DeskpetStateId::Custom("1".to_string()));
-                                }
-                            }
+            if let Some((cx, _cy)) = platform::global_cursor_pos() {
+                for pet in &mut self.pets {
+                    if pet.is_dragging || pet.state.current_anim_id == "13" {
+                        continue;
+                    }
+                    let pet_cx = pet.state.x + pet.state.pet_size as f32 * 0.5;
+                    let dx = cx - pet_cx;
+                    if dx.abs() > 48.0 {
+                        pet.state.is_moving_left = dx < 0.0;
+                        if matches!(pet.state.current_anim_id.as_str(), "2" | "12") {
+                            pet.state.set_state(DeskpetStateId::Custom("1".to_string()));
                         }
                     }
                 }
@@ -1298,6 +1417,7 @@ impl ApplicationHandler for DeskpetApp {
                 self.follow_cursor,
                 None,
             );
+            let quiet = CheckMenuItem::with_id("quiet_mode", "Quiet Mode (Hide Pets)", true, self.quiet_mode, None);
             let sleep = MenuItem::with_id("sleep", "Sleep All", true, None);
             let creator = MenuItem::with_id("creator", "DIYPets Studio", true, None);
             let settings = MenuItem::with_id("settings", "Application Settings", true, None);
@@ -1323,6 +1443,7 @@ impl ApplicationHandler for DeskpetApp {
             let _ = menu.append(&drop_ball);
             let _ = menu.append(&follow);
             let _ = menu.append(&sleep);
+            let _ = menu.append(&quiet);
             let _ = menu.append(&PredefinedMenuItem::separator());
             let _ = menu.append(&creator);
             let _ = menu.append(&settings);
@@ -1353,6 +1474,12 @@ impl ApplicationHandler for DeskpetApp {
             let now_ms = self.start_time.elapsed().as_millis() as u64;
             self.process_tray_events(event_loop, now_ms);
             self.reload_settings_if_changed(event_loop, now_ms);
+            self.check_fullscreen_auto_hide(event_loop, now_ms);
+            if !self.last_visible {
+                event_loop.set_control_flow(ControlFlow::WaitUntil(self.next_frame));
+                return;
+            }
+            self.step_herd_interactions(now_ms);
             self.step_play_mode(event_loop, now_ms);
 
             if let Some(b) = &mut self.bubble {
@@ -1402,6 +1529,17 @@ impl ApplicationHandler for DeskpetApp {
                 let pet = &mut self.pets[pet_idx];
                 let px = position.x as f32;
                 let py = position.y as f32;
+                #[cfg(not(windows))]
+                if pet.is_dragging {
+                    if let Ok(outer) = pet.window.outer_position() {
+                        let new_x = outer.x as f32 + (px - pet.drag_grab_offset.0);
+                        let new_y = outer.y as f32 + (py - pet.drag_grab_offset.1);
+                        pet.cursor_velocity = (new_x - pet.state.x, new_y - pet.state.y);
+                        pet.drag_sample_ms = 16;
+                        pet.state.x = new_x;
+                        pet.state.y = new_y;
+                    }
+                }
                 if !pet.is_dragging {
                     let dx = px - pet.cursor_pos.0;
                     let dy = py - pet.cursor_pos.1;
@@ -1423,14 +1561,24 @@ impl ApplicationHandler for DeskpetApp {
                 button: MouseButton::Right,
                 ..
             } => {
+                #[cfg(windows)]
                 let can_clone = self.desired_herd.len() < MAX_ACTIVE_PETS;
+                #[cfg(windows)]
                 let can_dismiss = self.pets.len() > 1;
+                #[cfg(not(windows))]
+                {
+                    platform::spawn_unix_pet_menu(self.agent_tx.clone(), self.follow_cursor);
+                    return;
+                }
+                #[cfg(windows)]
                 let cmd = show_pet_context_menu(
                     &self.pets[pet_idx].window,
                     can_clone,
                     can_dismiss,
                     self.follow_cursor,
                 );
+                #[cfg(windows)]
+                {
                 let now_ms = self.start_time.elapsed().as_millis() as u64;
                 match cmd {
                     1 => {
@@ -1476,6 +1624,7 @@ impl ApplicationHandler for DeskpetApp {
                     }
                     _ => {}
                 }
+                }
             }
             WindowEvent::MouseInput {
                 state,
@@ -1485,6 +1634,7 @@ impl ApplicationHandler for DeskpetApp {
                 let pet = &mut self.pets[pet_idx];
                 if state == ElementState::Pressed {
                     pet.is_dragging = true;
+                    pet.drag_grab_offset = pet.cursor_pos;
                     pet.cursor_velocity = (0.0, 0.0);
                     pet.state.is_tossing = false;
                     pet.state.set_state(DeskpetStateId::Drag);
@@ -1679,16 +1829,9 @@ impl ApplicationHandler for DeskpetApp {
                 }
 
                 if pet.is_dragging {
-                    #[cfg(windows)]
-                    {
-                        use windows::Win32::Foundation::POINT;
-                        use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
-                        let mut pt = POINT::default();
-                        unsafe {
-                            let _ = GetCursorPos(&mut pt);
-                        }
-                        let new_x = pt.x as f32 - (scaled_w as f32 / 2.0);
-                        let new_y = pt.y as f32 - 10.0;
+                    if let Some((gx, gy)) = platform::global_cursor_pos() {
+                        let new_x = gx - (scaled_w as f32 / 2.0);
+                        let new_y = gy - 10.0;
                         pet.cursor_velocity = (new_x - pet.state.x, new_y - pet.state.y);
                         pet.drag_sample_ms = delta.max(1);
                         pet.state.x = new_x;
@@ -1772,6 +1915,11 @@ impl ApplicationHandler for DeskpetApp {
                                 buffer[i] = pixel;
                             }
                         }
+                    }
+                    if now < pet.heart_until_ms {
+                        let rem = pet.heart_until_ms.saturating_sub(now) as f32;
+                        let prog = (1.0 - (rem / 2200.0)).clamp(0.0, 1.0);
+                        stamp_hearts_argb(&mut buffer, scaled_w, scaled_h, prog);
                     }
                     buffer.present().unwrap();
                 }
@@ -1882,6 +2030,10 @@ impl Drop for DeskpetApp {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("mcp") {
+        agent_api::run_stdio_mcp_bridge();
+        return;
+    }
     if args.get(1).map(String::as_str) == Some("say") {
         let msg = args[2..].join(" ");
         let msg = if msg.trim().is_empty() { "Hello!".to_string() } else { msg };
@@ -1932,7 +2084,7 @@ fn main() {
 
     let (agent_tx, agent_rx) = mpsc::channel();
     let shared_herd: SharedHerd = Arc::new(Mutex::new(Vec::new()));
-    agent_api::start_local_server(agent_tx, shared_herd.clone());
+    agent_api::start_local_server(agent_tx.clone(), shared_herd.clone());
 
     #[cfg(windows)]
     unsafe {
@@ -1960,6 +2112,11 @@ fn main() {
         click_through: settings.click_through,
         start_on_login: autostart::is_enabled() || settings.start_on_login,
         follow_cursor: settings.follow_cursor,
+        auto_hide_fullscreen: settings.auto_hide_fullscreen,
+        quiet_mode: false,
+        fullscreen_hidden: false,
+        last_visible: true,
+        last_fullscreen_check: 0,
         settings_path,
         last_settings_mod,
         start_time: Instant::now(),
@@ -1968,6 +2125,7 @@ fn main() {
         tray: None,
         settings_process: None,
         creator_process: None,
+        agent_tx,
         agent_rx,
         shared_herd,
         bubble: None,

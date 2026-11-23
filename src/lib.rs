@@ -4,6 +4,7 @@ pub mod bubble;
 pub mod catalog;
 pub mod deskpet_state;
 pub mod deskpet_xml;
+pub mod platform;
 pub mod settings;
 pub mod studio_model;
 pub mod svg_import;
