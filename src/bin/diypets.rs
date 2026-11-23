@@ -19,7 +19,9 @@ use diypets::deskpet_state::{
 };
 use diypets::logging;
 use diypets::platform;
-use diypets::squash::{SquashSpring, apply_squash_nearest};
+use diypets::squash::SquashSpring;
+#[cfg(windows)]
+use diypets::squash::apply_squash_nearest;
 use diypets::deskpet_xml::DeskpetPack;
 use diypets::settings::{
     MAX_ACTIVE_PETS, Settings, find_pack_icon, find_pack_xml, pack_search_dirs,
@@ -317,6 +319,7 @@ impl Drop for LayeredSurface {
 }
 
 /// Pure Win32 style sanitizer ensuring borderless WS_POPUP + WS_EX_LAYERED never regress.
+#[cfg(any(windows, test))]
 fn sanitize_layered_window_styles(style: u32, ex_style: i32, topmost: bool) -> (u32, i32) {
     const WS_POPUP_M: u32 = 0x8000_0000;
     const WS_CAPTION_M: u32 = 0x00C0_0000;
@@ -610,12 +613,12 @@ impl SpeechBubbleOverlay {
         }
 
         #[cfg(not(windows))]
-        if let Some(surface) = &mut self.surface {
-            if let Ok(mut buf) = surface.buffer_mut() {
-                let n = buf.len().min(self.pixels.len());
-                buf[..n].copy_from_slice(&self.pixels[..n]);
-                let _ = buf.present();
-            }
+        if let Some(surface) = &mut self.surface
+            && let Ok(mut buf) = surface.buffer_mut()
+        {
+            let n = buf.len().min(self.pixels.len());
+            buf[..n].copy_from_slice(&self.pixels[..n]);
+            let _ = buf.present();
         }
     }
 }
@@ -730,12 +733,12 @@ impl ToyBallOverlay {
         }
 
         #[cfg(not(windows))]
-        if let Some(surface) = &mut self.surface {
-            if let Ok(mut buf) = surface.buffer_mut() {
-                let n = buf.len().min(self.pixels.len());
-                buf[..n].copy_from_slice(&self.pixels[..n]);
-                let _ = buf.present();
-            }
+        if let Some(surface) = &mut self.surface
+            && let Ok(mut buf) = surface.buffer_mut()
+        {
+            let n = buf.len().min(self.pixels.len());
+            buf[..n].copy_from_slice(&self.pixels[..n]);
+            let _ = buf.present();
         }
     }
 }
@@ -1049,12 +1052,10 @@ impl DeskpetApp {
                     .window
                     .request_inner_size(winit::dpi::PhysicalSize::new(scaled_w, scaled_h));
                 #[cfg(not(windows))]
-                if let Some(surface) = &mut self.pets[i].surface {
-                    if let (Some(w), Some(h)) =
-                        (NonZeroU32::new(scaled_w), NonZeroU32::new(scaled_h))
-                    {
-                        let _ = surface.resize(w, h);
-                    }
+                if let Some(surface) = &mut self.pets[i].surface
+                    && let (Some(w), Some(h)) = (NonZeroU32::new(scaled_w), NonZeroU32::new(scaled_h))
+                {
+                    let _ = surface.resize(w, h);
                 }
             }
         }
@@ -1147,10 +1148,10 @@ impl DeskpetApp {
                     .window
                     .request_inner_size(winit::dpi::PhysicalSize::new(sz, scaled_h));
                 #[cfg(not(windows))]
-                if let Some(surface) = &mut pet.surface {
-                    if let (Some(w), Some(h)) = (NonZeroU32::new(sz), NonZeroU32::new(scaled_h)) {
-                        let _ = surface.resize(w, h);
-                    }
+                if let Some(surface) = &mut pet.surface
+                    && let (Some(w), Some(h)) = (NonZeroU32::new(sz), NonZeroU32::new(scaled_h))
+                {
+                    let _ = surface.resize(w, h);
                 }
             }
         }
@@ -1456,6 +1457,7 @@ impl DeskpetApp {
                 max_y = max_y.max((pos.y + size.height as i32) as f32);
             }
         }
+        #[allow(unused_mut)] // Updated from the Windows work area when available.
         let mut taskbar_y = max_y;
         #[cfg(windows)]
         if let Some(rect) = get_work_area() {
@@ -1706,15 +1708,13 @@ impl ApplicationHandler for DeskpetApp {
                 let px = position.x as f32;
                 let py = position.y as f32;
                 #[cfg(not(windows))]
-                if pet.is_dragging {
-                    if let Ok(outer) = pet.window.outer_position() {
-                        let new_x = outer.x as f32 + (px - pet.drag_grab_offset.0);
-                        let new_y = outer.y as f32 + (py - pet.drag_grab_offset.1);
-                        pet.cursor_velocity = (new_x - pet.state.x, new_y - pet.state.y);
-                        pet.drag_sample_ms = 16;
-                        pet.state.x = new_x;
-                        pet.state.y = new_y;
-                    }
+                if pet.is_dragging && let Ok(outer) = pet.window.outer_position() {
+                    let new_x = outer.x as f32 + (px - pet.drag_grab_offset.0);
+                    let new_y = outer.y as f32 + (py - pet.drag_grab_offset.1);
+                    pet.cursor_velocity = (new_x - pet.state.x, new_y - pet.state.y);
+                    pet.drag_sample_ms = 16;
+                    pet.state.x = new_x;
+                    pet.state.y = new_y;
                 }
                 if !pet.is_dragging {
                     let dx = px - pet.cursor_pos.0;
@@ -1744,7 +1744,6 @@ impl ApplicationHandler for DeskpetApp {
                 #[cfg(not(windows))]
                 {
                     platform::spawn_unix_pet_menu(self.agent_tx.clone(), self.follow_cursor);
-                    return;
                 }
                 #[cfg(windows)]
                 let cmd = show_pet_context_menu(
@@ -1872,6 +1871,7 @@ impl ApplicationHandler for DeskpetApp {
                     scaled_height(pet.state.pack.tile_w, pet.state.pack.tile_h, scaled_w);
                 let ground_height = pet.state.ground_height();
 
+                #[allow(unused_mut)] // Updated from the Windows work area when available.
                 let mut base_floor_y = max_y - ground_height;
                 #[cfg(windows)]
                 if let Some(rect) = get_work_area() {
@@ -2027,14 +2027,14 @@ impl ApplicationHandler for DeskpetApp {
                                 let prev_f = floor_y;
                                 floor_y = select_window_floor(floor_y, Some(window_floor));
                                 if floor_y < prev_f - 0.5 {
-                                    if let Some((old_h, ox, oy)) = pet.standing_window {
-                                        if old_h == wrect.id {
-                                            let dx = wrect.left - ox;
-                                            let dy = wrect.top - oy;
-                                            if dx.abs() < 300 && dy.abs() < 300 {
-                                                pet.state.x += dx as f32;
-                                                pet.state.y += dy as f32;
-                                            }
+                                    if let Some((old_h, ox, oy)) = pet.standing_window
+                                        && old_h == wrect.id
+                                    {
+                                        let dx = wrect.left - ox;
+                                        let dy = wrect.top - oy;
+                                        if dx.abs() < 300 && dy.abs() < 300 {
+                                            pet.state.x += dx as f32;
+                                            pet.state.y += dy as f32;
                                         }
                                     }
                                     pet.standing_window = Some((wrect.id, wrect.left, wrect.top));
