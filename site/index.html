@@ -4,133 +4,339 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>DIYPets — Make Your Own Desktop Pet in Pure Rust</title>
-<meta name="description" content="Lightweight (~7.8 MB RAM) cross-platform Rust desktop mascot engine with Multi-Pet Herd Mode, Play Mode, 6-tool MCP server, and built-in 2D/SVG Studio." />
+<meta name="description" content="Lightweight (~7.8 MB RAM) cross-platform Rust desktop mascot engine with Multi-Pet Herd Mode, Play Mode, 6-tool stdio/HTTP MCP server for AI agents, and built-in 2D/SVG Studio." />
+<meta name="keywords" content="desktop pet, rust, shimeji, esheep, mascot engine, mcp server, claude code, cursor, pixel art, svg rigging, open source" />
+<meta name="author" content="Shivam Mahajan" />
+<link rel="canonical" href="https://shivammahajan.com/diypets" />
+
+<!-- OpenGraph / Social Cards -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Shivam Mahajan" />
+<meta property="og:title" content="DIYPets — Make Your Own Desktop Pet in Pure Rust" />
+<meta property="og:description" content="~7.8 MB RAM cross-platform desktop mascot engine with Multi-Pet Herd, Play Mode, 6-tool MCP server, and built-in 2D/SVG Studio." />
+<meta property="og:url" content="https://shivammahajan.com/diypets" />
+<meta property="og:image" content="https://shivammahajan.com/diypets/og-image.png" />
+
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:title" content="DIYPets — Make Your Own Desktop Pet in Pure Rust" />
+<meta name="twitter:description" content="~7.8 MB RAM cross-platform Rust desktop mascot engine with Multi-Pet Herd, Play Mode, 6-tool MCP API, and 2D/SVG Studio." />
+<meta name="twitter:image" content="https://shivammahajan.com/diypets/og-image.png" />
+
+<!-- Structured Data (JSON-LD) -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "DIYPets",
+  "headline": "Make your own desktop pet — in pure Rust",
+  "description": "Lightweight cross-platform desktop mascot engine (~7.8 MB RAM) with Multi-Pet Herd Mode, Play Mode, 6-tool stdio & HTTP MCP server, and built-in 2D/SVG Pet Creator Studio.",
+  "url": "https://shivammahajan.com/diypets",
+  "downloadUrl": "https://github.com/smresponsibilities/diypets/releases/latest",
+  "codeRepository": "https://github.com/smresponsibilities/diypets",
+  "softwareVersion": "0.3.0",
+  "operatingSystem": "Windows, macOS, Linux",
+  "applicationCategory": "DesktopEnhancementApplication",
+  "license": "https://opensource.org/licenses/MIT",
+  "author": {
+    "@type": "Person",
+    "name": "Shivam Mahajan",
+    "url": "https://shivammahajan.com"
+  },
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  }
+}
+</script>
+
 <style>
   :root {
-    --bg: #0f1218;
-    --panel: #161b24;
-    --card: #1c222e;
-    --border: #2c3547;
-    --text: #e8edf5;
-    --muted: #94a0b8;
-    --accent: #f08e42;
+    --bg: #0b0e14;
+    --bg-elev: #121722;
+    --card: #161c29;
+    --card-hi: #1d2536;
+    --border: #263044;
+    --border-hi: #3a4866;
+    --text: #eef2f8;
+    --muted: #8f9bb3;
+    --accent: #f59e0b;
+    --accent-2: #fb923c;
     --blue: #3b82f6;
-    --green: #3fb950;
+    --green: #22c55e;
+    --red: #ef4444;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
   body {
-    background: var(--bg);
+    background-color: var(--bg);
+    background-image:
+      radial-gradient(ellipse 80% 45% at 50% -8%, rgba(245, 158, 11, 0.13), transparent 70%),
+      radial-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px);
+    background-size: 100% 100%, 24px 24px;
     color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
     min-height: 100vh;
-    padding-bottom: 130px;
+    padding-bottom: 120px;
     overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
   }
-  .wrap { max-width: 980px; margin: 0 auto; padding: 36px 20px; }
-  header { text-align: center; margin-bottom: 28px; }
-  .pill {
-    display: inline-block;
-    padding: 4px 12px;
-    border-radius: 999px;
-    background: rgba(240, 142, 66, 0.14);
-    border: 1px solid rgba(240, 142, 66, 0.45);
-    color: var(--accent);
-    font-size: 12px;
-    font-weight: 600;
-    margin-bottom: 12px;
-  }
-  h1 { font-size: clamp(2rem, 5vw, 3.1rem); letter-spacing: -0.03em; margin-bottom: 10px; }
-  .sub { color: var(--muted); font-size: 1.05rem; max-width: 640px; margin: 0 auto 22px; line-height: 1.5; }
-  .cta-row { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-bottom: 24px; }
-  .btn {
-    background: var(--card);
-    color: var(--text);
-    border: 1px solid var(--border);
-    padding: 9px 16px;
-    border-radius: 8px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    text-decoration: none;
-    transition: transform .1s, border-color .15s, background .15s;
-  }
-  .btn:hover { border-color: var(--accent); background: #232b3a; }
-  .btn.primary { background: var(--accent); color: #121418; border-color: var(--accent); }
-  .btn.primary:hover { background: #fa9d54; }
-  .btn.active { background: var(--blue); border-color: var(--blue); color: #fff; }
-  .install-box {
-    display: inline-flex; align-items: center; gap: 10px;
-    background: #10141c; border: 1px solid var(--border);
-    padding: 10px 14px; border-radius: 10px;
-    font-family: Consolas, Menlo, monospace; font-size: 13px; color: #c7d2e5;
-    max-width: 100%; overflow-x: auto;
-  }
-  .copy-btn {
-    background: #232b3a; color: var(--text); border: 1px solid var(--border);
-    padding: 4px 10px; border-radius: 6px; font-size: 12px; cursor: pointer;
-  }
-  .copy-btn:hover { border-color: var(--accent); }
 
-  .dock-panel {
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 20px;
+  /* Sticky Top Navbar */
+  .topbar {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(11, 14, 20, 0.82);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+  }
+  .topbar-inner {
+    max-width: 1040px; margin: 0 auto; padding: 12px 20px;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  }
+  .brand {
+    display: inline-flex; align-items: center; gap: 10px;
+    text-decoration: none; color: var(--text); font-weight: 700; font-size: 16px;
+  }
+  .brand img { width: 28px; height: 28px; image-rendering: pixelated; border-radius: 6px; }
+  .ver-badge {
+    font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+    background: rgba(245, 158, 11, 0.15); color: var(--accent); border: 1px solid rgba(245, 158, 11, 0.35);
+  }
+  .nav-links { display: flex; align-items: center; gap: 18px; }
+  .nav-links a {
+    color: var(--muted); text-decoration: none; font-size: 13px; font-weight: 500;
+    transition: color .15s;
+  }
+  .nav-links a:hover { color: var(--text); }
+
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 36px 20px 20px; }
+
+  /* Hero */
+  .hero { text-align: center; margin-bottom: 34px; }
+  h1 {
+    font-size: clamp(2.1rem, 5vw, 3.35rem);
+    font-weight: 800;
+    letter-spacing: -0.035em;
+    line-height: 1.1;
+    margin-bottom: 14px;
+  }
+  h1 span {
+    background: linear-gradient(135deg, #fbbf24 0%, #fb923c 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .lead {
+    color: var(--muted);
+    font-size: 1.06rem;
+    max-width: 660px;
+    margin: 0 auto 22px;
+    line-height: 1.55;
+  }
+  .metrics {
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;
     margin-bottom: 24px;
   }
-  .panel-head {
-    display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
-    gap: 10px; margin-bottom: 16px;
+  .metric-chip {
+    font-size: 12px; font-weight: 600; color: #cbd5e1;
+    background: var(--bg-elev); border: 1px solid var(--border);
+    padding: 5px 11px; border-radius: 999px;
   }
-  .panel-head h2 { font-size: 1.05rem; }
-  .herd-count { font-size: 12px; color: var(--green); font-weight: 600; }
+  .metric-chip b { color: var(--accent); }
 
+  .hero-actions {
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;
+    margin-bottom: 22px;
+  }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    background: var(--card); color: var(--text);
+    border: 1px solid var(--border);
+    padding: 9px 16px; border-radius: 9px;
+    font-size: 13.5px; font-weight: 600; cursor: pointer; text-decoration: none;
+    transition: transform .08s, border-color .15s, background .15s;
+  }
+  .btn:hover { border-color: var(--border-hi); background: var(--card-hi); }
+  .btn:active { transform: translateY(1px); }
+  .btn.primary {
+    background: linear-gradient(135deg, #f59e0b, #ea580c);
+    color: #0b0e14; border-color: transparent; font-weight: 700;
+  }
+  .btn.primary:hover { filter: brightness(1.07); }
+  .btn.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+
+  /* Tabbed Install / MCP Card */
+  .install-card {
+    max-width: 680px; margin: 0 auto;
+    background: var(--bg-elev); border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden; text-align: left;
+  }
+  .install-tabs {
+    display: flex; background: #0e121b; border-bottom: 1px solid var(--border);
+    padding: 4px; gap: 4px; overflow-x: auto;
+  }
+  .itab {
+    background: transparent; border: none; color: var(--muted);
+    padding: 6px 12px; border-radius: 7px; font-size: 12px; font-weight: 600;
+    cursor: pointer; white-space: nowrap;
+  }
+  .itab.active { background: var(--card-hi); color: var(--text); }
+  .install-body {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 12px 16px;
+  }
+  .install-body pre {
+    font-family: Consolas, Menlo, monospace; font-size: 12.5px; color: #dbeafe;
+    overflow-x: auto; white-space: pre; line-height: 1.45;
+  }
+  .copy-btn {
+    flex-shrink: 0; background: var(--card-hi); color: var(--text);
+    border: 1px solid var(--border-hi); padding: 6px 12px; border-radius: 7px;
+    font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+  .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Interactive Playground Window */
+  .window-card {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+    margin-bottom: 28px;
+    overflow: hidden;
+  }
+  .win-bar {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    background: #171d2b; border-bottom: 1px solid var(--border);
+    padding: 10px 16px;
+  }
+  .dots { display: flex; gap: 7px; }
+  .dot { width: 11px; height: 11px; border-radius: 50%; }
+  .dot.r { background: #ff5f57; }
+  .dot.y { background: #febc2e; }
+  .dot.g { background: #28c840; }
+  .win-title { font-size: 12.5px; font-weight: 700; color: #cbd5e1; }
+  .herd-pill {
+    font-size: 12px; font-weight: 700; color: var(--green);
+    background: rgba(34, 197, 94, 0.12); border: 1px solid rgba(34, 197, 94, 0.3);
+    padding: 2px 10px; border-radius: 999px;
+  }
+  .win-body { padding: 20px; }
+
+  /* Active Herd Slot Strip */
+  .active-strip {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    background: #0e121b; border: 1px solid var(--border);
+    padding: 10px 12px; border-radius: 10px; margin-bottom: 16px;
+  }
+  .strip-label { font-size: 11.5px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-right: 4px; }
+  .slot-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--card); border: 1px solid var(--border-hi);
+    padding: 4px 8px 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 600;
+  }
+  .slot-chip button {
+    background: rgba(239, 68, 68, 0.16); color: #fca5a5; border: none;
+    width: 18px; height: 18px; border-radius: 4px; cursor: pointer; font-weight: 700; line-height: 1;
+  }
+  .slot-chip button:hover { background: var(--red); color: #fff; }
+
+  /* 5 Original Mascot Cards */
   .roster {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
     gap: 12px;
     margin-bottom: 18px;
   }
   .pet-card {
     background: var(--card);
     border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 12px;
+    border-radius: 11px;
+    padding: 14px 12px;
     text-align: center;
+    transition: border-color .15s, transform .12s;
   }
-  .pet-card canvas { image-rendering: pixelated; width: 64px; height: 64px; margin-bottom: 6px; }
-  .pet-card .name { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
-  .pet-card .card-btns { display: flex; gap: 6px; justify-content: center; }
+  .pet-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .pet-card canvas { image-rendering: pixelated; width: 68px; height: 68px; margin-bottom: 6px; }
+  .pet-card .name { font-size: 13.5px; font-weight: 700; margin-bottom: 2px; }
+  .pet-card .tag { font-size: 11px; color: var(--muted); margin-bottom: 10px; }
+  .card-btns { display: flex; gap: 6px; justify-content: center; }
   .mini-btn {
-    padding: 4px 10px; font-size: 12px; border-radius: 6px; cursor: pointer;
-    border: 1px solid var(--border); background: #242c3b; color: var(--text); font-weight: 600;
+    padding: 5px 11px; font-size: 12px; border-radius: 7px; cursor: pointer;
+    border: 1px solid var(--border-hi); background: #20293b; color: var(--text); font-weight: 600;
   }
-  .mini-btn.add { border-color: rgba(63,185,80,0.5); color: #86efac; }
-  .mini-btn.rem { border-color: rgba(248,113,113,0.4); color: #fca5a5; }
+  .mini-btn.add { background: rgba(34, 197, 94, 0.14); border-color: rgba(34, 197, 94, 0.45); color: #86efac; }
+  .mini-btn.add:hover { background: rgba(34, 197, 94, 0.25); }
+  .mini-btn.rem { background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.35); color: #fca5a5; }
+  .mini-btn.rem:hover { background: rgba(239, 68, 68, 0.22); }
 
+  /* Playground Controls */
   .controls {
-    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
-    padding-top: 14px; border-top: 1px solid var(--border);
+    display: flex; flex-wrap: wrap; gap: 9px; align-items: center;
+    padding-top: 16px; border-top: 1px solid var(--border);
   }
   .controls input[type="text"] {
-    background: #10141c; border: 1px solid var(--border); color: var(--text);
-    padding: 8px 12px; border-radius: 8px; font-size: 13px; width: 200px;
+    background: #0e121b; border: 1px solid var(--border-hi); color: var(--text);
+    padding: 8px 12px; border-radius: 8px; font-size: 13px; width: 195px;
   }
+  .controls input[type="text"]:focus { outline: none; border-color: var(--accent); }
   .slider-grp {
-    display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted);
-    background: var(--card); padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border);
+    display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: #cbd5e1;
+    background: var(--card); padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border);
   }
-  .hint { text-align: center; font-size: 12px; color: var(--muted); margin-top: 10px; }
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none;
+    width: 84px; height: 5px; background: #2c374e; border-radius: 999px; outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 14px; height: 14px; border-radius: 50%; background: var(--accent); cursor: pointer;
+  }
+  .tip-bar {
+    margin-top: 12px; font-size: 12px; color: var(--muted);
+    display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px;
+  }
 
-  .features {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px;
+  /* Bento Feature Grid */
+  .bento {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 14px;
+    margin-bottom: 28px;
   }
-  .feat {
-    background: var(--panel); border: 1px solid var(--border);
-    border-radius: 12px; padding: 16px;
+  .bcard {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
   }
-  .feat h3 { font-size: 14px; margin-bottom: 6px; color: var(--accent); }
-  .feat p { font-size: 13px; color: var(--muted); line-height: 1.45; }
+  .bcard .kicker {
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--accent); margin-bottom: 6px;
+  }
+  .bcard h3 { font-size: 15.5px; margin-bottom: 7px; }
+  .bcard p { font-size: 13px; color: var(--muted); line-height: 1.5; }
+  .bcard code {
+    background: #0e121b; padding: 1px 5px; border-radius: 4px;
+    font-family: Consolas, Menlo, monospace; font-size: 12px; color: #e2e8f0;
+  }
+
+  footer {
+    text-align: center; font-size: 12.5px; color: var(--muted);
+    padding-top: 16px; border-top: 1px solid var(--border);
+  }
+  footer a { color: #cbd5e1; text-decoration: none; }
+  footer a:hover { color: var(--accent); }
+
+  /* Bottom Taskbar / Dock Surface so pets walk ON a crisp ground line */
+  .bottom-dock {
+    position: fixed; left: 0; right: 0; bottom: 0; height: 26px;
+    background: linear-gradient(180deg, rgba(22, 28, 41, 0.92), rgba(11, 14, 20, 0.98));
+    border-top: 1px solid #334155;
+    z-index: 9990;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 16px; font-size: 11px; color: #64748b;
+    pointer-events: none;
+  }
 
   #pet-stage {
     position: fixed; left: 0; top: 0; width: 100vw; height: 100vh;
@@ -140,75 +346,156 @@
 </head>
 <body>
 <canvas id="pet-stage"></canvas>
-
-<div class="wrap">
-  <header>
-    <div class="pill">v0.3.0 · Pure Rust · ~7.8 MB RAM</div>
-    <h1>DIYPets</h1>
-    <p class="sub">Make your own desktop pet in pure Rust. Try the live interactive herd right at the bottom of your screen—grab, toss, drop a ball, or send a speech bubble.</p>
-    <div class="cta-row">
-      <a class="btn primary" href="https://github.com/smresponsibilities/diypets/releases/latest">Download Release</a>
-      <a class="btn" href="https://github.com/smresponsibilities/diypets">GitHub</a>
-      <a class="btn" href="https://crates.io/crates/diypets">crates.io</a>
-    </div>
-    <div class="install-box">
-      <code id="install-cmd">cargo install diypets && diypets</code>
-      <button class="copy-btn" onclick="copyInstall()">Copy</button>
-    </div>
-  </header>
-
-  <section class="dock-panel">
-    <div class="panel-head">
-      <h2>Interactive Herd Playground</h2>
-      <span class="herd-count" id="herd-count">Active Herd: 2 / 8</span>
-    </div>
-
-    <div class="roster" id="roster"></div>
-
-    <div class="controls">
-      <button class="btn primary" onclick="dropBall()">Drop Bouncy Ball</button>
-      <button class="btn" id="follow-btn" onclick="toggleFollow()">Follow Cursor: OFF</button>
-      <button class="btn" onclick="headpatAll()">Headpat All</button>
-      <input type="text" id="bubble-input" value="v0.3.0 is live!" maxlength="36" />
-      <button class="btn" onclick="sayBubble()">Say</button>
-      <label class="slider-grp">Size <input type="range" id="size-slider" min="64" max="156" value="104" oninput="updateScale(this.value)" /></label>
-      <label class="slider-grp">Speed <input type="range" id="speed-slider" min="1" max="10" value="4" oninput="updateSpeed(this.value)" /></label>
-      <button class="btn" onclick="clearExtras()">Reset Herd</button>
-    </div>
-    <p class="hint">Tip: Grab any pet walking along the bottom of your screen and toss it, or drop a ball to watch the herd chase it.</p>
-  </section>
-
-  <section class="features">
-    <div class="feat">
-      <h3>Native stdio & HTTP MCP</h3>
-      <p>Plug straight into Claude Desktop, Cursor, or Claude Code via <code>diypets mcp</code> (6 tools: react, say, drop_ball, spawn_pet, follow_cursor, list_herd).</p>
-    </div>
-    <div class="feat">
-      <h3>Studio V4 + 2D SVG Auto-Rig</h3>
-      <p>Draw on a 128×128 board with Auto-Outline, Mirror X, Onion Skinning, 4× EPX RotSprite rotation, and a live physics Sandbox—or import any SVG.</p>
-    </div>
-    <div class="feat">
-      <h3>Cross-Platform & Fullscreen Aware</h3>
-      <p>Native Windows, macOS, and Linux binaries with window-ledge riding, Squash & Stretch physics, and automatic Fullscreen Auto-Hide.</p>
-    </div>
-  </section>
+<div class="bottom-dock">
+  <span>DIYPets Engine · Taskbar &amp; Window-Ledge Physics</span>
+  <span id="dock-status">Grab &amp; toss any pet · Walk on window ledges</span>
 </div>
 
+<nav class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="https://shivammahajan.com/diypets">
+      <img src="og-image.png" alt="DIYPets Logo" />
+      <span>DIYPets</span>
+      <span class="ver-badge">v0.3.0</span>
+    </a>
+    <div class="nav-links">
+      <a href="#playground">Playground</a>
+      <a href="#features">Features</a>
+      <a href="https://shivammahajan.com">shivammahajan.com</a>
+      <a class="btn" style="padding:5px 11px;font-size:12px;" href="https://github.com/smresponsibilities/diypets">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<main class="wrap">
+  <section class="hero">
+    <h1>Make your own desktop pet — <span>in pure Rust.</span></h1>
+    <p class="lead">
+      A native, cross-platform desktop mascot engine (~7.8 MB RAM) with Multi-Pet Herd Mode, Play Mode, a 6-tool stdio &amp; HTTP MCP server for AI coding agents, and a built-in 2D/SVG Studio.
+    </p>
+    <div class="metrics">
+      <span class="metric-chip"><b>~7.8 MB</b> Idle RAM</span>
+      <span class="metric-chip"><b>0</b> Runtime Deps</span>
+      <span class="metric-chip"><b>6-Tool</b> stdio &amp; HTTP MCP</span>
+      <span class="metric-chip"><b>4× EPX</b> RotSprite</span>
+      <span class="metric-chip"><b>Win · macOS · Linux</b></span>
+    </div>
+    <div class="hero-actions">
+      <a class="btn primary" href="https://github.com/smresponsibilities/diypets/releases/latest">Download v0.3.0</a>
+      <a class="btn" href="https://crates.io/crates/diypets">crates.io</a>
+      <a class="btn" href="https://github.com/smresponsibilities/diypets">Source Code</a>
+    </div>
+
+    <div class="install-card">
+      <div class="install-tabs">
+        <button class="itab active" onclick="setInstallTab('win', this)">Windows (PowerShell)</button>
+        <button class="itab" onclick="setInstallTab('unix', this)">macOS / Linux</button>
+        <button class="itab" onclick="setInstallTab('cargo', this)">Cargo</button>
+        <button class="itab" onclick="setInstallTab('mcp', this)">Claude / Cursor MCP</button>
+      </div>
+      <div class="install-body">
+        <pre id="install-code">irm https://raw.githubusercontent.com/smresponsibilities/diypets/main/install.ps1 | iex</pre>
+        <button class="copy-btn" id="copy-btn" onclick="copyCmd()">Copy</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Interactive Playground Window (also acts as a real Window Ledge!) -->
+  <section class="window-card" id="playground" data-ledge="true">
+    <div class="win-bar">
+      <div class="dots"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
+      <div class="win-title">DIYPets Live Herd &amp; Physics Playground</div>
+      <span class="herd-pill" id="herd-count">Active Herd: 3 / 8</span>
+    </div>
+    <div class="win-body">
+      <div class="active-strip" id="active-strip"></div>
+      <div class="roster" id="roster"></div>
+
+      <div class="controls">
+        <button class="btn primary" onclick="dropBall()">Drop Bouncy Ball</button>
+        <button class="btn" id="follow-btn" onclick="toggleFollow()">Follow Cursor: OFF</button>
+        <button class="btn active" id="ledge-btn" onclick="toggleLedges()">Climb Ledges: ON</button>
+        <button class="btn" onclick="headpatAll()">Headpat All</button>
+        <input type="text" id="bubble-input" value="v0.3.0 is live!" maxlength="36" onkeydown="if(event.key==='Enter')sayBubble()" />
+        <button class="btn" onclick="sayBubble()">Say</button>
+        <label class="slider-grp">Size <input type="range" id="size-slider" min="64" max="152" value="96" oninput="petSize=Number(this.value)" /></label>
+        <label class="slider-grp">Speed <input type="range" id="speed-slider" min="1" max="10" value="4" oninput="petSpeed=Number(this.value)" /></label>
+        <button class="btn" onclick="resetHerd()">Reset</button>
+      </div>
+      <div class="tip-bar">
+        <span>Grab &amp; flick any pet across the screen—they land on card titlebars and the bottom taskbar with Squash &amp; Stretch.</span>
+        <span>Pets greet each other with hops &amp; pixel hearts when they meet!</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Bento Feature Grid (Ledge-enabled cards!) -->
+  <section class="bento" id="features">
+    <article class="bcard" data-ledge="true">
+      <div class="kicker">AI Agent Ready</div>
+      <h3>Native stdio &amp; HTTP MCP</h3>
+      <p>Connect Claude Desktop, Cursor, or Claude Code via <code>diypets mcp</code>. Trigger reactions, speech bubbles, bouncy balls, or spawn pets when builds pass.</p>
+    </article>
+    <article class="bcard" data-ledge="true">
+      <div class="kicker">Pixel-Art Engine</div>
+      <h3>RotSprite &amp; Squash Physics</h3>
+      <p>4× EPX (Scale2x) RotSprite keeps rotated limbs razor-sharp, paired with bottom-anchored Squash &amp; Stretch, idle breathing, and Fullscreen Auto-Hide.</p>
+    </article>
+    <article class="bcard" data-ledge="true">
+      <div class="kicker">Built-In Studio V4</div>
+      <h3>Draw, Rig &amp; Test in Sandbox</h3>
+      <p>128×128 editor with Marquee Select, 1-Click Auto-Outline, Mirror X, Onion Skinning, 2D SVG auto-rigging, and a live physics Sandbox.</p>
+    </article>
+    <article class="bcard" data-ledge="true">
+      <div class="kicker">27+ Classic Packs</div>
+      <h3>eSheep XML Compatible</h3>
+      <p>Includes 5 original mascots out of the box plus 27+ classic eSheep community packs downloadable on demand in one click inside Settings.</p>
+    </article>
+  </section>
+
+  <footer>
+    Built by <a href="https://shivammahajan.com">Shivam Mahajan</a> · Dual-licensed under MIT / Apache-2.0 ·
+    <a href="https://github.com/smresponsibilities/diypets">GitHub</a> ·
+    <a href="https://crates.io/crates/diypets">crates.io</a>
+  </footer>
+</main>
+
 <script>
+const INSTALL_SNIPPETS = {
+  win: "irm https://raw.githubusercontent.com/smresponsibilities/diypets/main/install.ps1 | iex",
+  unix: "curl -fsSL https://raw.githubusercontent.com/smresponsibilities/diypets/main/install.sh | bash",
+  cargo: "cargo install diypets && diypets",
+  mcp: '{\n  "mcpServers": {\n    "diypets": { "command": "diypets", "args": ["mcp"] }\n  }\n}'
+};
+
+function setInstallTab(key, btn) {
+  document.querySelectorAll(".itab").forEach(el => el.classList.remove("active"));
+  btn.classList.add("active");
+  document.getElementById("install-code").textContent = INSTALL_SNIPPETS[key];
+}
+
+function copyCmd() {
+  navigator.clipboard.writeText(document.getElementById("install-code").textContent);
+  const b = document.getElementById("copy-btn");
+  b.textContent = "Copied!";
+  setTimeout(() => { b.textContent = "Copy"; }, 1400);
+}
+
 const PACKS = [
-  { id: "highland_cow", name: "Highland Cow" },
-  { id: "dog", name: "Dog" },
-  { id: "polar_bear", name: "Polar Bear" },
-  { id: "goat", name: "Goat" },
-  { id: "stegosaurus", name: "Stegosaurus" }
+  { id: "highland_cow", name: "Highland Cow", role: "Quadruped" },
+  { id: "dog", name: "Dog", role: "Quadruped" },
+  { id: "polar_bear", name: "Polar Bear", role: "Quadruped" },
+  { id: "goat", name: "Goat", role: "Quadruped" },
+  { id: "stegosaurus", name: "Stegosaurus", role: "Dino" }
 ];
 
 const sprites = {};
-let petSize = 104;
+let petSize = 96;
 let petSpeed = 4;
 let followCursor = false;
-let mouseX = window.innerWidth / 2;
-let mouseY = window.innerHeight / 2;
+let climbLedges = true;
+let mouseX = window.innerWidth * 0.5;
+let mouseY = window.innerHeight * 0.5;
 let pets = [];
 let ball = null;
 let dragPet = null;
@@ -224,117 +511,165 @@ function resize() {
 window.addEventListener("resize", resize);
 resize();
 
-function updateHerdLabel() {
-  document.getElementById("herd-count").textContent = `Active Herd: ${pets.length} / 8`;
+function getLedges() {
+  if (!climbLedges) return [];
+  const out = [];
+  document.querySelectorAll("[data-ledge='true']").forEach(el => {
+    const r = el.getBoundingClientRect();
+    if (r.top > 70 && r.top < canvas.height - 90 && r.width > 120) {
+      out.push({ left: r.left + 8, right: r.right - 8, top: r.top });
+    }
+  });
+  return out;
 }
 
-function addPet(id) {
+function syncHerdUI() {
+  document.getElementById("herd-count").textContent = `Active Herd: ${pets.length} / 8`;
+  const strip = document.getElementById("active-strip");
+  strip.innerHTML = `<span class="strip-label">Active Slots:</span>`;
+  pets.forEach((p, idx) => {
+    const meta = PACKS.find(k => k.id === p.id);
+    const chip = document.createElement("span");
+    chip.className = "slot-chip";
+    chip.innerHTML = `<span style="cursor:pointer" title="Click to hop" onclick="hopPet(${idx})">#${idx + 1} ${meta ? meta.name : p.id}</span>` +
+      (pets.length > 1 ? `<button title="Remove" onclick="removeSlot(${idx})">×</button>` : "");
+    strip.appendChild(chip);
+  });
+}
+
+function hopPet(idx) {
+  const p = pets[idx];
+  if (!p) return;
+  p.vy = -340;
+  p.sqX = 0.86; p.sqY = 1.16;
+  p.heartsUntil = performance.now() + 2000;
+}
+
+function addPet(id, preferredX = null, preferredY = null) {
   if (pets.length >= 8) return;
-  const x = 80 + Math.random() * Math.max(120, window.innerWidth - 220);
+  const slotOffset = 90 + ((pets.length * 145) % Math.max(240, canvas.width - 220));
+  const x = preferredX !== null ? preferredX : slotOffset;
+  const y = preferredY !== null ? preferredY : (canvas.height - petSize - 130 - (pets.length % 3) * 35);
   pets.push({
     id,
     x,
-    y: window.innerHeight - petSize - 160 - Math.random() * 120,
-    vx: (Math.random() < 0.5 ? -1 : 1) * (petSpeed * 22),
+    y,
+    vx: (pets.length % 2 === 0 ? 1 : -1) * (petSpeed * 22),
     vy: 0,
-    dir: Math.random() < 0.5 ? -1 : 1,
-    frame: Math.floor(Math.random() * 4),
+    dir: pets.length % 2 === 0 ? 1 : -1,
+    frame: pets.length % 4,
     frameT: 0,
     sqX: 1, sqY: 1,
     heartsUntil: 0,
+    interactCooldown: 0,
     bubble: null,
     bubbleUntil: 0,
     airborne: true
   });
-  updateHerdLabel();
+  syncHerdUI();
+}
+
+function removeSlot(idx) {
+  if (pets.length <= 1) return;
+  pets.splice(idx, 1);
+  syncHerdUI();
 }
 
 function removePet(id) {
   const idx = pets.map(p => p.id).lastIndexOf(id);
-  if (idx !== -1 && pets.length > 1) {
-    pets.splice(idx, 1);
-    updateHerdLabel();
-  }
+  if (idx !== -1) removeSlot(idx);
 }
 
-function clearExtras() {
+function resetHerd() {
   pets = [];
-  addPet("highland_cow");
-  addPet("dog");
+  const ledges = getLedges();
+  const topLedge = ledges[0];
+  addPet("highland_cow", topLedge ? topLedge.left + 32 : 120, topLedge ? topLedge.top - petSize - 20 : null);
+  addPet("dog", 220, canvas.height - petSize - 90);
+  addPet("stegosaurus", Math.min(canvas.width - 180, 540), canvas.height - petSize - 90);
 }
 
 function dropBall() {
   ball = {
-    x: window.innerWidth * 0.5,
-    y: 90,
-    vx: (Math.random() < 0.5 ? -1 : 1) * 260,
-    vy: -60,
-    until: performance.now() + 18000,
+    x: canvas.width * 0.5,
+    y: 72,
+    vx: (Math.random() < 0.5 ? -1 : 1) * 250,
+    vy: -40,
+    until: performance.now() + 20000,
     lastKick: 0
   };
 }
 
 function toggleFollow() {
   followCursor = !followCursor;
-  const btn = document.getElementById("follow-btn");
-  btn.textContent = `Follow Cursor: ${followCursor ? "ON" : "OFF"}`;
-  btn.classList.toggle("active", followCursor);
+  const b = document.getElementById("follow-btn");
+  b.textContent = `Follow Cursor: ${followCursor ? "ON" : "OFF"}`;
+  b.classList.toggle("active", followCursor);
+}
+
+function toggleLedges() {
+  climbLedges = !climbLedges;
+  const b = document.getElementById("ledge-btn");
+  b.textContent = `Climb Ledges: ${climbLedges ? "ON" : "OFF"}`;
+  b.classList.toggle("active", climbLedges);
 }
 
 function headpatAll() {
-  const now = performance.now();
-  for (const p of pets) {
-    p.vy = -340;
-    p.sqX = 0.88; p.sqY = 1.15;
-    p.heartsUntil = now + 2200;
-  }
+  pets.forEach((_, i) => hopPet(i));
 }
 
 function sayBubble() {
-  const text = (document.getElementById("bubble-input").value || "Hello!").trim();
+  const text = (document.getElementById("bubble-input").value || "v0.3.0 is live!").trim();
   if (!text || pets.length === 0) return;
-  const now = performance.now();
   pets[0].bubble = text.toUpperCase();
-  pets[0].bubbleUntil = now + 4500;
-  pets[0].vy = -260;
-  pets[0].sqX = 0.88; pets[0].sqY = 1.14;
-  pets[0].heartsUntil = now + 2000;
+  pets[0].bubbleUntil = performance.now() + 4800;
+  hopPet(0);
 }
 
-function updateScale(v) { petSize = Number(v); }
-function updateSpeed(v) { petSpeed = Number(v); }
-
-function copyInstall() {
-  navigator.clipboard.writeText(document.getElementById("install-cmd").textContent);
+function hitTestPet(mx, my) {
+  for (let i = pets.length - 1; i >= 0; i--) {
+    const p = pets[i];
+    if (mx >= p.x && mx <= p.x + petSize && my >= p.y && my <= p.y + petSize) {
+      return p;
+    }
+  }
+  return null;
 }
 
-// Pointer drag & toss on pets (lets normal page clicks pass through when not on a pet)
 window.addEventListener("mousemove", e => {
   mouseX = e.clientX; mouseY = e.clientY;
   if (dragPet) {
     dragPet.vx = (e.clientX - lastMouseX) * 22;
     dragPet.vy = (e.clientY - lastMouseY) * 22;
-    dragPet.x = e.clientX - petSize * 0.5;
-    dragPet.y = e.clientY - petSize * 0.4;
+    dragPet.x = Math.max(0, Math.min(canvas.width - petSize, e.clientX - petSize * 0.5));
+    dragPet.y = Math.max(48, Math.min(canvas.height - petSize - 20, e.clientY - petSize * 0.35));
+    document.body.style.cursor = "grabbing";
+  } else {
+    document.body.style.cursor = hitTestPet(e.clientX, e.clientY) ? "grab" : "";
   }
   lastMouseX = e.clientX; lastMouseY = e.clientY;
 });
 
 window.addEventListener("mousedown", e => {
-  for (let i = pets.length - 1; i >= 0; i--) {
-    const p = pets[i];
-    if (e.clientX >= p.x && e.clientX <= p.x + petSize && e.clientY >= p.y && e.clientY <= p.y + petSize) {
-      dragPet = p;
-      p.airborne = true;
-      e.preventDefault();
-      break;
-    }
+  const hit = hitTestPet(e.clientX, e.clientY);
+  if (hit) {
+    dragPet = hit;
+    hit.airborne = true;
+    document.body.style.cursor = "grabbing";
+    e.preventDefault();
   }
 });
 
-window.addEventListener("mouseup", () => { dragPet = null; });
+window.addEventListener("mouseup", () => {
+  if (dragPet) {
+    dragPet.vx = Math.max(-520, Math.min(520, dragPet.vx));
+    dragPet.vy = Math.max(-560, Math.min(480, dragPet.vy));
+    dragPet = null;
+    document.body.style.cursor = "";
+  }
+});
 
-// Build roster UI & load real sprite sheets
+// Build Roster Cards
 const rosterEl = document.getElementById("roster");
 PACKS.forEach(pk => {
   const img = new Image();
@@ -344,8 +679,9 @@ PACKS.forEach(pk => {
   const card = document.createElement("div");
   card.className = "pet-card";
   card.innerHTML = `
-    <canvas width="64" height="64" id="prev-${pk.id}"></canvas>
+    <canvas width="68" height="68" id="prev-${pk.id}"></canvas>
     <div class="name">${pk.name}</div>
+    <div class="tag">${pk.role}</div>
     <div class="card-btns">
       <button class="mini-btn add" onclick="addPet('${pk.id}')">+ Add</button>
       <button class="mini-btn rem" onclick="removePet('${pk.id}')">- Remove</button>
@@ -356,11 +692,11 @@ PACKS.forEach(pk => {
   img.onload = () => {
     const pc = document.getElementById(`prev-${pk.id}`).getContext("2d");
     pc.imageSmoothingEnabled = false;
-    pc.drawImage(img, 0, 0, img.width / 4, img.height, 0, 0, 64, 64);
+    pc.drawImage(img, 0, 0, img.width / 4, img.height, 0, 0, 68, 68);
   };
 });
 
-clearExtras();
+setTimeout(resetHerd, 60);
 
 let prevT = performance.now();
 function loop(now) {
@@ -369,51 +705,102 @@ function loop(now) {
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.imageSmoothingEnabled = false;
-  const floorY = canvas.height - petSize + 6;
 
+  const dockTop = canvas.height - 25;
+  const floorY = dockTop - petSize + 4;
+  const ledges = getLedges();
+
+  // Bouncy Ball Physics
   if (ball) {
     if (now > ball.until) {
       ball = null;
     } else {
+      const prevBallY = ball.y;
       ball.vy += 980 * dt;
       ball.x += ball.vx * dt;
       ball.y += ball.vy * dt;
-      if (ball.x < 14) { ball.x = 14; ball.vx = Math.abs(ball.vx) * 0.82; }
-      if (ball.x > canvas.width - 14) { ball.x = canvas.width - 14; ball.vx = -Math.abs(ball.vx) * 0.82; }
-      if (ball.y > canvas.height - 14) {
-        ball.y = canvas.height - 14;
-        ball.vy = Math.abs(ball.vy) > 60 ? -Math.abs(ball.vy) * 0.72 : 0;
+      if (ball.x < 14) { ball.x = 14; ball.vx = Math.abs(ball.vx) * 0.84; }
+      if (ball.x > canvas.width - 14) { ball.x = canvas.width - 14; ball.vx = -Math.abs(ball.vx) * 0.84; }
+
+      for (const lg of ledges) {
+        if (ball.x >= lg.left && ball.x <= lg.right && prevBallY + 12 <= lg.top + 8 && ball.y + 12 >= lg.top && ball.vy > 0) {
+          ball.y = lg.top - 12;
+          ball.vy = Math.abs(ball.vy) > 70 ? -Math.abs(ball.vy) * 0.72 : 0;
+          ball.vx *= 0.98;
+        }
+      }
+      if (ball.y > dockTop - 12) {
+        ball.y = dockTop - 12;
+        ball.vy = Math.abs(ball.vy) > 65 ? -Math.abs(ball.vy) * 0.74 : 0;
         ball.vx *= 0.985;
       }
+
       ctx.beginPath();
       ctx.arc(ball.x, ball.y, 12, 0, Math.PI * 2);
       ctx.fillStyle = "#f2683e";
       ctx.fill();
       ctx.lineWidth = 2.5;
-      ctx.strokeStyle = "#2a1818";
+      ctx.strokeStyle = "#1e1212";
       ctx.stroke();
       ctx.beginPath();
-      ctx.arc(ball.x - 4, ball.y - 4, 3, 0, Math.PI * 2);
-      ctx.fillStyle = "#fff4e0";
+      ctx.arc(ball.x - 4, ball.y - 4, 3.2, 0, Math.PI * 2);
+      ctx.fillStyle = "#fff5e4";
       ctx.fill();
     }
   }
 
+  // Pet-to-Pet Herd Interactions
+  for (let i = 0; i < pets.length; i++) {
+    for (let j = i + 1; j < pets.length; j++) {
+      const a = pets[i], b = pets[j];
+      if (a === dragPet || b === dragPet || a.airborne || b.airborne) continue;
+      if (now < a.interactCooldown || now < b.interactCooldown) continue;
+      if (Math.abs(a.y - b.y) > 28) continue;
+      const dx = b.x - a.x;
+      if (Math.abs(dx) < petSize * 0.45 && ((dx >= 0 && a.dir > 0 && b.dir < 0) || (dx < 0 && a.dir < 0 && b.dir > 0))) {
+        a.interactCooldown = now + 5500;
+        b.interactCooldown = now + 5500;
+        const aLeft = a.x <= b.x;
+        a.dir = aLeft ? -1 : 1;
+        b.dir = aLeft ? 1 : -1;
+        a.vy = -210; b.vy = -210;
+        a.sqX = 0.9; a.sqY = 1.12;
+        b.sqX = 0.9; b.sqY = 1.12;
+        a.heartsUntil = now + 1700;
+        b.heartsUntil = now + 1700;
+      }
+    }
+  }
+
   for (const p of pets) {
-    p.sqX += (1 - p.sqX) * Math.min(1, dt * 12);
-    p.sqY += (1 - p.sqY) * Math.min(1, dt * 12);
+    p.sqX += (1 - p.sqX) * Math.min(1, dt * 13);
+    p.sqY += (1 - p.sqY) * Math.min(1, dt * 13);
 
     if (p !== dragPet) {
+      const prevFoot = p.y + petSize;
       p.vy += 980 * dt;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
 
-      if (p.x < 0) { p.x = 0; p.dir = 1; }
-      if (p.x > canvas.width - petSize) { p.x = canvas.width - petSize; p.dir = -1; }
+      if (p.x < 4) { p.x = 4; p.dir = 1; }
+      if (p.x > canvas.width - petSize - 4) { p.x = canvas.width - petSize - 4; p.dir = -1; }
 
-      if (p.y >= floorY) {
-        if (p.airborne && p.vy > 140) { p.sqX = 1.15; p.sqY = 0.85; }
-        p.y = floorY;
+      let surfaceY = null;
+      const footX = p.x + petSize * 0.5;
+      for (const lg of ledges) {
+        if (footX >= lg.left && footX <= lg.right && prevFoot <= lg.top + 12 && p.y + petSize >= lg.top && p.vy >= 0) {
+          if (surfaceY === null || lg.top - petSize + 4 < surfaceY) {
+            surfaceY = lg.top - petSize + 4;
+          }
+        }
+      }
+      if (surfaceY === null && p.y >= floorY) {
+        surfaceY = floorY;
+      }
+
+      if (surfaceY !== null) {
+        if (p.airborne && p.vy > 140) { p.sqX = 1.16; p.sqY = 0.84; }
+        p.y = surfaceY;
         p.vy = 0;
         p.airborne = false;
 
@@ -423,7 +810,7 @@ function loop(now) {
 
         if (targetX !== null) {
           const dx = targetX - p.x;
-          if (Math.abs(dx) > 22) {
+          if (Math.abs(dx) > 20) {
             p.dir = dx > 0 ? 1 : -1;
             p.vx = p.dir * (petSpeed * 32);
           } else {
@@ -436,15 +823,15 @@ function loop(now) {
         p.airborne = true;
       }
 
-      if (ball && now - ball.lastKick > 450) {
+      if (ball && now - ball.lastKick > 420) {
         const dx = ball.x - (p.x + petSize * 0.5);
-        const dy = ball.y - (p.y + petSize * 0.7);
-        if (Math.abs(dx) < 36 && Math.abs(dy) < 42) {
+        const dy = ball.y - (p.y + petSize * 0.72);
+        if (Math.abs(dx) < 38 && Math.abs(dy) < 44) {
           ball.vy = -440;
-          ball.vx = dx >= 0 ? 280 : -280;
+          ball.vx = dx >= 0 ? 270 : -270;
           ball.lastKick = now;
           p.heartsUntil = now + 1800;
-          p.sqX = 0.9; p.sqY = 1.12;
+          p.sqX = 0.88; p.sqY = 1.14;
         }
       }
     }
@@ -456,8 +843,9 @@ function loop(now) {
     if (img && img.complete && img.width > 0) {
       const fw = img.width / 4;
       const fh = img.height;
-      const dw = petSize * p.sqX;
-      const dh = petSize * p.sqY;
+      const breath = (!p.airborne && Math.abs(p.vx) < 5) ? Math.sin(now * 0.004) * 0.02 : 0;
+      const dw = petSize * (p.sqX - breath * 0.5);
+      const dh = petSize * (p.sqY + breath);
       const drawX = p.x + (petSize - dw) * 0.5;
       const drawY = p.y + (petSize - dh);
 
@@ -474,10 +862,10 @@ function loop(now) {
 
     if (now < p.heartsUntil) {
       const prog = 1 - (p.heartsUntil - now) / 2200;
-      ctx.fillStyle = "#f03c62";
+      ctx.fillStyle = "#f43f5e";
       ctx.font = "bold 16px sans-serif";
-      ctx.fillText("♥", p.x + petSize * 0.35, p.y - prog * 28);
-      ctx.fillText("♥", p.x + petSize * 0.62, p.y - ((prog + 0.3) % 1) * 28);
+      ctx.fillText("♥", p.x + petSize * 0.34, p.y - prog * 28);
+      ctx.fillText("♥", p.x + petSize * 0.62, p.y - ((prog + 0.32) % 1) * 28);
     }
 
     if (p.bubble && now < p.bubbleUntil) {
@@ -485,9 +873,9 @@ function loop(now) {
       const tw = ctx.measureText(p.bubble).width;
       const bw = tw + 22, bh = 28;
       const bx = Math.max(8, Math.min(canvas.width - bw - 8, p.x + petSize * 0.5 - bw * 0.5));
-      const by = Math.max(8, p.y - bh - 10);
-      ctx.fillStyle = "#161a24";
-      ctx.strokeStyle = "#f08e42";
+      const by = Math.max(54, p.y - bh - 10);
+      ctx.fillStyle = "#121722";
+      ctx.strokeStyle = "#f59e0b";
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.roundRect(bx, by, bw, bh, 7);

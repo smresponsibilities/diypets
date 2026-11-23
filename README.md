@@ -14,7 +14,7 @@ A lightweight (~7.8 MB RAM), cross-platform desktop mascot engine with **Multi-P
 [![license](https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue.svg)](LICENSE-MIT)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-22c55e.svg)](#install)
 
-[Interactive Demo](https://diypets.shivammahajan.com) · [Install](#install) · [Play Mode & Herd](#play-mode--herd) · [MCP & CLI](#ai-agent-mcp--cli) · [Studio V4](#diypets-studio-v4)
+[Interactive Demo](https://shivammahajan.com/diypets) · [Install](#install) · [Play Mode & Herd](#play-mode--herd) · [MCP & CLI](#ai-agent-mcp--cli) · [Studio V4](#diypets-studio-v4)
 
 <!-- AUTO:STATS:START -->
 > **Latest:** 0.3.0 · **5 Made by SM originals** + **27+ on-demand eSheep packs** · **~7.8 MB RAM** · **stdio & HTTP MCP**
@@ -22,6 +22,14 @@ A lightweight (~7.8 MB RAM), cross-platform desktop mascot engine with **Multi-P
 
 </div>
 
+<<<<<<< HEAD
+=======
+
+<!-- AUTO:STATS:START -->
+> **Latest release:** `v0.3.0` · **5 Made by SM originals** + **27+ on-demand eSheep packs** · **~7.8 MB RAM** · **MCP API on `:3721`**
+<!-- AUTO:STATS:END -->
+
+>>>>>>> 7ac6297889f6332b765c229238fc0393c86acce2
 ---
 
 ## Meet the Originals
