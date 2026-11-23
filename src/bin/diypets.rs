@@ -670,7 +670,6 @@ struct PetInstance {
     cached_floor_y: Option<f32>,
     cached_wall_left: Option<f32>,
     cached_wall_right: Option<f32>,
-    #[cfg(windows)]
     standing_window: Option<(isize, i32, i32)>,
     cursor_pos: (f32, f32),
     drag_grab_offset: (f32, f32),
@@ -866,7 +865,6 @@ impl DeskpetApp {
             cached_floor_y: None,
             cached_wall_left: None,
             cached_wall_right: None,
-            #[cfg(windows)]
             standing_window: None,
             cursor_pos: (0.0, 0.0),
             drag_grab_offset: (64.0, 24.0),
@@ -1705,6 +1703,54 @@ impl ApplicationHandler for DeskpetApp {
                     floor_y = base_floor_y;
                     wall_left = min_x;
                     wall_right = max_x;
+                    #[cfg(not(windows))]
+                    {
+                        let center_x = pet.state.x as i32 + (scaled_w / 2) as i32;
+                        let feet_y = (pet.state.y + ground_height) as i32 + 2;
+                        let mons: Vec<(i32, i32, i32, i32)> = event_loop
+                            .available_monitors()
+                            .map(|m| {
+                                let p = m.position();
+                                let s = m.size();
+                                (p.x, p.y, p.x + s.width as i32, p.y + s.height as i32)
+                            })
+                            .collect();
+                        if let Some(wrect) = platform::find_unix_window_under_point(center_x, feet_y, &mons) {
+                            let win_y = wrect.top as f32;
+                            let win_x = wrect.left as f32;
+                            let win_h = (wrect.bottom - wrect.top) as f32;
+                            if let Some(window_floor) = window_floor_candidate(
+                                win_y,
+                                ground_height,
+                                pet.state.y + ground_height,
+                                min_y,
+                            ) {
+                                let prev_f = floor_y;
+                                floor_y = select_window_floor(floor_y, Some(window_floor));
+                                if floor_y < prev_f - 0.5 {
+                                    if let Some((old_h, ox, oy)) = pet.standing_window {
+                                        if old_h == wrect.id {
+                                            let dx = wrect.left - ox;
+                                            let dy = wrect.top - oy;
+                                            if dx.abs() < 300 && dy.abs() < 300 {
+                                                pet.state.x += dx as f32;
+                                                pet.state.y += dy as f32;
+                                            }
+                                        }
+                                    }
+                                    pet.standing_window = Some((wrect.id, wrect.left, wrect.top));
+                                }
+                            }
+                            if win_y > 10.0
+                                && pet.state.y + (scaled_h as f32) > win_y
+                                && pet.state.y < win_y + win_h
+                                && pet.state.x < win_x
+                            {
+                                wall_right = wall_right.min(win_x - (scaled_w as f32));
+                            }
+                        }
+                    }
+
                     pet.cached_floor_y = Some(floor_y);
                     pet.cached_wall_left = Some(wall_left);
                     pet.cached_wall_right = Some(wall_right);
@@ -2085,6 +2131,7 @@ fn main() {
     let (agent_tx, agent_rx) = mpsc::channel();
     let shared_herd: SharedHerd = Arc::new(Mutex::new(Vec::new()));
     agent_api::start_local_server(agent_tx.clone(), shared_herd.clone());
+    platform::start_unix_window_poller();
 
     #[cfg(windows)]
     unsafe {

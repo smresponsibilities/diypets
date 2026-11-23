@@ -185,3 +185,149 @@ pub fn spawn_unix_pet_menu(tx: Sender<AgentCommand>, follow_cursor: bool) {
 #[cfg(windows)]
 #[allow(dead_code)]
 pub fn spawn_unix_pet_menu(_tx: Sender<AgentCommand>, _follow_cursor: bool) {}
+/// Desktop window bounds in logical/physical screen coordinates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WindowRect {
+    pub id: isize,
+    pub left: i32,
+    pub top: i32,
+    pub right: i32,
+    pub bottom: i32,
+}
+
+/// Select the topmost non-fullscreen window whose rectangle contains `(x, y)`.
+pub fn pick_window_under_point(
+    windows: &[WindowRect],
+    x: i32,
+    y: i32,
+    monitors: &[(i32, i32, i32, i32)],
+) -> Option<WindowRect> {
+    for &w in windows {
+        if x < w.left || x > w.right || y < w.top || y > w.bottom {
+            continue;
+        }
+        let is_fullscreen = monitors
+            .iter()
+            .any(|&(mx, my, mr, mb)| w.left <= mx && w.top <= my && w.right >= mr && w.bottom >= mb);
+        if !is_fullscreen {
+            return Some(w);
+        }
+    }
+    None
+}
+
+#[cfg(not(windows))]
+static UNIX_WINDOWS: std::sync::OnceLock<std::sync::Mutex<Vec<WindowRect>>> =
+    std::sync::OnceLock::new();
+
+#[cfg(not(windows))]
+fn unix_windows_store() -> &'static std::sync::Mutex<Vec<WindowRect>> {
+    UNIX_WINDOWS.get_or_init(|| std::sync::Mutex::new(Vec::new()))
+}
+
+#[cfg(target_os = "macos")]
+fn poll_unix_windows_once() -> Vec<WindowRect> {
+    let script = r#"ObjC.import('CoreGraphics');
+var list = ObjC.deepUnwrap($.CGWindowListCopyWindowInfo($.kCGWindowListOptionOnScreenOnly | $.kCGWindowListExcludeDesktopElements, 0)) || [];
+var out = [];
+for (var i = 0; i < list.length; i++) {
+  var w = list[i];
+  if (w.kCGWindowLayer !== 0) continue;
+  var owner = String(w.kCGWindowOwnerName || '').toLowerCase();
+  if (owner.indexOf('diypets') >= 0) continue;
+  var b = w.kCGWindowBounds;
+  if (!b || b.Width < 80 || b.Height < 40) continue;
+  out.push([w.kCGWindowNumber || i, Math.round(b.X), Math.round(b.Y), Math.round(b.X + b.Width), Math.round(b.Y + b.Height)].join(','));
+}
+out.join('\n');"#;
+    let Ok(out) = std::process::Command::new("osascript")
+        .args(["-l", "JavaScript", "-e", script])
+        .output()
+    else {
+        return Vec::new();
+    };
+    let text = String::from_utf8_lossy(&out.stdout);
+    text.lines()
+        .filter_map(|line| {
+            let mut p = line.trim().split(',');
+            let id = p.next()?.parse::<isize>().ok()?;
+            let left = p.next()?.parse::<i32>().ok()?;
+            let top = p.next()?.parse::<i32>().ok()?;
+            let right = p.next()?.parse::<i32>().ok()?;
+            let bottom = p.next()?.parse::<i32>().ok()?;
+            Some(WindowRect { id, left, top, right, bottom })
+        })
+        .collect()
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn poll_unix_windows_once() -> Vec<WindowRect> {
+    let Ok(out) = std::process::Command::new("wmctrl").args(["-lG"]).output() else {
+        return Vec::new();
+    };
+    let text = String::from_utf8_lossy(&out.stdout);
+    text.lines()
+        .filter_map(|line| {
+            if line.to_lowercase().contains("diypets") {
+                return None;
+            }
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() < 6 {
+                return None;
+            }
+            let id = isize::from_str_radix(parts[0].trim_start_matches("0x"), 16).ok()?;
+            let left = parts[2].parse::<i32>().ok()?;
+            let top = parts[3].parse::<i32>().ok()?;
+            let w = parts[4].parse::<i32>().ok()?;
+            let h = parts[5].parse::<i32>().ok()?;
+            if w < 80 || h < 40 {
+                return None;
+            }
+            Some(WindowRect { id, left, top, right: left + w, bottom: top + h })
+        })
+        .collect()
+}
+
+/// Start a lightweight background thread (300ms) on macOS/Linux to cache desktop window ledges.
+#[cfg(not(windows))]
+pub fn start_unix_window_poller() {
+    let _ = unix_windows_store();
+    std::thread::spawn(|| loop {
+        let rects = poll_unix_windows_once();
+        if let Ok(mut guard) = unix_windows_store().lock() {
+            *guard = rects;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(300));
+    });
+}
+
+#[cfg(windows)]
+pub fn start_unix_window_poller() {}
+
+#[cfg(not(windows))]
+pub fn find_unix_window_under_point(
+    x: i32,
+    y: i32,
+    monitors: &[(i32, i32, i32, i32)],
+) -> Option<WindowRect> {
+    let guard = unix_windows_store().lock().ok()?;
+    pick_window_under_point(&guard, x, y, monitors)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pick_window_under_point_skips_fullscreen_and_selects_topmost() {
+        let monitors = [(0, 0, 1920, 1080)];
+        let windows = [
+            WindowRect { id: 1, left: 0, top: 0, right: 1920, bottom: 1080 },
+            WindowRect { id: 2, left: 200, top: 300, right: 900, bottom: 700 },
+            WindowRect { id: 3, left: 100, top: 250, right: 950, bottom: 800 },
+        ];
+        let hit = pick_window_under_point(&windows, 400, 302, &monitors).unwrap();
+        assert_eq!(hit.id, 2);
+        assert_eq!(pick_window_under_point(&windows, 50, 50, &monitors), None);
+    }
+}
