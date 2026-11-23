@@ -260,6 +260,27 @@ fn parse_archetype_hint(raw: Option<&str>) -> Option<crate::studio_model::Archet
     }
 }
 
+/// Reject dangerous SVG constructs (OWASP SVG security: no scripts, foreignObject, or external file URIs).
+pub fn validate_safe_svg(svg: &str) -> Result<(), String> {
+    let low = svg.to_ascii_lowercase();
+    for forbidden in [
+        "<script",
+        "<foreignobject",
+        "javascript:",
+        "file://",
+        "onload=",
+        "onerror=",
+    ] {
+        if low.contains(forbidden) {
+            return Err(format!("Rejected unsafe SVG construct: {forbidden}"));
+        }
+    }
+    if !low.contains("<svg") || !low.contains("</svg>") {
+        return Err("Input does not contain a valid <svg>...</svg> document".to_string());
+    }
+    Ok(())
+}
+
 pub fn execute_create_pet_from_svg(
     args: &serde_json::Value,
     tx: Option<&Sender<AgentCommand>>,
@@ -286,6 +307,8 @@ pub fn execute_create_pet_from_svg(
     } else {
         return Err("Provide either `svg` (inline 128x128 SVG markup) or `svg_path`".to_string());
     };
+
+    validate_safe_svg(&svg_text)?;
 
     let display_name = args
         .get("name")
@@ -343,10 +366,17 @@ pub fn execute_create_pet_from_svg(
         }
     }
 
-    Ok(format!(
-        "Created & rigged DIYPets mascot `{pack_id}` at {}{spawn_note}",
-        pack_dir.display()
-    ))
+    let part_names: Vec<&str> = project.parts.iter().map(|p| p.name.as_str()).collect();
+    let summary = serde_json::json!({
+        "pack_id": pack_id,
+        "name": display_name,
+        "archetype": project.archetype.label(),
+        "rigged_parts": part_names,
+        "pack_dir": pack_dir.display().to_string(),
+        "spawned": should_spawn,
+        "note": spawn_note.trim(),
+    });
+    Ok(summary.to_string())
 }
 
 fn handle_mcp_jsonrpc(body: &str, tx: &Sender<AgentCommand>, active_herd: &[String]) -> String {
@@ -1124,5 +1154,14 @@ mod tests {
         let pack_dir = crate::settings::user_packs_dir().join("test_mcp_crab_unit");
         assert!(pack_dir.join("deskpet.xml").is_file());
         let _ = std::fs::remove_dir_all(&pack_dir);
+    }
+
+    #[test]
+    fn rejects_unsafe_script_svg() {
+        let bad = r#"<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>"#;
+        assert!(validate_safe_svg(bad).is_err());
+        let ok =
+            r#"<svg xmlns="http://www.w3.org/2000/svg"><circle cx="64" cy="64" r="20"/></svg>"#;
+        assert!(validate_safe_svg(ok).is_ok());
     }
 }

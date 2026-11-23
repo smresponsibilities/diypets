@@ -14,7 +14,10 @@ const HOP_COOLDOWN: Duration = Duration::from_millis(240);
 const CPU_POLL_INTERVAL: Duration = Duration::from_millis(1000);
 const INPUT_POLL_INTERVAL: Duration = Duration::from_millis(55);
 const SPIKE_WARMUP_THRESHOLD: f32 = 0.70;
-const SPIKE_ALERT_THRESHOLD: f32 = 0.85;
+const SPIKE_ALERT_THRESHOLD: f32 = 0.82;
+const SPIKE_RELEASE_THRESHOLD: f32 = 0.65;
+const SPIKE_SUSTAIN_TICKS: u8 = 3;
+const RAM_ALERT_THRESHOLD: f32 = 0.92;
 const SPIKE_ALERT_COOLDOWN: Duration = Duration::from_secs(25);
 
 #[derive(Debug, Clone, PartialEq)]
@@ -82,17 +85,58 @@ pub fn pick_top_culprit(deltas: &[(String, u64)]) -> Option<String> {
         .map(|(clean, _)| clean)
 }
 
+/// Native zero-crate physical RAM utilization sampler (`0.0..=1.0`).
+fn sample_ram_usage_fraction() -> Option<f32> {
+    #[cfg(windows)]
+    {
+        use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+        let mut status = MEMORYSTATUSEX {
+            dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32,
+            ..Default::default()
+        };
+        if unsafe { GlobalMemoryStatusEx(&mut status) }.is_ok() {
+            return Some((status.dwMemoryLoad as f32 / 100.0).clamp(0.0, 1.0));
+        }
+        None
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let txt = std::fs::read_to_string("/proc/meminfo").ok()?;
+        let mut total = 0u64;
+        let mut avail = 0u64;
+        for line in txt.lines() {
+            if let Some(rest) = line.strip_prefix("MemTotal:") {
+                total = rest.split_whitespace().next()?.parse().ok()?;
+            } else if let Some(rest) = line.strip_prefix("MemAvailable:") {
+                avail = rest.split_whitespace().next()?.parse().ok()?;
+            }
+        }
+        if total == 0 {
+            return None;
+        }
+        Some((total.saturating_sub(avail) as f32 / total as f32).clamp(0.0, 1.0))
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
+    {
+        None
+    }
+}
+
 #[derive(Debug, Default)]
 struct ProcessRadar {
     #[cfg(any(windows, target_os = "linux"))]
     prev_times: HashMap<u32, u64>,
     last_alert: Option<Instant>,
+    sustained_high_ticks: u8,
+    hysteresis_armed: bool,
 }
 
 impl ProcessRadar {
     fn reset(&mut self) {
         #[cfg(any(windows, target_os = "linux"))]
         self.prev_times.clear();
+        self.sustained_high_ticks = 0;
+        self.hysteresis_armed = true;
     }
 
     fn sample_top_process(&mut self) -> Option<String> {
@@ -233,24 +277,48 @@ impl ProcessRadar {
     }
 
     fn maybe_alert(&mut self, now: Instant, cpu_fraction: f32) -> Option<String> {
-        if cpu_fraction < SPIKE_WARMUP_THRESHOLD {
-            self.reset();
-            return None;
+        // Schmitt-trigger hysteresis: re-arm only once CPU drops cleanly below SPIKE_RELEASE_THRESHOLD
+        if cpu_fraction < SPIKE_RELEASE_THRESHOLD {
+            self.hysteresis_armed = true;
+            self.sustained_high_ticks = 0;
         }
-        let top = self.sample_top_process();
-        if cpu_fraction < SPIKE_ALERT_THRESHOLD {
-            return None;
-        }
+
         let ready = self
             .last_alert
             .is_none_or(|prev| now.saturating_duration_since(prev) >= SPIKE_ALERT_COOLDOWN);
-        if !ready {
-            return None;
+
+        if cpu_fraction >= SPIKE_WARMUP_THRESHOLD {
+            let top = self.sample_top_process();
+            if cpu_fraction >= SPIKE_ALERT_THRESHOLD {
+                self.sustained_high_ticks = self.sustained_high_ticks.saturating_add(1);
+                if self.sustained_high_ticks >= SPIKE_SUSTAIN_TICKS
+                    && self.hysteresis_armed
+                    && ready
+                    && let Some(culprit) = top
+                {
+                    self.last_alert = Some(now);
+                    self.hysteresis_armed = false;
+                    self.sustained_high_ticks = 0;
+                    let pct = (cpu_fraction * 100.0).round().clamp(0.0, 100.0) as u8;
+                    return Some(format!("CPU {pct}%: {culprit}"));
+                }
+            } else {
+                self.sustained_high_ticks = 0;
+            }
+        } else {
+            self.reset();
         }
-        let culprit = top?;
-        self.last_alert = Some(now);
-        let pct = (cpu_fraction * 100.0).round().clamp(0.0, 100.0) as u8;
-        Some(format!("CPU {pct}%: {culprit}"))
+
+        // Secondary ambient check: physical RAM exhaustion (>= 92%)
+        if ready
+            && let Some(ram) = sample_ram_usage_fraction()
+            && ram >= RAM_ALERT_THRESHOLD
+        {
+            self.last_alert = Some(now);
+            let pct = (ram * 100.0).round().clamp(0.0, 100.0) as u8;
+            return Some(format!("RAM {pct}% full!"));
+        }
+        None
     }
 }
 
@@ -433,7 +501,10 @@ impl ReactiveCompanion {
     pub fn new() -> Self {
         Self {
             cpu_sampler: CpuSampler::default(),
-            process_radar: ProcessRadar::default(),
+            process_radar: ProcessRadar {
+                hysteresis_armed: true,
+                ..Default::default()
+            },
             input_poller: InputCadencePoller::default(),
             tap_times: VecDeque::with_capacity(32),
             last_hop: None,
@@ -588,5 +659,18 @@ mod tests {
         ];
         assert_eq!(pick_top_culprit(&deltas), Some("cargo".to_string()));
         assert_eq!(sanitize_process_label("System"), None);
+    }
+
+    #[test]
+    fn process_radar_requires_sustained_ticks_before_alerting() {
+        let mut r = ProcessRadar {
+            hysteresis_armed: true,
+            ..Default::default()
+        };
+        let t0 = Instant::now();
+        assert_eq!(r.sustained_high_ticks, 0);
+        // Below warmup resets counter cleanly
+        assert_eq!(r.maybe_alert(t0, 0.20), None);
+        assert!(r.hysteresis_armed);
     }
 }

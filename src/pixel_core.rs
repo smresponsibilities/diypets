@@ -335,3 +335,79 @@ mod tests {
         }
     }
 }
+/// Convert sRGB `[u8; 3]` to perceptual Oklab `(L, a, b)` (Bjorn Ottosson, 2020)
+/// to preserve warm/cool shading and hue accuracy on pixel-art sprites.
+pub fn rgb_to_oklab(rgb: [u8; 3]) -> (f32, f32, f32) {
+    let to_lin = |c: u8| {
+        let s = c as f32 / 255.0;
+        if s <= 0.04045 {
+            s / 12.92
+        } else {
+            ((s + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    let r = to_lin(rgb[0]);
+    let g = to_lin(rgb[1]);
+    let b = to_lin(rgb[2]);
+
+    let l = (0.41222147 * r + 0.53633255 * g + 0.051445995 * b).cbrt();
+    let m = (0.2119035 * r + 0.6806995 * g + 0.10739696 * b).cbrt();
+    let s = (0.08830246 * r + 0.28171884 * g + 0.6299787 * b).cbrt();
+
+    (
+        0.21045426 * l + 0.7936178 * m - 0.004072047 * s,
+        1.9779985 * l - 2.4285922 * m + 0.4505937 * s,
+        0.025904037 * l + 0.78277177 * m - 0.80867577 * s,
+    )
+}
+
+/// Squared perceptual distance in Oklab space.
+pub fn oklab_dist_sq(a: [u8; 3], b: [u8; 3]) -> f32 {
+    let (l1, a1, b1) = rgb_to_oklab(a);
+    let (l2, a2, b2) = rgb_to_oklab(b);
+    let dl = l1 - l2;
+    let da = a1 - a2;
+    let db = b1 - b2;
+    dl * dl + da * da + db * db
+}
+
+#[cfg(test)]
+mod oklab_adversarial_tests {
+    use super::*;
+
+    #[test]
+    fn pixel_core_survives_weird_adversarial_dimensions_and_noise() {
+        let weird_dims = [(1u32, 1u32), (1, 64), (64, 1), (3, 7), (128, 128)];
+        for (w, h) in weird_dims {
+            let mut img = RgbaImage::new(w, h);
+            let mut seed = 0x5EED_CAFEu32 ^ (w * 31 + h);
+            for y in 0..h {
+                for x in 0..w {
+                    seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                    let a = if (seed & 3) == 0 { 0 } else { 255 };
+                    img.put_pixel(
+                        x,
+                        y,
+                        Rgba([
+                            (seed & 255) as u8,
+                            ((seed >> 8) & 255) as u8,
+                            ((seed >> 16) & 255) as u8,
+                            a,
+                        ]),
+                    );
+                }
+            }
+            let snapped = snap_to_native_grid_and_back(&img, PixelGridSize::G32);
+            assert_eq!(snapped.dimensions(), (w, h));
+            let quant = quantize_to_palette(&img, IndexedPalette::Pico8);
+            assert_eq!(quant.dimensions(), (w, h));
+            let dith =
+                apply_bayer_dither(&img, IndexedPalette::GameBoy, BayerMatrixSize::B4x4, 32.0);
+            assert_eq!(dith.dimensions(), (w, h));
+            let clean = cleanup_pixel_perfect_l_doubles(&img);
+            assert_eq!(clean.dimensions(), (w, h));
+        }
+        assert!(oklab_dist_sq([120, 80, 200], [120, 80, 200]) < 1e-6);
+        assert!(oklab_dist_sq([0, 0, 0], [255, 255, 255]) > 0.9);
+    }
+}
