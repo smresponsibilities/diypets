@@ -524,13 +524,13 @@
     </div>
     <div class="dex-body">
       <div class="gif-maker-grid">
-        <div class="gif-preview-stage">
+        <div class="gif-preview-stage" id="gif-drop-zone" title="Drag &amp; drop any PNG or SVG here">
           <canvas id="gif-preview-canvas" width="128" height="128"></canvas>
         </div>
         <div>
-          <div class="gif-controls" style="margin-bottom:10px;">
+          <div class="gif-controls" style="margin-bottom:8px;">
             <label class="slider-chip">MASCOT
-              <select id="gif-pet-select" class="ctrl-input" style="width:136px;padding:3px 6px;" onchange="gifCustomImg=null;">
+              <select id="gif-pet-select" class="ctrl-input" style="width:132px;padding:3px 6px;" onchange="syncGifMascotSelection()">
                 <option value="highland_cow">Highland Cow</option>
                 <option value="dog">Dog</option>
                 <option value="polar_bear">Polar Bear</option>
@@ -539,7 +539,7 @@
               </select>
             </label>
             <label class="slider-chip">JUICE FX
-              <select id="gif-fx-select" class="ctrl-input" style="width:128px;padding:3px 6px;">
+              <select id="gif-fx-select" class="ctrl-input" style="width:124px;padding:3px 6px;">
                 <option value="walk">Walk Loop</option>
                 <option value="bounce">Auto-Bounce</option>
                 <option value="breathe">Idle Breathe</option>
@@ -548,21 +548,31 @@
               </select>
             </label>
             <label class="slider-chip">BG
-              <select id="gif-bg-select" class="ctrl-input" style="width:126px;padding:3px 6px;">
+              <select id="gif-bg-select" class="ctrl-input" style="width:122px;padding:3px 6px;">
                 <option value="transparent">Transparent</option>
                 <option value="card">README Card</option>
               </select>
             </label>
-            <label class="slider-chip">FPS <input id="gif-fps" type="range" min="4" max="14" value="8" /></label>
+            <label class="slider-chip">SIZE
+              <select id="gif-size-select" class="ctrl-input" style="width:78px;padding:3px 6px;">
+                <option value="64">64px</option>
+                <option value="128" selected>128px</option>
+                <option value="256">256px</option>
+              </select>
+            </label>
+            <label class="slider-chip">FPS <span id="gif-fps-val">8</span> <input id="gif-fps" type="range" min="4" max="14" value="8" oninput="updateGifPreviewFps()" /></label>
           </div>
           <div class="gif-controls">
+            <input id="gif-caption" class="ctrl-input" type="text" value="Highland Cow" maxlength="18" placeholder="Card label" style="width:124px;" />
+            <label class="slider-chip"><input id="gif-clean-bg" type="checkbox" checked onchange="refreshCleanedCustomImg()" /> CLEAN BG/FRINGE</label>
             <label class="ctrl-btn" style="display:inline-flex;align-items:center;gap:6px;">
               UPLOAD PNG / SVG
               <input id="gif-upload" type="file" accept="image/png,image/svg+xml,image/webp,image/jpeg" style="display:none;" onchange="handleGifUpload(event)" />
             </label>
             <button class="ctrl-btn primary" onclick="exportMascotGif()">EXPORT .GIF</button>
+            <button class="ctrl-btn" id="gif-clear-btn" style="display:none;" onclick="syncGifMascotSelection()">USE BUILT-IN</button>
           </div>
-          <div class="hint-strip" style="margin-top:8px;">Drop any custom PNG/SVG or pick a built-in mascot to export a crisp transparent GIF for GitHub READMEs, Discord, or Slack &mdash; 100% in your browser.</div>
+          <div class="hint-strip" style="margin-top:8px;">Drag &amp; drop any PNG/SVG or pick a built-in mascot &mdash; auto-cleans grey edges, animates Walk Loop on single sprites, and exports lossless GIF89a locally.</div>
         </div>
       </div>
     </div>
@@ -641,11 +651,14 @@ let climbCards = true;
 
 // Transparent OBS / Twitch Streamer Browser Source Mode (?overlay=1&pets=highland_cow,goat&size=96)
 const URL_PARAMS = new URLSearchParams(window.location.search);
+const OVERLAY_PETS = (URL_PARAMS.get("pets") || "").split(",").map(s => s.trim()).filter(id => PACKS.some(pk => pk.id === id));
 if (URL_PARAMS.get("overlay") === "1") {
   document.documentElement.setAttribute("data-overlay", "1");
   climbCards = false;
   const sz = Number(URL_PARAMS.get("size"));
   if (sz >= 48 && sz <= 160) petSize = sz;
+  const sp = Number(URL_PARAMS.get("speed"));
+  if (sp >= 1 && sp <= 10) petSpeed = sp;
 }
 let mouseX = window.innerWidth * 0.5;
 let pets = [];
@@ -715,11 +728,21 @@ function removePet(id) {
   if (idx !== -1) removeSlot(idx);
 }
 function resetHerd() {
-  showToast("Herd reset");
   pets = [];
+  if (typeof OVERLAY_PETS !== 'undefined' && OVERLAY_PETS.length > 0) {
+    OVERLAY_PETS.slice(0, 8).forEach((id, i) => addPet(id, Math.max(40, Math.min(canvas.width - petSize - 40, 110 + i * 170))));
+    return;
+  }
+  showToast("Herd reset");
   addPet("highland_cow", 140);
   addPet("dog", Math.min(canvas.width - 220, 400));
   addPet("stegosaurus", Math.min(canvas.width - 140, 660));
+}
+function copyObsUrl() {
+  const ids = pets.map(p => p.id).join(",") || "highland_cow,goat";
+  const url = window.location.origin + window.location.pathname + "?overlay=1&pets=" + encodeURIComponent(ids) + "&size=" + petSize + "&speed=" + petSpeed;
+  navigator.clipboard.writeText(url);
+  showToast("Copied OBS Browser Source URL!");
 }
 function dropBall() {
   showToast("Dropped bouncy ball");
@@ -758,7 +781,7 @@ function getCardLedges() {
   document.querySelectorAll(".printed-project, .dex-panel, .install-box").forEach(el => {
     const r = el.getBoundingClientRect();
     if (r.top > 56 && r.top < canvas.height - 64 && r.width > 160) {
-      out.push({ left: r.left + 10, right: r.right - 10, top: r.top });
+      out.push({ left: r.left + 10, right: r.right - 10, top: r.top, bottom: r.bottom });
     }
   });
   return out;
@@ -818,6 +841,7 @@ const rosterEl = document.getElementById("roster-grid");
 const heroStrip = document.getElementById("hero-sprites");
 PACKS.forEach((pk, idx) => {
   const img = new Image();
+  img.crossOrigin = "anonymous";
   img.src = `sprites/${pk.id}.png`;
   sprites[pk.id] = img;
 
@@ -1222,234 +1246,7 @@ function loop(now) {
 }
 requestAnimationFrame(loop);
 
-// =========================================================================
-// Zero-Install Browser Mascot GIF89a Maker (Inversion 3 — Pure Client JS)
-// =========================================================================
-let gifCustomImg = null;
-let gifPreviewTick = 0;
-
-function handleGifUpload(ev) {
-  const file = ev.target.files && ev.target.files[0];
-  if (!file) return;
-  const url = URL.createObjectURL(file);
-  const img = new Image();
-  img.onload = () => {
-    gifCustomImg = img;
-    URL.revokeObjectURL(url);
-    showToast("Loaded custom sprite: " + file.name);
-  };
-  img.src = url;
-}
-
-function drawGifMakerFrame(targetCtx, w, h, frameIdx, totalFrames) {
-  const petId = document.getElementById("gif-pet-select").value;
-  const fx = document.getElementById("gif-fx-select").value;
-  const bgMode = document.getElementById("gif-bg-select").value;
-  targetCtx.clearRect(0, 0, w, h);
-  targetCtx.imageSmoothingEnabled = false;
-
-  if (bgMode === "card") {
-    targetCtx.fillStyle = "#0d1117";
-    targetCtx.fillRect(0, 0, w, h);
-    targetCtx.strokeStyle = "#3b82f6";
-    targetCtx.lineWidth = 3;
-    targetCtx.strokeRect(2, 2, w - 4, h - 4);
-    targetCtx.fillStyle = "#7ee8fa";
-    targetCtx.font = "bold 9px monospace";
-    targetCtx.fillText("diypets", 7, 13);
-  }
-
-  const phase = (frameIdx / totalFrames) * Math.PI * 2;
-  let sx = 1, sy = 1, dy = 0, rot = 0;
-  if (fx === "bounce") {
-    dy = -Math.round(Math.abs(Math.sin(phase)) * 10);
-    sy = 1 + Math.sin(phase * 2) * 0.06;
-    sx = 1 - Math.sin(phase * 2) * 0.05;
-  } else if (fx === "breathe") {
-    sy = 1 + Math.sin(phase) * 0.05;
-    sx = 1 - Math.sin(phase) * 0.03;
-  } else if (fx === "hop") {
-    const u = (frameIdx % totalFrames) / totalFrames;
-    if (u < 0.25) { sx = 1.14; sy = 0.86; }
-    else if (u < 0.65) { dy = -16; sx = 0.90; sy = 1.12; }
-    else { sx = 1.10; sy = 0.90; }
-  } else if (fx === "wave") {
-    rot = Math.sin(phase) * 0.09;
-    dy = -Math.round(Math.abs(Math.sin(phase)) * 3);
-  }
-
-  const pad = bgMode === "card" ? 16 : 8;
-  const box = w - pad * 2;
-  targetCtx.save();
-  targetCtx.translate(w / 2, h - pad + dy);
-  targetCtx.rotate(rot);
-  targetCtx.scale(sx, sy);
-
-  if (gifCustomImg) {
-    const ratio = Math.min(box / gifCustomImg.width, box / gifCustomImg.height);
-    const dw = Math.max(1, Math.round(gifCustomImg.width * ratio));
-    const dh = Math.max(1, Math.round(gifCustomImg.height * ratio));
-    targetCtx.drawImage(gifCustomImg, -dw / 2, -dh, dw, dh);
-  } else if (sprites[petId] && sprites[petId].complete && sprites[petId].naturalWidth > 0) {
-    const sp = sprites[petId];
-    const fw = sp.naturalWidth / 9;
-    const fh = sp.naturalHeight;
-    const fCol = fx === "walk" ? (1 + (frameIdx % 4)) : 0;
-    targetCtx.drawImage(sp, fCol * fw, 0, fw, fh, -box / 2, -box, box, box);
-  }
-  targetCtx.restore();
-}
-
-function lzwEncodeGif(indices, minCodeSize) {
-  const clearCode = 1 << minCodeSize;
-  const eoiCode = clearCode + 1;
-  let codeSize = minCodeSize + 1;
-  let nextCode = eoiCode + 1;
-  let dict = new Map();
-  const out = [];
-  let bitBuf = 0, bitCount = 0;
-
-  function emit(code) {
-    bitBuf |= (code << bitCount);
-    bitCount += codeSize;
-    while (bitCount >= 8) {
-      out.push(bitBuf & 0xff);
-      bitBuf >>= 8;
-      bitCount -= 8;
-    }
-  }
-
-  emit(clearCode);
-  let prefix = indices[0];
-  for (let i = 1; i < indices.length; i++) {
-    const k = indices[i];
-    const key = (prefix << 8) | k;
-    if (dict.has(key)) {
-      prefix = dict.get(key);
-    } else {
-      emit(prefix);
-      if (nextCode < 4096) {
-        dict.set(key, nextCode++);
-        if (nextCode === (1 << codeSize) && codeSize < 12) codeSize++;
-      } else {
-        emit(clearCode);
-        dict.clear();
-        codeSize = minCodeSize + 1;
-        nextCode = eoiCode + 1;
-      }
-      prefix = k;
-    }
-  }
-  emit(prefix);
-  emit(eoiCode);
-  if (bitCount > 0) out.push(bitBuf & 0xff);
-  return out;
-}
-
-function encodeGif89a(framesRgba, w, h, delayCs, transparent) {
-  const palette = [[0, 0, 0]];
-  const colorMap = new Map();
-  const indexedFrames = [];
-
-  for (const rgba of framesRgba) {
-    const idxBuf = new Uint8Array(w * h);
-    for (let p = 0; p < w * h; p++) {
-      const a = rgba[p * 4 + 3];
-      if (transparent && a < 96) {
-        idxBuf[p] = 0;
-        continue;
-      }
-      const r = rgba[p * 4], g = rgba[p * 4 + 1], b = rgba[p * 4 + 2];
-      const key = (r << 16) | (g << 8) | b;
-      let ci = colorMap.get(key);
-      if (ci === undefined) {
-        if (palette.length < 256) {
-          ci = palette.length;
-          palette.push([r, g, b]);
-          colorMap.set(key, ci);
-        } else {
-          let best = 1, bestD = 1e9;
-          for (let j = 1; j < palette.length; j++) {
-            const dr = r - palette[j][0], dg = g - palette[j][1], db = b - palette[j][2];
-            const d = dr * dr + dg * dg + db * db;
-            if (d < bestD) { bestD = d; best = j; }
-          }
-          ci = best;
-        }
-      }
-      idxBuf[p] = ci;
-    }
-    indexedFrames.push(idxBuf);
-  }
-
-  const bytes = [];
-  const pushStr = s => { for (let i = 0; i < s.length; i++) bytes.push(s.charCodeAt(i)); };
-  const pushU16 = v => { bytes.push(v & 0xff, (v >> 8) & 0xff); };
-
-  pushStr("GIF89a");
-  pushU16(w); pushU16(h);
-  bytes.push(0xF7, 0x00, 0x00);
-  for (let i = 0; i < 256; i++) {
-    const c = palette[i] || [0, 0, 0];
-    bytes.push(c[0], c[1], c[2]);
-  }
-  bytes.push(0x21, 0xFF, 0x0B);
-  pushStr("NETSCAPE2.0");
-  bytes.push(0x03, 0x01, 0x00, 0x00, 0x00);
-
-  for (const idxBuf of indexedFrames) {
-    bytes.push(0x21, 0xF9, 0x04, transparent ? 0x09 : 0x08);
-    pushU16(delayCs);
-    bytes.push(0x00, 0x00);
-    bytes.push(0x2C);
-    pushU16(0); pushU16(0); pushU16(w); pushU16(h);
-    bytes.push(0x00);
-    bytes.push(8);
-    const lzw = lzwEncodeGif(idxBuf, 8);
-    for (let i = 0; i < lzw.length; i += 255) {
-      const len = Math.min(255, lzw.length - i);
-      bytes.push(len);
-      for (let j = 0; j < len; j++) bytes.push(lzw[i + j]);
-    }
-    bytes.push(0x00);
-  }
-  bytes.push(0x3B);
-  return new Uint8Array(bytes);
-}
-
-function exportMascotGif() {
-  const size = 128;
-  const off = document.createElement("canvas");
-  off.width = size; off.height = size;
-  const octx = off.getContext("2d", { willReadFrequently: true });
-  const fx = document.getElementById("gif-fx-select").value;
-  const petId = document.getElementById("gif-pet-select").value;
-  const transparent = document.getElementById("gif-bg-select").value === "transparent";
-  const fps = Math.max(4, Math.min(14, Number(document.getElementById("gif-fps").value) || 8));
-  const totalFrames = fx === "walk" ? 4 : 8;
-  const frames = [];
-  for (let i = 0; i < totalFrames; i++) {
-    drawGifMakerFrame(octx, size, size, i, totalFrames);
-    frames.push(octx.getImageData(0, 0, size, size).data);
-  }
-  const delayCs = Math.max(4, Math.round(100 / fps));
-  const gifBytes = encodeGif89a(frames, size, size, delayCs, transparent);
-  const blob = new Blob([gifBytes], { type: "image/gif" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = `diypets-${gifCustomImg ? "custom" : petId}-${fx}.gif`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); document.getElementById("gif-status").textContent = `EXPORTED ${(gifBytes.length / 1024).toFixed(1)} KB GIF`;
-  showToast("Downloaded lossless GIF (" + (gifBytes.length / 1024).toFixed(1) + " KB)");
-}
-
-setInterval(() => {
-  const prevC = document.getElementById("gif-preview-canvas");
-  if (!prevC) return;
-  const fx = document.getElementById("gif-fx-select").value;
-  const total = fx === "walk" ? 4 : 8;
-  gifPreviewTick = (gifPreviewTick + 1) % total;
-  drawGifMakerFrame(prevC.getContext("2d"), prevC.width, prevC.height, gifPreviewTick, total);
-}, 140);
-
 </script>
+<script src="gif_maker.js"></script>
 </body>
 </html>
