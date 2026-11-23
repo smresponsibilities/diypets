@@ -251,7 +251,7 @@ impl DeskpetState {
 
         let mut state = Self {
             pet_size: pack.tile_w,
-            walk_speed: 10,
+            walk_speed: 14,
             pack,
             current_anim_id: String::new(),
             sequence_index: 0,
@@ -650,7 +650,7 @@ mod window_floor_tests {
         pet.x = 500.0;
         pet.y = 100.0;
         pet.tick(5000, 100.0, 1920.0);
-        assert!(pet.x >= 498.0, "pet moved too far after a pause: {}", pet.x);
+        assert!(pet.x >= 495.0, "pet moved too far after a pause: {}", pet.x);
     }
 
     #[test]

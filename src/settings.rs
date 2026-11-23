@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 pub const PET_SIZE_MIN: u32 = 32;
 pub const PET_SIZE_MAX: u32 = 256;
 pub const WALK_SPEED_MIN: i32 = 1;
-pub const WALK_SPEED_MAX: i32 = 20;
+pub const WALK_SPEED_MAX: i32 = 30;
 pub const MAX_ACTIVE_PETS: usize = 8;
 
 fn is_safe_pack_id(id: &str) -> bool {
@@ -57,8 +57,8 @@ impl Default for Settings {
             pet_pack: "highland_cow".to_string(),
             extra_pets: Vec::new(),
             herd_overrides: Vec::new(),
-            pet_size: 128,
-            walk_speed: 5,
+            pet_size: 96,
+            walk_speed: 14,
             always_on_top: true,
             climb_windows: true,
             click_through: true,
@@ -458,7 +458,7 @@ mod tests {
         Settings::default().save(&path).expect("save settings");
         let text = fs::read_to_string(&path).unwrap();
         assert!(text.starts_with('#'));
-        assert!(text.contains("pet_size = 128"));
+        assert!(text.contains(&format!("pet_size = {}", Settings::default().pet_size)));
     }
 
     #[test]

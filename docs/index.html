@@ -478,7 +478,7 @@
         <input class="ctrl-input" id="bubble-input" type="text" value="Build passed!" maxlength="30" onkeydown="if(event.key==='Enter')sayBubble()" />
         <button class="ctrl-btn" onclick="sayBubble()">SAY</button>
         <label class="slider-chip">SIZE <input type="range" min="56" max="128" value="84" oninput="petSize=Number(this.value)" /></label>
-        <label class="slider-chip">SPEED <input type="range" min="1" max="10" value="4" oninput="petSpeed=Number(this.value)" /></label>
+        <label class="slider-chip">SPEED <input type="range" min="1" max="10" value="6" oninput="petSpeed=Number(this.value)" /></label>
         <button class="ctrl-btn" onclick="resetHerd()">RESET</button>
       </div>
     </div>
@@ -551,7 +551,7 @@ const PACKS = [
 
 const sprites = {};
 let petSize = 84;
-let petSpeed = 4;
+let petSpeed = 6;
 let followCursor = false;
 let climbCards = true;
 let mouseX = window.innerWidth * 0.5;
@@ -626,7 +626,7 @@ function dropBall() {
 }
 function leapOntoCard(p, card) {
   const targetX = Math.max(card.left + 18, Math.min(card.right - 18 - petSize, p.x));
-  const rise = Math.max(40, (p.y + petSize) - card.top + 36);
+  const rise = Math.max(40, Math.min(200, (p.y + petSize) - card.top + 28));
   const vy = -Math.sqrt(2 * 980 * rise);
   const flightTime = (-vy + Math.sqrt(Math.max(0, vy * vy + 2 * 980 * (rise - 36)))) / 980;
   p.vx = (targetX - p.x) / Math.max(0.25, flightTime);
@@ -942,8 +942,8 @@ function loop(now) {
             }
             // Autonomously leap up onto a card ledge above (works at any monitor height!)
             if (climbCards && !activeCard && now > p.hopAt && ledges.length > 0) {
-              p.hopAt = now + 5500 + Math.random() * 6000;
-              const cand = ledges.find(lg => lg.top < p.y + petSize - 40 && lg.top > 72);
+              p.hopAt = now + 12000 + Math.random() * 9000;
+              const cand = ledges.find(lg => { const rise = (p.y + petSize) - lg.top; return rise >= 36 && rise <= 175; });
               if (cand) leapOntoCard(p, cand);
             }
           }
@@ -982,7 +982,15 @@ function loop(now) {
       const drawY = Math.round(p.y + (petSize - dh));
 
       ctx.save();
-      if (p.dir > 0) {
+      if (p.climbing !== 0) {
+        // Rotate 90 deg so feet actually grip the left/right screen wall while climbing!
+        const cx = drawX + dw * 0.5;
+        const cy = drawY + dh * 0.5;
+        ctx.translate(cx, cy);
+        ctx.rotate(p.climbing < 0 ? Math.PI * 0.5 : -Math.PI * 0.5);
+        if (p.climbing > 0) ctx.scale(-1, 1);
+        ctx.drawImage(img, p.frame * fw, 0, fw, fh, -dw * 0.5, -dh * 0.5, dw, dh);
+      } else if (p.dir > 0) {
         ctx.translate(drawX + dw, drawY);
         ctx.scale(-1, 1);
         ctx.drawImage(img, p.frame * fw, 0, fw, fh, 0, 0, dw, dh);
