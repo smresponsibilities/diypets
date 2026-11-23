@@ -595,7 +595,7 @@ function addPet(id, px = null) {
     id, x, y: floorY - 75 - (pets.length % 3) * 24,
     vx: (pets.length % 2 === 0 ? 1 : -1) * (petSpeed * 22),
     vy: 0, dir: pets.length % 2 === 0 ? 1 : -1,
-    frame: pets.length % 4, frameT: 0,
+    frame: 1 + (pets.length % 4), frameT: 0,
     sqX: 1, sqY: 1, heartsUntil: 0, cooldown: 0,
     bubble: null, bubbleUntil: 0, airborne: true, climbing: 0, climbUntil: 0, climbCooldown: 0, idleUntil: 0, hopAt: performance.now() + 2200 + Math.random() * 3500
   });
@@ -733,7 +733,7 @@ PACKS.forEach((pk, idx) => {
   }
 
   img.onload = () => {
-    const fw = Math.floor(img.width / 4);
+    const fw = Math.floor(img.width / 5);
     const fh = img.height;
     const pCanvas = document.getElementById(`prev-${pk.id}`);
     if (pCanvas) {
@@ -966,7 +966,7 @@ function loop(now) {
     const isMoving = p.climbing !== 0 || Math.abs(p.vx) > 4;
     if (isMoving) {
       p.frameT += dt * (p.climbing !== 0 ? 5.5 : (petSpeed * 1.8));
-      if (p.frameT >= 1) { p.frame = (p.frame + 1) % 4; p.frameT = 0; }
+      if (p.frameT >= 1) { p.frame = (p.frame < 1 || p.frame >= 4) ? 1 : (p.frame + 1); p.frameT = 0; }
     } else {
       p.frame = 0;
       p.frameT = 0;
@@ -974,7 +974,7 @@ function loop(now) {
 
     const img = sprites[p.id];
     if (img && img.complete && img.width > 0) {
-      const fw = img.width / 4, fh = img.height;
+      const fw = img.width / 5, fh = img.height;
       const breath = (!p.airborne && Math.abs(p.vx) < 5) ? Math.sin(now * 0.004) * 0.02 : 0;
       const dw = petSize * (p.sqX - breath * 0.5);
       const dh = petSize * (p.sqY + breath);

@@ -498,7 +498,7 @@ impl DeskpetState {
             }
         } else {
             let step_divisor = (total_steps - 1.0).max(1.0);
-            let speed_mult = self.walk_speed as f32 / 10.0;
+            let speed_mult = self.walk_speed as f32 / 3.5;
             let x_vel = (self.anim_start_x
                 + (self.anim_end_x - self.anim_start_x) * step / step_divisor)
                 * speed_mult;
@@ -650,7 +650,7 @@ mod window_floor_tests {
         pet.x = 500.0;
         pet.y = 100.0;
         pet.tick(5000, 100.0, 1920.0);
-        assert!(pet.x >= 495.0, "pet moved too far after a pause: {}", pet.x);
+        assert!(pet.x >= 470.0, "pet moved too far after a pause: {}", pet.x);
     }
 
     #[test]

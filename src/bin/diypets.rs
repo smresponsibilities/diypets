@@ -1492,6 +1492,8 @@ impl DeskpetApp {
                         if matches!(pet.state.current_anim_id.as_str(), "2" | "12") {
                             pet.state.set_state(DeskpetStateId::Custom("1".to_string()));
                         }
+                    } else if matches!(pet.state.current_anim_id.as_str(), "1" | "8") {
+                        pet.state.set_state(DeskpetStateId::Custom("2".to_string()));
                     }
                 }
             }
