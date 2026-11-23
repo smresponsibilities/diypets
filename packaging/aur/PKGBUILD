@@ -1,0 +1,25 @@
+# Maintainer: Shivam Mahajan <https://github.com/smresponsibilities>
+pkgname=diypets-bin
+pkgver=0.4.1
+pkgrel=1
+pkgdesc='Lightweight (~7.8 MB RAM) Rust desktop mascot engine with 2D/SVG Studio and MCP server'
+arch=('x86_64')
+url='https://shivammahajan.com/diypets/'
+license=('MIT' 'Apache-2.0')
+depends=('gtk3' 'libayatana-appindicator' 'xdotool' 'libxcb' 'libxkbcommon')
+provides=('diypets')
+conflicts=('diypets')
+source=("https://github.com/smresponsibilities/diypets/releases/download/v0.4.1/diypets-x86_64-unknown-linux-gnu.tar.gz")
+sha256sums=('1c3c405e7ef0670d946837d590317e5c29d67b59162f57ed12b25268af270d67')
+
+package() {
+  cd "${srcdir}/diypets-x86_64-unknown-linux-gnu"
+  install -Dm755 diypets "${pkgdir}/usr/bin/diypets"
+  install -Dm755 diypets-settings "${pkgdir}/usr/bin/diypets-settings"
+  install -Dm755 diypets-creator "${pkgdir}/usr/bin/diypets-creator"
+  install -Dm644 catalog.json "${pkgdir}/usr/share/diypets/catalog.json"
+  cp -r assets "${pkgdir}/usr/share/diypets/assets"
+  cp -r catalog_icons "${pkgdir}/usr/share/diypets/catalog_icons"
+  install -Dm644 LICENSE-MIT "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE-MIT"
+  install -Dm644 LICENSE-APACHE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE-APACHE"
+}

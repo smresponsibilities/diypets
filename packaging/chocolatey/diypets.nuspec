@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>diypets</id>
+    <version>0.4.1</version>
+    <title>DIYPets</title>
+    <authors>Shivam Mahajan</authors>
+    <owners>smresponsibilities</owners>
+    <projectUrl>https://shivammahajan.com/diypets/</projectUrl>
+    <projectSourceUrl>https://github.com/smresponsibilities/diypets</projectSourceUrl>
+    <licenseUrl>https://github.com/smresponsibilities/diypets/blob/main/LICENSE-MIT</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <tags>desktop-pet mascot rust mcp shimeji esheep pixel-art claude cursor</tags>
+    <summary>Lightweight (~7.8 MB RAM) cross-platform Rust desktop mascot engine, 2D/SVG Studio, and MCP server.</summary>
+    <description>DIYPets is a lightweight cross-platform Rust desktop mascot engine with multi-pet herds (up to 8), window-ledge walking, a built-in 2D/SVG Pet Creator Studio, eSheep XML compatibility, 1-click Claude Code &amp; Cursor hooks, and a native stdio/HTTP MCP server.</description>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>

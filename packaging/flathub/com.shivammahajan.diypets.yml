@@ -1,0 +1,25 @@
+app-id: com.shivammahajan.diypets
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+command: diypets
+finish-args:
+  - --share=ipc
+  - --socket=x11
+  - --socket=wayland
+  - --device=dri
+  - --share=network
+  - --talk-name=org.kde.StatusNotifierWatcher
+modules:
+  - name: diypets
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 diypets-x86_64-unknown-linux-gnu/diypets /app/bin/diypets
+      - install -Dm755 diypets-x86_64-unknown-linux-gnu/diypets-settings /app/bin/diypets-settings
+      - install -Dm755 diypets-x86_64-unknown-linux-gnu/diypets-creator /app/bin/diypets-creator
+      - mkdir -p /app/share/diypets
+      - cp -r diypets-x86_64-unknown-linux-gnu/assets diypets-x86_64-unknown-linux-gnu/catalog_icons diypets-x86_64-unknown-linux-gnu/catalog.json /app/share/diypets/
+    sources:
+      - type: archive
+        url: https://github.com/smresponsibilities/diypets/releases/download/v0.4.1/diypets-x86_64-unknown-linux-gnu.tar.gz
+        sha256: 1c3c405e7ef0670d946837d590317e5c29d67b59162f57ed12b25268af270d67

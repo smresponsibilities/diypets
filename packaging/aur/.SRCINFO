@@ -1,0 +1,19 @@
+pkgbase = diypets-bin
+	pkgdesc = Lightweight (~7.8 MB RAM) Rust desktop mascot engine with 2D/SVG Studio and MCP server
+	pkgver = 0.4.1
+	pkgrel = 1
+	url = https://shivammahajan.com/diypets/
+	arch = x86_64
+	license = MIT
+	license = Apache-2.0
+	depends = gtk3
+	depends = libayatana-appindicator
+	depends = xdotool
+	depends = libxcb
+	depends = libxkbcommon
+	provides = diypets
+	conflicts = diypets
+	source = https://github.com/smresponsibilities/diypets/releases/download/v0.4.1/diypets-x86_64-unknown-linux-gnu.tar.gz
+	sha256sums = 1c3c405e7ef0670d946837d590317e5c29d67b59162f57ed12b25268af270d67
+
+pkgname = diypets-bin

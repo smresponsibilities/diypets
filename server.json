@@ -1,0 +1,20 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.smresponsibilities/diypets",
+  "description": "Lightweight (~7.8 MB RAM) cross-platform Rust desktop mascot engine with stdio/HTTP MCP tools to create rigged SVG pets, react to builds, speak, and manage pixel herds.",
+  "repository": {
+    "url": "https://github.com/smresponsibilities/diypets",
+    "source": "github"
+  },
+  "version": "0.4.1",
+  "packages": [
+    {
+      "registryType": "cargo",
+      "identifier": "diypets",
+      "version": "0.4.1",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}
