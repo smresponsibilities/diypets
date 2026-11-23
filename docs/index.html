@@ -31,7 +31,7 @@
   "url": "https://shivammahajan.com/diypets/",
   "downloadUrl": "https://github.com/smresponsibilities/diypets/releases/latest",
   "codeRepository": "https://github.com/smresponsibilities/diypets",
-  "softwareVersion": "0.3.1",
+  "softwareVersion": "<span class="diypets-ver-num">0.4.1</span>",
   "operatingSystem": "Windows, macOS, Linux",
   "applicationCategory": "DesktopEnhancementApplication",
   "license": "https://opensource.org/licenses/MIT",
@@ -433,7 +433,7 @@
     <div class="crumb">
       <a href="https://shivammahajan.com">SHIVAMMAHAJAN.COM</a>
       <span class="sep">/</span>
-      <span class="cur">DIYPETS v0.3.1</span>
+      <span class="cur">DIYPETS <span class="diypets-ver">v0.4.1</span></span>
     </div>
     <div class="top-actions">
       <button class="chip-btn" id="time-btn" onclick="cycleTime()" title="Switch portfolio time-of-day palette">TIME: AUTO</button>
@@ -449,7 +449,7 @@
     <div class="printed-header">
       <img src="logo.png" alt="DIYPets Highland Cow" />
       <h1>DIYPets</h1>
-      <div class="printed-number">RELEASE<strong>v0.3.1</strong></div>
+      <div class="printed-number">RELEASE<strong><span class="diypets-ver">v0.4.1</span></strong></div>
     </div>
 
     <div class="printed-body">
@@ -477,7 +477,7 @@
           </div>
         </div>
         <div class="paper-links">
-          <a class="paper-btn solid" href="https://github.com/smresponsibilities/diypets/releases/latest">DOWNLOAD v0.3.1</a>
+          <a class="paper-btn solid" href="https://github.com/smresponsibilities/diypets/releases/latest">DOWNLOAD <span class="diypets-ver">v0.4.1</span></a>
           <a class="paper-btn" href="https://github.com/smresponsibilities/diypets">SOURCE CODE</a>
           <a class="paper-btn" href="https://shivammahajan.com">← PORTFOLIO</a>
         </div>
@@ -519,7 +519,7 @@
   <!-- Zero-Install Browser Mascot GIF Maker (Inversion 3) -->
   <section class="dex-panel" id="gif-maker">
     <div class="dex-head">
-      <strong>INSTANT README &amp; DISCORD MASCOT GIF MAKER (ZERO INSTALL)</strong>
+      <strong>INSTANT README &amp; DISCORD MASCOT GIF MAKER <span style="display:inline-block;margin-left:6px;padding:2px 6px;font-size:10px;border-radius:3px;background:#f59e0b;color:#0b0e12;font-weight:700;vertical-align:middle;">IN PROGRESS</span></strong>
       <span id="gif-status">LOSSLESS GIF89A &middot; SHEET &amp; AUTO-RIG</span>
     </div>
     <div class="dex-body">
@@ -1271,6 +1271,31 @@ function loop(now) {
 requestAnimationFrame(loop);
 
 </script>
-<script src="gif_maker.js?v=4"></script>
+<script src="gif_maker.js?v=5">
+// Auto-sync displayed version from GitHub Releases API (cached per session, fallback v0.4.1)
+(function syncLatestVersion() {
+  const applyVer = (tag) => {
+    if (!tag) return;
+    const clean = tag.startsWith("v") ? tag : ("v" + tag);
+    const num = clean.replace(/^v/, "");
+    document.querySelectorAll(".diypets-ver").forEach((el) => { el.textContent = clean; });
+    document.querySelectorAll(".diypets-ver-num").forEach((el) => { el.textContent = num; });
+  };
+  try {
+    const cached = sessionStorage.getItem("diypets_latest_ver");
+    if (cached) { applyVer(cached); return; }
+  } catch (_) {}
+  fetch("https://api.github.com/repos/smresponsibilities/diypets/releases/latest")
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => {
+      if (d && d.tag_name) {
+        try { sessionStorage.setItem("diypets_latest_ver", d.tag_name); } catch (_) {}
+        applyVer(d.tag_name);
+      }
+    })
+    .catch(() => {});
+})();
+
+</script>
 </body>
 </html>

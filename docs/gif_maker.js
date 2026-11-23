@@ -1,4 +1,4 @@
-// DIYPets Sprite Sheet Slicer + Inverse Rigid MLS (Schaefer 2006) Auto-Rigger
+// DIYPets Sprite Sheet Slicer + 2x EPX Inverse Rigid MLS (Schaefer 2006) Auto-Rigger
 // + Interactive Draggable Skeleton Pins + Lossless GIF89a & PNG Sprite Sheet Exporter
 
 let gifCustomRig = null;
@@ -8,7 +8,7 @@ let gifCustomName = "";
 let gifPreviewTick = 0;
 let gifPreviewTimer = null;
 let gifDragPinIdx = -1;
-let gifLastCanvasGeom = null; // { ox, oy, dw, dh, sw, sh }
+let gifLastCanvasGeom = null;
 
 function isNeutralGrey(r, g, b) {
   const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
@@ -16,10 +16,44 @@ function isNeutralGrey(r, g, b) {
   return sat <= 14 && lum >= 92 && lum <= 224 && (b - r) <= 6;
 }
 
+function removeFloatingSpecks(data, w, h) {
+  const n = w * h;
+  const vis = new Uint8Array(n);
+  const q = new Int32Array(n);
+  const comps = [];
+  let maxSize = 0;
+  for (let i = 0; i < n; i++) {
+    if (vis[i] || data[i * 4 + 3] === 0) continue;
+    let head = 0, tail = 0;
+    vis[i] = 1; q[tail++] = i;
+    while (head < tail) {
+      const cur = q[head++];
+      const cx = cur % w, cy = (cur / w) | 0;
+      if (cx > 0 && !vis[cur - 1] && data[(cur - 1) * 4 + 3] > 0) { vis[cur - 1] = 1; q[tail++] = cur - 1; }
+      if (cx + 1 < w && !vis[cur + 1] && data[(cur + 1) * 4 + 3] > 0) { vis[cur + 1] = 1; q[tail++] = cur + 1; }
+      if (cy > 0 && !vis[cur - w] && data[(cur - w) * 4 + 3] > 0) { vis[cur - w] = 1; q[tail++] = cur - w; }
+      if (cy + 1 < h && !vis[cur + w] && data[(cur + w) * 4 + 3] > 0) { vis[cur + w] = 1; q[tail++] = cur + w; }
+    }
+    if (tail > maxSize) maxSize = tail;
+    comps.push(q.slice(0, tail));
+  }
+  const minKeep = Math.max(4, Math.floor(maxSize * 0.004));
+  for (let c = 0; c < comps.length; c++) {
+    if (comps[c].length < minKeep) {
+      const arr = comps[c];
+      for (let k = 0; k < arr.length; k++) {
+        const p = arr[k] * 4;
+        data[p] = 0; data[p + 1] = 0; data[p + 2] = 0; data[p + 3] = 0;
+      }
+    }
+  }
+}
+
 function cleanRgbaPixels(data, w, h) {
   const out = new Uint8ClampedArray(data);
   const n = w * h;
 
+  // Pass 1: Border flood-fill removal for opaque/checkerboard outer backgrounds
   const corners = [0, w - 1, (h - 1) * w, (h - 1) * w + (w - 1)];
   const bgSamples = [];
   for (let i = 0; i < corners.length; i++) {
@@ -57,6 +91,7 @@ function cleanRgbaPixels(data, w, h) {
     }
   }
 
+  // Pass 2: Hard alpha matte (eliminates semi-transparent grey anti-aliased fringes)
   for (let i = 0; i < n; i++) {
     const p = i * 4, a = out[p + 3];
     if (a < 180 || (a < 250 && isNeutralGrey(out[p], out[p + 1], out[p + 2]))) {
@@ -66,6 +101,7 @@ function cleanRgbaPixels(data, w, h) {
     }
   }
 
+  // Pass 3: Strip neutral-grey outer fringes & trapped checkerboard pockets
   const visPocket = new Uint8Array(n);
   const q2 = new Int32Array(n);
   for (let i = 0; i < n; i++) {
@@ -103,69 +139,70 @@ function cleanRgbaPixels(data, w, h) {
     }
   }
 
-  const alphaCopy = new Uint8Array(n);
-  for (let i = 0; i < n; i++) alphaCopy[i] = out[i * 4 + 3];
-  for (let y = 1; y < h - 1; y++) {
-    for (let x = 1; x < w - 1; x++) {
-      const idx = y * w + x;
-      if (alphaCopy[idx] === 0) continue;
-      if (!alphaCopy[idx - 1] && !alphaCopy[idx + 1] && !alphaCopy[idx - w] && !alphaCopy[idx + w]) {
-        const p = idx * 4;
-        out[p] = 0; out[p + 1] = 0; out[p + 2] = 0; out[p + 3] = 0;
-      }
-    }
-  }
+  // Pass 4: Remove tiny stray air dust specks (like floating 1-2px dots outside the sprite)
+  removeFloatingSpecks(out, w, h);
   return out;
 }
 
+// Run-length pixel-block scale detector: finds true pixel size (1..24) on high-res upscaled pixel art
+// WITHOUT artificially crushing an 84x76 sprite down to 42x38!
 function detectNativeBlockScale(rgba, w, h) {
-  const scales = [4, 3, 2];
-  for (let si = 0; si < scales.length; si++) {
-    const s = scales[si];
-    if (w % s !== 0 || h % s !== 0 || w / s < 16 || h / s < 16) continue;
-    let checked = 0, uniform = 0;
-    for (let by = 0; by < h; by += s) {
-      for (let bx = 0; bx < w; bx += s) {
-        const p0 = (by * w + bx) * 4;
-        let hasOpaque = false, same = true;
-        for (let dy = 0; dy < s && same; dy++) {
-          for (let dx = 0; dx < s; dx++) {
-            const p = ((by + dy) * w + (bx + dx)) * 4;
-            if (rgba[p + 3] > 0) hasOpaque = true;
-            if (
-              Math.abs(rgba[p] - rgba[p0]) > 14 || Math.abs(rgba[p + 1] - rgba[p0 + 1]) > 14 ||
-              Math.abs(rgba[p + 2] - rgba[p0 + 2]) > 14 || Math.abs(rgba[p + 3] - rgba[p0 + 3]) > 40
-            ) { same = false; break; }
-          }
-        }
-        if (hasOpaque) { checked++; if (same) uniform++; }
+  const runCounts = new Int32Array(33);
+  const stepY = Math.max(1, Math.floor(h / 96));
+  const stepX = Math.max(1, Math.floor(w / 96));
+
+  for (let y = 0; y < h; y += stepY) {
+    let run = 1;
+    for (let x = 1; x < w; x++) {
+      const p0 = (y * w + x - 1) * 4, p1 = (y * w + x) * 4;
+      const same = Math.abs(rgba[p0] - rgba[p1]) <= 12 &&
+                   Math.abs(rgba[p0 + 1] - rgba[p1 + 1]) <= 12 &&
+                   Math.abs(rgba[p0 + 2] - rgba[p1 + 2]) <= 12 &&
+                   Math.abs(rgba[p0 + 3] - rgba[p1 + 3]) <= 40;
+      if (same) { run++; }
+      else {
+        if (rgba[p0 + 3] > 128 && run >= 2 && run <= 32) runCounts[run]++;
+        run = 1;
       }
     }
-    if (checked > 20 && (uniform / checked) >= 0.88) return s;
   }
-  return 1;
-}
-
-function downsampleToNativeGrid(rgba, w, h) {
-  let block = detectNativeBlockScale(rgba, w, h);
-  let nw = Math.floor(w / block), nh = Math.floor(h / block);
-  while (Math.max(nw, nh) > 64) {
-    block *= 2;
-    nw = Math.max(16, Math.floor(w / block));
-    nh = Math.max(16, Math.floor(h / block));
-  }
-  const grid = new Uint8ClampedArray(nw * nh * 4);
-  const off = Math.floor(block / 2);
-  for (let y = 0; y < nh; y++) {
-    const sy = Math.min(h - 1, y * block + off);
-    for (let x = 0; x < nw; x++) {
-      const sx = Math.min(w - 1, x * block + off);
-      const sp = (sy * w + sx) * 4, dp = (y * nw + x) * 4;
-      grid[dp] = rgba[sp]; grid[dp + 1] = rgba[sp + 1]; grid[dp + 2] = rgba[sp + 2];
-      grid[dp + 3] = rgba[sp + 3] >= 128 ? 255 : 0;
+  for (let x = 0; x < w; x += stepX) {
+    let run = 1;
+    for (let y = 1; y < h; y++) {
+      const p0 = ((y - 1) * w + x) * 4, p1 = (y * w + x) * 4;
+      const same = Math.abs(rgba[p0] - rgba[p1]) <= 12 &&
+                   Math.abs(rgba[p0 + 1] - rgba[p1 + 1]) <= 12 &&
+                   Math.abs(rgba[p0 + 2] - rgba[p1 + 2]) <= 12 &&
+                   Math.abs(rgba[p0 + 3] - rgba[p1 + 3]) <= 40;
+      if (same) { run++; }
+      else {
+        if (rgba[p0 + 3] > 128 && run >= 2 && run <= 32) runCounts[run]++;
+        run = 1;
+      }
     }
   }
-  return { grid, w: nw, h: nh, block };
+
+  // Score candidate integer block sizes s in [2..20]: a true block size divides almost all run lengths!
+  let bestS = 1, bestScore = 0;
+  let totalRuns = 0;
+  for (let r = 2; r <= 32; r++) totalRuns += runCounts[r];
+  if (totalRuns >= 12) {
+    for (let s = 2; s <= 20; s++) {
+      if (Math.floor(w / s) < 20 || Math.floor(h / s) < 20) break;
+      let aligned = 0;
+      for (let r = s; r <= 32; r++) {
+        const rem = r % s;
+        if (rem === 0 || rem === 1 || rem === s - 1) aligned += runCounts[r];
+      }
+      const ratio = aligned / totalRuns;
+      // Prefer largest s with high alignment (exact runs of length s also boost confidence)
+      if (ratio >= 0.78 && runCounts[s] >= totalRuns * 0.12 && ratio + s * 0.004 > bestScore) {
+        bestScore = ratio + s * 0.004;
+        bestS = s;
+      }
+    }
+  }
+  return bestS;
 }
 
 function findBbox(grid, w, h) {
@@ -180,6 +217,78 @@ function findBbox(grid, w, h) {
   }
   if (maxX < minX) return { minX: 0, minY: 0, maxX: w - 1, maxY: h - 1, bw: w, bh: h };
   return { minX, minY, maxX, maxY, bw: maxX - minX + 1, bh: maxY - minY + 1 };
+}
+
+// Extract tight sprite on its TRUE native pixel grid (up to 112px) + generous transparent headroom
+// so Hop, Walk, and Run NEVER clip ears, tails, or paws!
+function extractPaddedNativeGrid(rgba, w, h) {
+  const bb = findBbox(rgba, w, h);
+  let block = detectNativeBlockScale(rgba, w, h);
+  let nw = Math.max(16, Math.round(bb.bw / block));
+  let nh = Math.max(16, Math.round(bb.bh / block));
+  // Only downscale if native sprite still exceeds 112px (preserves 80-100px detailed pixel art intact!)
+  const maxDim = 112;
+  let scaleF = block;
+  if (Math.max(nw, nh) > maxDim) {
+    scaleF = Math.max(bb.bw, bb.bh) / maxDim;
+    nw = Math.max(16, Math.round(bb.bw / scaleF));
+    nh = Math.max(16, Math.round(bb.bh / scaleF));
+  }
+
+  const padTop = Math.max(6, Math.ceil(nh * 0.28));
+  const padSide = Math.max(6, Math.ceil(nw * 0.16));
+  const padBot = 2;
+  const outW = nw + padSide * 2;
+  const outH = nh + padTop + padBot;
+  const grid = new Uint8ClampedArray(outW * outH * 4);
+
+  for (let y = 0; y < nh; y++) {
+    const sy = Math.min(h - 1, bb.minY + Math.floor((y + 0.5) * scaleF));
+    for (let x = 0; x < nw; x++) {
+      const sx = Math.min(w - 1, bb.minX + Math.floor((x + 0.5) * scaleF));
+      const sp = (sy * w + sx) * 4;
+      const dp = ((y + padTop) * outW + (x + padSide)) * 4;
+      if (rgba[sp + 3] >= 128) {
+        grid[dp] = rgba[sp]; grid[dp + 1] = rgba[sp + 1]; grid[dp + 2] = rgba[sp + 2]; grid[dp + 3] = 255;
+      }
+    }
+  }
+  return { grid, w: outW, h: outH, nativeW: nw, nativeH: nh, block };
+}
+
+// 2x EPX (Eric's Pixel Expansion / Scale2x) — classic RotSprite pre-pass so 1px dark outlines
+// stay crisp and unbroken under smooth Rigid MLS deformation!
+function upscale2xEpx(src, w, h) {
+  const dw = w * 2, dh = h * 2;
+  const dst = new Uint8ClampedArray(dw * dh * 4);
+  const eq = (a, b) =>
+    src[a + 3] === src[b + 3] &&
+    Math.abs(src[a] - src[b]) <= 8 &&
+    Math.abs(src[a + 1] - src[b + 1]) <= 8 &&
+    Math.abs(src[a + 2] - src[b + 2]) <= 8;
+  const copy = (sp, dp) => {
+    dst[dp] = src[sp]; dst[dp + 1] = src[sp + 1]; dst[dp + 2] = src[sp + 2]; dst[dp + 3] = src[sp + 3];
+  };
+  for (let y = 0; y < h; y++) {
+    const yu = Math.max(0, y - 1), yd = Math.min(h - 1, y + 1);
+    for (let x = 0; x < w; x++) {
+      const xl = Math.max(0, x - 1), xr = Math.min(w - 1, x + 1);
+      const P = (y * w + x) * 4;
+      const A = (yu * w + x) * 4;
+      const B = (y * w + xr) * 4;
+      const C = (y * w + xl) * 4;
+      const D = (yd * w + x) * 4;
+      const p00 = ((y * 2) * dw + (x * 2)) * 4;
+      const p01 = ((y * 2) * dw + (x * 2 + 1)) * 4;
+      const p10 = ((y * 2 + 1) * dw + (x * 2)) * 4;
+      const p11 = ((y * 2 + 1) * dw + (x * 2 + 1)) * 4;
+      copy((eq(C, A) && !eq(C, D) && !eq(A, B)) ? A : P, p00);
+      copy((eq(A, B) && !eq(A, C) && !eq(B, D)) ? B : P, p01);
+      copy((eq(D, C) && !eq(D, B) && !eq(C, A)) ? C : P, p10);
+      copy((eq(B, D) && !eq(B, A) && !eq(D, C)) ? D : P, p11);
+    }
+  }
+  return { data: dst, w: dw, h: dh };
 }
 
 function detectSpriteSheetGrid(rgba, w, h) {
@@ -298,13 +407,10 @@ function sliceSpriteSheet(rawRgba, w, h, cols, rows, cleanBg, frameSpec) {
   return { frames: tiles, cols, rows, tw, th, activeIndices: parseFrameSelection(frameSpec, tiles.length) };
 }
 
-// =========================================================================
-// Inverse Rigid Moving Least Squares (Schaefer et al., SIGGRAPH 2006)
-// + Skeleton Pin Auto-Placement (horns-safe lower-body aspect & paw clustering)
-// =========================================================================
 function findColumnMassCenter(grid, w, x0, x1, y0, y1, fallbackX, fallbackY) {
   let sx = 0, sy = 0, cnt = 0;
-  for (let y = Math.max(0, Math.floor(y0)); y <= Math.min(Math.floor(y1), (grid.length / (4 * w)) - 1); y++) {
+  const h = grid.length / (4 * w);
+  for (let y = Math.max(0, Math.floor(y0)); y <= Math.min(h - 1, Math.floor(y1)); y++) {
     for (let x = Math.max(0, Math.floor(x0)); x <= Math.min(w - 1, Math.floor(x1)); x++) {
       if (grid[(y * w + x) * 4 + 3] > 0) { sx += x; sy += y; cnt++; }
     }
@@ -314,10 +420,10 @@ function findColumnMassCenter(grid, w, x0, x1, y0, y1, fallbackX, fallbackY) {
 
 function buildAutoRig(rawRgba, rawW, rawH, cleanBg, modeHint) {
   const cleaned = cleanBg ? cleanRgbaPixels(rawRgba, rawW, rawH) : new Uint8ClampedArray(rawRgba);
-  const { grid, w, h } = downsampleToNativeGrid(cleaned, rawW, rawH);
+  const { grid, w, h, nativeW, nativeH } = extractPaddedNativeGrid(cleaned, rawW, rawH);
+  const epx = upscale2xEpx(grid, w, h);
   const bbox = findBbox(grid, w, h);
 
-  // Measure facing direction using top 45% mass
   const midX = (bbox.minX + bbox.maxX) * 0.5;
   const topCut = bbox.minY + Math.floor(bbox.bh * 0.45);
   let leftTop = 0, rightTop = 0;
@@ -330,7 +436,6 @@ function buildAutoRig(rawRgba, rawW, rawH, cleanBg, modeHint) {
   }
   const facesLeft = leftTop >= rightTop;
 
-  // Compute LOWER-BODY bounding box (bottom 62% of height) so tall horns/ears on Goat never distort aspect ratio!
   const lowerStart = bbox.minY + Math.floor(bbox.bh * 0.38);
   let lbMinX = w, lbMaxX = -1;
   for (let y = lowerStart; y <= bbox.maxY; y++) {
@@ -345,7 +450,6 @@ function buildAutoRig(rawRgba, rawW, rawH, cleanBg, modeHint) {
   const lbH = Math.max(1, bbox.maxY - lowerStart + 1);
   const lowerAspect = lbW / lbH;
 
-  // Bottom-up paw-gap scan
   const scanTop = bbox.minY + Math.floor(bbox.bh * 0.58);
   let maxRuns = 1, highestGapY = -1;
   for (let y = bbox.maxY - 1; y >= scanTop; y--) {
@@ -370,8 +474,6 @@ function buildAutoRig(rawRgba, rawW, rawH, cleanBg, modeHint) {
     ? Math.max(bbox.minY + Math.floor(bbox.bh * 0.62), highestGapY - Math.max(2, Math.round(bbox.bh * 0.06)))
     : bbox.minY + Math.floor(bbox.bh * 0.70);
 
-  // Place 7 anatomical control pins (Head, Chest, Pelvis, Tail, Front-A, Front-B, Back-A, Back-B)
-  // User can drag ANY of these pins interactively on the canvas!
   const fMin = facesLeft ? lbMinX : lbMaxX;
   const fDir = facesLeft ? 1 : -1;
   const atRelX = (t) => fMin + fDir * lbW * t;
@@ -403,12 +505,10 @@ function buildAutoRig(rawRgba, rawW, rawH, cleanBg, modeHint) {
     atRelX(0.95), bbox.minY + bbox.bh * 0.50
   );
 
-  // Locate paw X coordinates cleanly from actual bottom pixels in each foot zone
   const findPawX = (t0, t1, fallbackT) => {
     const xA = Math.min(atRelX(t0), atRelX(t1));
     const xB = Math.max(atRelX(t0), atRelX(t1));
-    const c = findColumnMassCenter(grid, w, xA, xB, Math.max(hipY, bbox.maxY - 5), bbox.maxY, atRelX(fallbackT), bbox.maxY - 1);
-    return c.x;
+    return findColumnMassCenter(grid, w, xA, xB, Math.max(hipY, bbox.maxY - 6), bbox.maxY, atRelX(fallbackT), bbox.maxY - 1).x;
   };
 
   const pawY = bbox.maxY - 1;
@@ -418,13 +518,12 @@ function buildAutoRig(rawRgba, rawW, rawH, cleanBg, modeHint) {
     { id: "pelvis", label: "Pelvis", color: "#5ec8ff", x: pelvisC.x, y: pelvisC.y },
     { id: "tail",   label: "Tail",   color: "#e07bff", x: tailC.x,   y: tailC.y },
   ];
-
   if (bodyType === "quadruped") {
     pins.push(
-      { id: "fl", label: "FL", color: "#50f082", x: findPawX(0.10, 0.34, 0.22), y: pawY },
-      { id: "fr", label: "FR", color: "#ff7373", x: findPawX(0.30, 0.52, 0.40), y: pawY },
-      { id: "bl", label: "BL", color: "#ff7373", x: findPawX(0.54, 0.78, 0.68), y: pawY },
-      { id: "br", label: "BR", color: "#50f082", x: findPawX(0.74, 0.96, 0.85), y: pawY }
+      { id: "fl", label: "FL", color: "#50f082", x: findPawX(0.08, 0.33, 0.20), y: pawY },
+      { id: "fr", label: "FR", color: "#ff7373", x: findPawX(0.28, 0.52, 0.40), y: pawY },
+      { id: "bl", label: "BL", color: "#ff7373", x: findPawX(0.54, 0.78, 0.67), y: pawY },
+      { id: "br", label: "BR", color: "#50f082", x: findPawX(0.75, 0.98, 0.86), y: pawY }
     );
   } else if (bodyType === "biped") {
     pins.push(
@@ -438,16 +537,20 @@ function buildAutoRig(rawRgba, rawW, rawH, cleanBg, modeHint) {
     );
   }
 
-  return { grid, w, h, bbox, hipY, facesLeft, bodyType, maxRuns, pins };
+  return { grid, epx, w, h, nativeW, nativeH, bbox, hipY, facesLeft, bodyType, maxRuns, pins };
 }
 
-// Compute displaced target pins `q` from rest pins `p` for a given animation frame
+// FIXED FORWARD GAIT PHYSICS:
+// When facesLeft = true (dir = -1):
+//   Swing phase (lifted: cos(phase) > 0, phase in [-pi/2, +pi/2]): dx = dir * sin(phase) moves +stride -> -stride (FORWARD LEFT!)
+//   Stance phase (planted: cos(phase) < 0, phase in [pi/2, 3pi/2]): dx moves -stride -> +stride (pushes ground BACKWARD!)
 function computeAnimatedPins(rig, fx, frameIdx, totalFrames) {
   const { bbox, facesLeft, bodyType, pins } = rig;
   const phase = (frameIdx / totalFrames) * Math.PI * 2;
   const dir = facesLeft ? -1 : 1;
-  const stride = Math.max(2.0, bbox.bw * 0.095);
-  const liftMax = Math.max(1.8, (bbox.maxY - rig.hipY) * 0.28);
+  // Restrained stride prevents opposite-moving paws from stretching outlines across empty gaps
+  const stride = Math.max(1.8, bbox.bw * 0.062);
+  const liftMax = Math.max(1.6, (bbox.maxY - rig.hipY) * 0.22);
 
   return pins.map((pin) => {
     let dx = 0, dy = 0;
@@ -456,104 +559,89 @@ function computeAnimatedPins(rig, fx, frameIdx, totalFrames) {
       const sB = Math.sin(phase + Math.PI);
       const lA = Math.max(0, Math.cos(phase));
       const lB = Math.max(0, Math.cos(phase + Math.PI));
-      const bob = -Math.abs(Math.cos(phase)) * Math.max(0.8, bbox.bh * 0.032);
+      const bob = -Math.abs(Math.cos(phase)) * Math.max(0.8, bbox.bh * 0.028);
       if (pin.id === "head") {
-        dy = -Math.abs(Math.cos(phase - 0.8)) * Math.max(1.0, bbox.bh * 0.042);
-        dx = Math.sin(phase - 0.6) * 1.1 * dir;
+        dy = -Math.abs(Math.cos(phase - 0.8)) * Math.max(1.0, bbox.bh * 0.036);
+        dx = dir * Math.sin(phase - 0.6) * 0.9;
       } else if (pin.id === "chest") {
         dy = bob;
       } else if (pin.id === "pelvis") {
         dy = bob * 0.9;
       } else if (pin.id === "tail") {
-        dy = bob + Math.sin(phase * 2) * 1.6;
-        dx = -Math.cos(phase) * 0.9 * dir;
+        dy = bob + Math.sin(phase * 2) * 1.4;
+        dx = -dir * Math.cos(phase) * 0.7;
       } else if (bodyType !== "blob" && (pin.id === "fl" || pin.id === "br")) {
-        // Diagonal pair A swings while B stays planted at dy = 0 (strict ground contact!)
-        dx = sA * stride;
+        dx = dir * sA * stride;
         dy = -lA * liftMax;
       } else if (bodyType !== "blob" && (pin.id === "fr" || pin.id === "bl")) {
-        dx = sB * stride;
+        dx = dir * sB * stride;
         dy = -lB * liftMax;
       }
     } else if (fx === "run") {
-      const runS = Math.max(2.8, bbox.bw * 0.13);
-      const runL = Math.max(2.4, (bbox.maxY - rig.hipY) * 0.36);
+      const runS = Math.max(2.4, bbox.bw * 0.088);
+      const runL = Math.max(2.2, (bbox.maxY - rig.hipY) * 0.30);
       const airBob = -Math.max(0, Math.sin(phase)) * Math.max(1.8, bbox.bh * 0.06);
-      if (pin.id === "head") { dx = dir * 1.5; dy = airBob; }
-      else if (pin.id === "chest" || pin.id === "pelvis") { dy = airBob; dx = dir * 0.6; }
-      else if (pin.id === "tail") { dy = airBob + Math.sin(phase * 2) * 2.0; dx = -dir * 1.2; }
-      else if (pin.id === "fl") { dx = Math.sin(phase) * runS; dy = -Math.max(0, Math.cos(phase)) * runL; }
-      else if (pin.id === "fr") { dx = Math.sin(phase + 0.55) * runS; dy = -Math.max(0, Math.cos(phase + 0.55)) * runL; }
-      else if (pin.id === "bl") { dx = Math.sin(phase + Math.PI * 0.85) * runS; dy = -Math.max(0, Math.cos(phase + Math.PI * 0.85)) * runL; }
-      else if (pin.id === "br") { dx = Math.sin(phase + Math.PI * 1.15) * runS; dy = -Math.max(0, Math.cos(phase + Math.PI * 1.15)) * runL; }
+      if (pin.id === "head") { dx = dir * 1.4; dy = airBob; }
+      else if (pin.id === "chest" || pin.id === "pelvis") { dy = airBob; dx = dir * 0.5; }
+      else if (pin.id === "tail") { dy = airBob + Math.sin(phase * 2) * 1.8; dx = -dir * 1.0; }
+      else if (pin.id === "fl") { dx = dir * Math.sin(phase) * runS; dy = -Math.max(0, Math.cos(phase)) * runL; }
+      else if (pin.id === "fr") { dx = dir * Math.sin(phase + 0.55) * runS; dy = -Math.max(0, Math.cos(phase + 0.55)) * runL; }
+      else if (pin.id === "bl") { dx = dir * Math.sin(phase + Math.PI * 0.85) * runS; dy = -Math.max(0, Math.cos(phase + Math.PI * 0.85)) * runL; }
+      else if (pin.id === "br") { dx = dir * Math.sin(phase + Math.PI * 1.15) * runS; dy = -Math.max(0, Math.cos(phase + Math.PI * 1.15)) * runL; }
     } else if (fx === "breathe") {
-      const ex = (Math.sin(phase) * 0.5 + 0.5) * Math.max(1.0, bbox.bh * 0.045);
+      const ex = (Math.sin(phase) * 0.5 + 0.5) * Math.max(1.0, bbox.bh * 0.04);
       if (pin.id === "head" || pin.id === "chest") dy = ex;
       else if (pin.id === "pelvis") dy = ex * 0.65;
       else if (pin.id === "tail") dy = ex * 0.8;
     } else if (fx === "hop") {
       const u = frameIdx / totalFrames;
       if (u < 0.24) {
-        // Anticipation crouch (paws locked at dy = 0!)
-        if (pin.id === "head") dy = 2.4;
-        else if (pin.id === "chest" || pin.id === "pelvis" || pin.id === "tail") dy = 1.6;
+        if (pin.id === "head") dy = bbox.bh * 0.045;
+        else if (pin.id === "chest" || pin.id === "pelvis" || pin.id === "tail") dy = bbox.bh * 0.03;
       } else if (u < 0.68) {
         const air = Math.sin(((u - 0.24) / 0.44) * Math.PI);
-        const hLift = air * Math.max(4.0, bbox.bh * 0.19);
+        const hLift = air * Math.max(4.0, bbox.bh * 0.17);
         dy = -hLift;
-        if (pin.id === "head") dy -= air * 1.2;
-        if (pin.id === "fl" || pin.id === "fr") { dx = dir * air * 1.6; dy += air * 1.2; }
-        if (pin.id === "bl" || pin.id === "br") { dx = -dir * air * 1.6; dy += air * 1.2; }
+        if (pin.id === "head") dy -= air * 1.0;
+        if (pin.id === "fl" || pin.id === "fr") { dx = dir * air * 1.4; dy += air * 1.0; }
+        if (pin.id === "bl" || pin.id === "br") { dx = -dir * air * 1.4; dy += air * 1.0; }
       } else {
-        if (pin.id === "head") dy = 1.4;
-        else if (pin.id === "chest" || pin.id === "pelvis") dy = 1.0;
+        if (pin.id === "head") dy = bbox.bh * 0.03;
+        else if (pin.id === "chest" || pin.id === "pelvis") dy = bbox.bh * 0.02;
       }
     } else if (fx === "wave") {
-      if (pin.id === "tail") { dy = Math.sin(phase) * 2.6; dx = Math.cos(phase) * 1.6; }
-      else if (pin.id === "head") { dy = Math.sin(phase + 1.1) * 1.1; }
+      if (pin.id === "tail") { dy = Math.sin(phase) * 2.2; dx = dir * Math.cos(phase) * 1.2; }
+      else if (pin.id === "head") { dy = Math.sin(phase + 1.1) * 1.0; }
     }
-    return { x: pin.x + dx, y: pin.y + dy };
+    return { id: pin.id, x: pin.x + dx, y: pin.y + dy };
   });
 }
 
-// Closed-form 2D Rigid Moving Least Squares (Schaefer et al., SIGGRAPH 2006)
-// Maps destination pixel `v` INVERSELY back to source pixel coordinates (ZERO holes, ZERO tears!)
 function evalRigidMlsInverse(vx, vy, srcPins, dstPins) {
   const n = dstPins.length;
   let wSum = 0, qxStar = 0, qyStar = 0, pxStar = 0, pyStar = 0;
   const wArr = new Float64Array(n);
 
   for (let i = 0; i < n; i++) {
-    const dx = vx - dstPins[i].x;
-    const dy = vy - dstPins[i].y;
+    const dx = vx - dstPins[i].x, dy = vy - dstPins[i].y;
     const dist2 = dx * dx + dy * dy;
     if (dist2 < 1e-6) return { x: srcPins[i].x, y: srcPins[i].y };
-    // Alpha = 1.5 gives crisp local limb isolation while keeping smooth C^inf joints
-    const wi = 1.0 / Math.pow(dist2, 1.5);
-    wArr[i] = wi;
-    wSum += wi;
-    qxStar += wi * dstPins[i].x;
-    qyStar += wi * dstPins[i].y;
-    pxStar += wi * srcPins[i].x;
-    pyStar += wi * srcPins[i].y;
+    const wi = 1.0 / Math.pow(dist2, 1.65);
+    wArr[i] = wi; wSum += wi;
+    qxStar += wi * dstPins[i].x; qyStar += wi * dstPins[i].y;
+    pxStar += wi * srcPins[i].x; pyStar += wi * srcPins[i].y;
   }
-  qxStar /= wSum; qyStar /= wSum;
-  pxStar /= wSum; pyStar /= wSum;
+  qxStar /= wSum; qyStar /= wSum; pxStar /= wSum; pyStar /= wSum;
 
-  const dvx = vx - qxStar;
-  const dvy = vy - qyStar;
+  const dvx = vx - qxStar, dvy = vy - qyStar;
   const dvLen = Math.hypot(dvx, dvy);
   if (dvLen < 1e-6) return { x: pxStar, y: pyStar };
 
-  // Compute linear rigid vector f_r(v) = |v - q*| * fr / |fr| + p*
   let frx = 0, fry = 0;
   for (let i = 0; i < n; i++) {
-    const qhx = dstPins[i].x - qxStar;
-    const qhy = dstPins[i].y - qyStar;
-    const phx = srcPins[i].x - pxStar;
-    const phy = srcPins[i].y - pyStar;
+    const qhx = dstPins[i].x - qxStar, qhy = dstPins[i].y - qyStar;
+    const phx = srcPins[i].x - pxStar, phy = srcPins[i].y - pyStar;
     const wi = wArr[i];
-    // 2x2 A_i * [dvx, dvy]^T where A_i = wi * [[qhx, qhy],[qhy, -qhx]] * [[dvx, dvy],[dvy, -dvx]]^T
     const dot = qhx * dvx + qhy * dvy;
     const cross = qhx * dvy - qhy * dvx;
     frx += wi * (phx * dot - phy * cross);
@@ -565,32 +653,34 @@ function evalRigidMlsInverse(vx, vy, srcPins, dstPins) {
   return { x: pxStar + frx * scale, y: pyStar + fry * scale };
 }
 
+// Sample from the 2x EPX upscaled buffer (RotSprite technique) for crisp, unbroken 1px outlines!
 function renderRiggedFrame(rig, fx, frameIdx, totalFrames) {
-  const { grid, w, h, bbox, pins } = rig;
+  const { epx, w, h, bbox, pins } = rig;
   const dstPins = computeAnimatedPins(rig, fx, frameIdx, totalFrames);
   const out = new Uint8ClampedArray(w * h * 4);
+  const ew = epx.w, eh = epx.h, edata = epx.data;
 
-  // Restrict evaluation to padded sprite bounding box for fast 60fps preview
-  const pad = Math.max(6, Math.ceil(bbox.bw * 0.22));
-  const y0 = Math.max(0, bbox.minY - pad);
+  const padX = Math.max(6, Math.ceil(bbox.bw * 0.16));
+  const padTop = Math.max(6, Math.ceil(bbox.bh * 0.26));
+  const y0 = Math.max(0, bbox.minY - padTop);
   const y1 = Math.min(h - 1, bbox.maxY + 2);
-  const x0 = Math.max(0, bbox.minX - pad);
-  const x1 = Math.min(w - 1, bbox.maxX + pad);
+  const x0 = Math.max(0, bbox.minX - padX);
+  const x1 = Math.min(w - 1, bbox.maxX + padX);
 
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
       const s = evalRigidMlsInverse(x, y, pins, dstPins);
-      const sx = Math.round(s.x);
-      const sy = Math.round(s.y);
-      if (sx < 0 || sx >= w || sy < 0 || sy >= h) continue;
-      const sp = (sy * w + sx) * 4;
-      if (grid[sp + 3] === 0) continue;
+      // Sample center of corresponding 2x EPX pixel block
+      const ex = Math.round(s.x * 2 + 0.5);
+      const ey = Math.round(s.y * 2 + 0.5);
+      if (ex < 0 || ex >= ew || ey < 0 || ey >= eh) continue;
+      const sp = (ey * ew + ex) * 4;
+      if (edata[sp + 3] === 0) continue;
       const dp = (y * w + x) * 4;
-      out[dp] = grid[sp]; out[dp + 1] = grid[sp + 1]; out[dp + 2] = grid[sp + 2]; out[dp + 3] = 255;
+      out[dp] = edata[sp]; out[dp + 1] = edata[sp + 1]; out[dp + 2] = edata[sp + 2]; out[dp + 3] = 255;
     }
   }
 
-  // Strict ground-baseline alignment for grounded cycles (zero vertical foot jitter!)
   if (fx === "walk" || fx === "breathe" || fx === "wave") {
     let curFoot = -1;
     for (let y = h - 1; y >= 0 && curFoot === -1; y--) {
@@ -617,9 +707,6 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames) {
   return out;
 }
 
-// =========================================================================
-// UI Controls, Interactive Draggable Pins, GIF89a & PNG Sprite Sheet Export
-// =========================================================================
 function setSheetControlsVisible(show) {
   const row = document.getElementById("gif-sheet-controls");
   if (row) row.style.display = show ? "flex" : "none";
@@ -681,7 +768,7 @@ function refreshCleanedCustomImg() {
     const bodySel = document.getElementById("gif-body-select");
     gifCustomRig = buildAutoRig(raw, w, h, cleanBg, bodySel ? bodySel.value : "auto");
     if (st) {
-      st.textContent = "RIGID MLS (" + gifCustomRig.bodyType.toUpperCase() + ", " + gifCustomRig.w + "x" + gifCustomRig.h + " GRID)";
+      st.textContent = "2x EPX RIGID MLS (" + gifCustomRig.bodyType.toUpperCase() + ", " + gifCustomRig.nativeW + "x" + gifCustomRig.nativeH + " NATIVE)";
     }
   }
 }
@@ -698,7 +785,7 @@ function syncGifMascotSelection() {
     cap.value = opt ? opt.textContent.trim() : sel.value;
   }
   const st = document.getElementById("gif-status");
-  if (st) st.textContent = "LOSSLESS GIF89A & PNG SHEET";
+  if (st) st.textContent = "IN PROGRESS \u00B7 GIF89A & PNG SHEET";
 }
 
 function loadGifSpriteFile(file) {
@@ -791,17 +878,20 @@ function handleGifUpload(ev) {
   ev.target.value = "";
 }
 
-function drawNativeRgbaIntegerScaled(targetCtx, rgba, sw, sh, outW, outH, padBottom, storeGeom) {
+function drawNativeRgbaScaled(targetCtx, rgba, sw, sh, outW, outH, padBottom, storeGeom) {
   const off = document.createElement("canvas");
   off.width = sw; off.height = sh;
   off.getContext("2d").putImageData(new ImageData(rgba, sw, sh), 0, 0);
 
-  const availW = Math.max(sw, outW - 2);
-  const availH = Math.max(sh, outH - padBottom - 2);
-  const intScale = Math.max(1, Math.floor(Math.min(availW / sw, availH / sh)));
-  let dw = sw * intScale, dh = sh * intScale;
-  if (dw > outW || dh > outH - padBottom) {
-    const r = Math.min((outW - 4) / sw, (outH - padBottom - 4) / sh);
+  const availW = Math.max(1, outW - 2);
+  const availH = Math.max(1, outH - padBottom - 2);
+  let dw, dh;
+  if (sw <= availW && sh <= availH) {
+    const intScale = Math.max(1, Math.floor(Math.min(availW / sw, availH / sh)));
+    dw = sw * intScale;
+    dh = sh * intScale;
+  } else {
+    const r = Math.min(availW / sw, availH / sh);
     dw = Math.max(1, Math.round(sw * r));
     dh = Math.max(1, Math.round(sh * r));
   }
@@ -816,8 +906,6 @@ function drawPinOverlay(targetCtx, rig, geom) {
   if (!rig || !geom) return;
   const sx = geom.dw / geom.sw, sy = geom.dh / geom.sh;
   const toC = (p) => ({ x: geom.ox + p.x * sx, y: geom.oy + p.y * sy });
-
-  // Draw bone lines connecting spine & paws
   const byId = {};
   for (let i = 0; i < rig.pins.length; i++) byId[rig.pins[i].id] = toC(rig.pins[i]);
   const edges = [["head", "chest"], ["chest", "pelvis"], ["pelvis", "tail"], ["chest", "fl"], ["chest", "fr"], ["pelvis", "bl"], ["pelvis", "br"]];
@@ -870,13 +958,12 @@ function drawGifMakerFrame(targetCtx, w, h, frameIdx, totalFrames, allowOverlay)
   if (gifCustomSheet && gifCustomSheet.activeIndices.length > 0) {
     const idx = gifCustomSheet.activeIndices[frameIdx % gifCustomSheet.activeIndices.length];
     const tile = gifCustomSheet.frames[idx] || gifCustomSheet.frames[0];
-    drawNativeRgbaIntegerScaled(targetCtx, tile.rgba, tile.w, tile.h, w, h, padBottom, false);
+    drawNativeRgbaScaled(targetCtx, tile.rgba, tile.w, tile.h, w, h, padBottom, false);
     return;
   }
   if (gifCustomRig) {
-    // When EDIT PINS is checked, pause on rest pose so the user can drag joint pins cleanly!
     const frameRgba = editPins ? gifCustomRig.grid : renderRiggedFrame(gifCustomRig, fx, frameIdx, totalFrames);
-    drawNativeRgbaIntegerScaled(targetCtx, frameRgba, gifCustomRig.w, gifCustomRig.h, w, h, padBottom, allowOverlay);
+    drawNativeRgbaScaled(targetCtx, frameRgba, gifCustomRig.w, gifCustomRig.h, w, h, padBottom, allowOverlay);
     if (editPins) drawPinOverlay(targetCtx, gifCustomRig, gifLastCanvasGeom);
     return;
   }
@@ -1065,7 +1152,6 @@ function exportMascotGif() {
   }
 }
 
-// Export all generated frames as a crisp horizontal PNG Sprite Sheet (ready for Aseprite / Godot / Inspection!)
 function exportMascotSpriteSheet() {
   const statusEl = document.getElementById("gif-status");
   try {
@@ -1172,9 +1258,11 @@ if (typeof document !== "undefined") {
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     cleanRgbaPixels,
+    detectNativeBlockScale,
     detectSpriteSheetGrid,
     sliceSpriteSheet,
     buildAutoRig,
+    computeAnimatedPins,
     renderRiggedFrame,
     encodeGif89a,
   };
