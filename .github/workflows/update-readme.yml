@@ -1,14 +1,8 @@
-name: Auto-Update README Stats
+name: Daily README Stats
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "Cargo.toml"
-      - "catalog.json"
-      - "CHANGELOG.md"
   schedule:
-    - cron: "0 0 * * 0"
+    - cron: "0 0 * * *"
   workflow_dispatch:
 
 permissions:
@@ -26,7 +20,7 @@ jobs:
 
           cargo = open("Cargo.toml", encoding="utf-8").read()
           ver_m = re.search(r'(?m)^version\s*=\s*"([^"]+)"', cargo)
-          version = ver_m.group(1) if ver_m else "0.1.6"
+          version = ver_m.group(1) if ver_m else "0.3.0"
 
           sm_count, esheep_count = 5, 27
           try:
@@ -39,19 +33,16 @@ jobs:
 
           block = (
               "<!-- AUTO:STATS:START -->\n"
-              f"> **Latest release:** `v{version}` · **{sm_count} Made by SM originals** + **{esheep_count}+ on-demand eSheep packs** · **~7.8 MB RAM** · **MCP API on `:3721`**\n"
+              f"> **Latest:** `v{version}` · **{sm_count} Made by SM originals** + **{esheep_count}+ on-demand eSheep packs** · **~7.8 MB RAM** · **stdio & HTTP MCP**\n"
               "<!-- AUTO:STATS:END -->"
           )
 
           rm = open("README.md", encoding="utf-8").read().replace("\r\n", "\n")
           pat = r"<!-- AUTO:STATS:START -->[\s\S]*?<!-- AUTO:STATS:END -->"
-          if re.search(pat, rm):
-              new_rm = re.sub(pat, block, rm, count=1)
-          else:
-              new_rm = rm.replace("\n---\n", f"\n{block}\n\n---\n", 1)
+          new_rm = re.sub(pat, block, rm, count=1) if re.search(pat, rm) else rm
           if new_rm != rm:
               open("README.md", "w", encoding="utf-8", newline="\n").write(new_rm)
-              print(f"Updated README.md stats -> v{version} ({sm_count} SM + {esheep_count} eSheep)")
+              print(f"Updated README.md -> v{version}")
           else:
               print("README.md already up to date.")
           PY
@@ -61,6 +52,6 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git add README.md
-            git commit -m "docs: auto-update README stats [skip ci]"
+            git commit -m "docs: daily README stats sync [skip ci]"
             git push
           fi

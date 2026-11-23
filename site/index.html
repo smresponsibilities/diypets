@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DIYPets — Make Your Own Desktop Pet in Pure Rust</title>
+<meta name="description" content="Lightweight (~7.8 MB RAM) cross-platform Rust desktop mascot engine with Multi-Pet Herd Mode, Play Mode, 6-tool MCP server, and built-in 2D/SVG Studio." />
+<style>
+  :root {
+    --bg: #0f1218;
+    --panel: #161b24;
+    --card: #1c222e;
+    --border: #2c3547;
+    --text: #e8edf5;
+    --muted: #94a0b8;
+    --accent: #f08e42;
+    --blue: #3b82f6;
+    --green: #3fb950;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+    padding-bottom: 130px;
+    overflow-x: hidden;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 36px 20px; }
+  header { text-align: center; margin-bottom: 28px; }
+  .pill {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: rgba(240, 142, 66, 0.14);
+    border: 1px solid rgba(240, 142, 66, 0.45);
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 12px;
+  }
+  h1 { font-size: clamp(2rem, 5vw, 3.1rem); letter-spacing: -0.03em; margin-bottom: 10px; }
+  .sub { color: var(--muted); font-size: 1.05rem; max-width: 640px; margin: 0 auto 22px; line-height: 1.5; }
+  .cta-row { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-bottom: 24px; }
+  .btn {
+    background: var(--card);
+    color: var(--text);
+    border: 1px solid var(--border);
+    padding: 9px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: transform .1s, border-color .15s, background .15s;
+  }
+  .btn:hover { border-color: var(--accent); background: #232b3a; }
+  .btn.primary { background: var(--accent); color: #121418; border-color: var(--accent); }
+  .btn.primary:hover { background: #fa9d54; }
+  .btn.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .install-box {
+    display: inline-flex; align-items: center; gap: 10px;
+    background: #10141c; border: 1px solid var(--border);
+    padding: 10px 14px; border-radius: 10px;
+    font-family: Consolas, Menlo, monospace; font-size: 13px; color: #c7d2e5;
+    max-width: 100%; overflow-x: auto;
+  }
+  .copy-btn {
+    background: #232b3a; color: var(--text); border: 1px solid var(--border);
+    padding: 4px 10px; border-radius: 6px; font-size: 12px; cursor: pointer;
+  }
+  .copy-btn:hover { border-color: var(--accent); }
+
+  .dock-panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+    margin-bottom: 24px;
+  }
+  .panel-head {
+    display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
+    gap: 10px; margin-bottom: 16px;
+  }
+  .panel-head h2 { font-size: 1.05rem; }
+  .herd-count { font-size: 12px; color: var(--green); font-weight: 600; }
+
+  .roster {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+  .pet-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+    text-align: center;
+  }
+  .pet-card canvas { image-rendering: pixelated; width: 64px; height: 64px; margin-bottom: 6px; }
+  .pet-card .name { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+  .pet-card .card-btns { display: flex; gap: 6px; justify-content: center; }
+  .mini-btn {
+    padding: 4px 10px; font-size: 12px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--border); background: #242c3b; color: var(--text); font-weight: 600;
+  }
+  .mini-btn.add { border-color: rgba(63,185,80,0.5); color: #86efac; }
+  .mini-btn.rem { border-color: rgba(248,113,113,0.4); color: #fca5a5; }
+
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    padding-top: 14px; border-top: 1px solid var(--border);
+  }
+  .controls input[type="text"] {
+    background: #10141c; border: 1px solid var(--border); color: var(--text);
+    padding: 8px 12px; border-radius: 8px; font-size: 13px; width: 200px;
+  }
+  .slider-grp {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted);
+    background: var(--card); padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border);
+  }
+  .hint { text-align: center; font-size: 12px; color: var(--muted); margin-top: 10px; }
+
+  .features {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px;
+  }
+  .feat {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px;
+  }
+  .feat h3 { font-size: 14px; margin-bottom: 6px; color: var(--accent); }
+  .feat p { font-size: 13px; color: var(--muted); line-height: 1.45; }
+
+  #pet-stage {
+    position: fixed; left: 0; top: 0; width: 100vw; height: 100vh;
+    pointer-events: none; z-index: 9999;
+  }
+</style>
+</head>
+<body>
+<canvas id="pet-stage"></canvas>
+
+<div class="wrap">
+  <header>
+    <div class="pill">v0.3.0 · Pure Rust · ~7.8 MB RAM</div>
+    <h1>DIYPets</h1>
+    <p class="sub">Make your own desktop pet in pure Rust. Try the live interactive herd right at the bottom of your screen—grab, toss, drop a ball, or send a speech bubble.</p>
+    <div class="cta-row">
+      <a class="btn primary" href="https://github.com/smresponsibilities/diypets/releases/latest">Download Release</a>
+      <a class="btn" href="https://github.com/smresponsibilities/diypets">GitHub</a>
+      <a class="btn" href="https://crates.io/crates/diypets">crates.io</a>
+    </div>
+    <div class="install-box">
+      <code id="install-cmd">cargo install diypets && diypets</code>
+      <button class="copy-btn" onclick="copyInstall()">Copy</button>
+    </div>
+  </header>
+
+  <section class="dock-panel">
+    <div class="panel-head">
+      <h2>Interactive Herd Playground</h2>
+      <span class="herd-count" id="herd-count">Active Herd: 2 / 8</span>
+    </div>
+
+    <div class="roster" id="roster"></div>
+
+    <div class="controls">
+      <button class="btn primary" onclick="dropBall()">Drop Bouncy Ball</button>
+      <button class="btn" id="follow-btn" onclick="toggleFollow()">Follow Cursor: OFF</button>
+      <button class="btn" onclick="headpatAll()">Headpat All</button>
+      <input type="text" id="bubble-input" value="v0.3.0 is live!" maxlength="36" />
+      <button class="btn" onclick="sayBubble()">Say</button>
+      <label class="slider-grp">Size <input type="range" id="size-slider" min="64" max="156" value="104" oninput="updateScale(this.value)" /></label>
+      <label class="slider-grp">Speed <input type="range" id="speed-slider" min="1" max="10" value="4" oninput="updateSpeed(this.value)" /></label>
+      <button class="btn" onclick="clearExtras()">Reset Herd</button>
+    </div>
+    <p class="hint">Tip: Grab any pet walking along the bottom of your screen and toss it, or drop a ball to watch the herd chase it.</p>
+  </section>
+
+  <section class="features">
+    <div class="feat">
+      <h3>Native stdio & HTTP MCP</h3>
+      <p>Plug straight into Claude Desktop, Cursor, or Claude Code via <code>diypets mcp</code> (6 tools: react, say, drop_ball, spawn_pet, follow_cursor, list_herd).</p>
+    </div>
+    <div class="feat">
+      <h3>Studio V4 + 2D SVG Auto-Rig</h3>
+      <p>Draw on a 128×128 board with Auto-Outline, Mirror X, Onion Skinning, 4× EPX RotSprite rotation, and a live physics Sandbox—or import any SVG.</p>
+    </div>
+    <div class="feat">
+      <h3>Cross-Platform & Fullscreen Aware</h3>
+      <p>Native Windows, macOS, and Linux binaries with window-ledge riding, Squash & Stretch physics, and automatic Fullscreen Auto-Hide.</p>
+    </div>
+  </section>
+</div>
+
+<script>
+const PACKS = [
+  { id: "highland_cow", name: "Highland Cow" },
+  { id: "dog", name: "Dog" },
+  { id: "polar_bear", name: "Polar Bear" },
+  { id: "goat", name: "Goat" },
+  { id: "stegosaurus", name: "Stegosaurus" }
+];
+
+const sprites = {};
+let petSize = 104;
+let petSpeed = 4;
+let followCursor = false;
+let mouseX = window.innerWidth / 2;
+let mouseY = window.innerHeight / 2;
+let pets = [];
+let ball = null;
+let dragPet = null;
+let lastMouseX = 0, lastMouseY = 0;
+
+const canvas = document.getElementById("pet-stage");
+const ctx = canvas.getContext("2d");
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener("resize", resize);
+resize();
+
+function updateHerdLabel() {
+  document.getElementById("herd-count").textContent = `Active Herd: ${pets.length} / 8`;
+}
+
+function addPet(id) {
+  if (pets.length >= 8) return;
+  const x = 80 + Math.random() * Math.max(120, window.innerWidth - 220);
+  pets.push({
+    id,
+    x,
+    y: window.innerHeight - petSize - 160 - Math.random() * 120,
+    vx: (Math.random() < 0.5 ? -1 : 1) * (petSpeed * 22),
+    vy: 0,
+    dir: Math.random() < 0.5 ? -1 : 1,
+    frame: Math.floor(Math.random() * 4),
+    frameT: 0,
+    sqX: 1, sqY: 1,
+    heartsUntil: 0,
+    bubble: null,
+    bubbleUntil: 0,
+    airborne: true
+  });
+  updateHerdLabel();
+}
+
+function removePet(id) {
+  const idx = pets.map(p => p.id).lastIndexOf(id);
+  if (idx !== -1 && pets.length > 1) {
+    pets.splice(idx, 1);
+    updateHerdLabel();
+  }
+}
+
+function clearExtras() {
+  pets = [];
+  addPet("highland_cow");
+  addPet("dog");
+}
+
+function dropBall() {
+  ball = {
+    x: window.innerWidth * 0.5,
+    y: 90,
+    vx: (Math.random() < 0.5 ? -1 : 1) * 260,
+    vy: -60,
+    until: performance.now() + 18000,
+    lastKick: 0
+  };
+}
+
+function toggleFollow() {
+  followCursor = !followCursor;
+  const btn = document.getElementById("follow-btn");
+  btn.textContent = `Follow Cursor: ${followCursor ? "ON" : "OFF"}`;
+  btn.classList.toggle("active", followCursor);
+}
+
+function headpatAll() {
+  const now = performance.now();
+  for (const p of pets) {
+    p.vy = -340;
+    p.sqX = 0.88; p.sqY = 1.15;
+    p.heartsUntil = now + 2200;
+  }
+}
+
+function sayBubble() {
+  const text = (document.getElementById("bubble-input").value || "Hello!").trim();
+  if (!text || pets.length === 0) return;
+  const now = performance.now();
+  pets[0].bubble = text.toUpperCase();
+  pets[0].bubbleUntil = now + 4500;
+  pets[0].vy = -260;
+  pets[0].sqX = 0.88; pets[0].sqY = 1.14;
+  pets[0].heartsUntil = now + 2000;
+}
+
+function updateScale(v) { petSize = Number(v); }
+function updateSpeed(v) { petSpeed = Number(v); }
+
+function copyInstall() {
+  navigator.clipboard.writeText(document.getElementById("install-cmd").textContent);
+}
+
+// Pointer drag & toss on pets (lets normal page clicks pass through when not on a pet)
+window.addEventListener("mousemove", e => {
+  mouseX = e.clientX; mouseY = e.clientY;
+  if (dragPet) {
+    dragPet.vx = (e.clientX - lastMouseX) * 22;
+    dragPet.vy = (e.clientY - lastMouseY) * 22;
+    dragPet.x = e.clientX - petSize * 0.5;
+    dragPet.y = e.clientY - petSize * 0.4;
+  }
+  lastMouseX = e.clientX; lastMouseY = e.clientY;
+});
+
+window.addEventListener("mousedown", e => {
+  for (let i = pets.length - 1; i >= 0; i--) {
+    const p = pets[i];
+    if (e.clientX >= p.x && e.clientX <= p.x + petSize && e.clientY >= p.y && e.clientY <= p.y + petSize) {
+      dragPet = p;
+      p.airborne = true;
+      e.preventDefault();
+      break;
+    }
+  }
+});
+
+window.addEventListener("mouseup", () => { dragPet = null; });
+
+// Build roster UI & load real sprite sheets
+const rosterEl = document.getElementById("roster");
+PACKS.forEach(pk => {
+  const img = new Image();
+  img.src = `sprites/${pk.id}.png`;
+  sprites[pk.id] = img;
+
+  const card = document.createElement("div");
+  card.className = "pet-card";
+  card.innerHTML = `
+    <canvas width="64" height="64" id="prev-${pk.id}"></canvas>
+    <div class="name">${pk.name}</div>
+    <div class="card-btns">
+      <button class="mini-btn add" onclick="addPet('${pk.id}')">+ Add</button>
+      <button class="mini-btn rem" onclick="removePet('${pk.id}')">- Remove</button>
+    </div>
+  `;
+  rosterEl.appendChild(card);
+
+  img.onload = () => {
+    const pc = document.getElementById(`prev-${pk.id}`).getContext("2d");
+    pc.imageSmoothingEnabled = false;
+    pc.drawImage(img, 0, 0, img.width / 4, img.height, 0, 0, 64, 64);
+  };
+});
+
+clearExtras();
+
+let prevT = performance.now();
+function loop(now) {
+  const dt = Math.min(0.05, (now - prevT) / 1000);
+  prevT = now;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.imageSmoothingEnabled = false;
+  const floorY = canvas.height - petSize + 6;
+
+  if (ball) {
+    if (now > ball.until) {
+      ball = null;
+    } else {
+      ball.vy += 980 * dt;
+      ball.x += ball.vx * dt;
+      ball.y += ball.vy * dt;
+      if (ball.x < 14) { ball.x = 14; ball.vx = Math.abs(ball.vx) * 0.82; }
+      if (ball.x > canvas.width - 14) { ball.x = canvas.width - 14; ball.vx = -Math.abs(ball.vx) * 0.82; }
+      if (ball.y > canvas.height - 14) {
+        ball.y = canvas.height - 14;
+        ball.vy = Math.abs(ball.vy) > 60 ? -Math.abs(ball.vy) * 0.72 : 0;
+        ball.vx *= 0.985;
+      }
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, 12, 0, Math.PI * 2);
+      ctx.fillStyle = "#f2683e";
+      ctx.fill();
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = "#2a1818";
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(ball.x - 4, ball.y - 4, 3, 0, Math.PI * 2);
+      ctx.fillStyle = "#fff4e0";
+      ctx.fill();
+    }
+  }
+
+  for (const p of pets) {
+    p.sqX += (1 - p.sqX) * Math.min(1, dt * 12);
+    p.sqY += (1 - p.sqY) * Math.min(1, dt * 12);
+
+    if (p !== dragPet) {
+      p.vy += 980 * dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+
+      if (p.x < 0) { p.x = 0; p.dir = 1; }
+      if (p.x > canvas.width - petSize) { p.x = canvas.width - petSize; p.dir = -1; }
+
+      if (p.y >= floorY) {
+        if (p.airborne && p.vy > 140) { p.sqX = 1.15; p.sqY = 0.85; }
+        p.y = floorY;
+        p.vy = 0;
+        p.airborne = false;
+
+        let targetX = null;
+        if (ball) targetX = ball.x - petSize * 0.5;
+        else if (followCursor) targetX = mouseX - petSize * 0.5;
+
+        if (targetX !== null) {
+          const dx = targetX - p.x;
+          if (Math.abs(dx) > 22) {
+            p.dir = dx > 0 ? 1 : -1;
+            p.vx = p.dir * (petSpeed * 32);
+          } else {
+            p.vx = 0;
+          }
+        } else {
+          p.vx = p.dir * (petSpeed * 22);
+        }
+      } else {
+        p.airborne = true;
+      }
+
+      if (ball && now - ball.lastKick > 450) {
+        const dx = ball.x - (p.x + petSize * 0.5);
+        const dy = ball.y - (p.y + petSize * 0.7);
+        if (Math.abs(dx) < 36 && Math.abs(dy) < 42) {
+          ball.vy = -440;
+          ball.vx = dx >= 0 ? 280 : -280;
+          ball.lastKick = now;
+          p.heartsUntil = now + 1800;
+          p.sqX = 0.9; p.sqY = 1.12;
+        }
+      }
+    }
+
+    p.frameT += dt * (Math.abs(p.vx) > 5 ? (petSpeed * 1.8) : 2.0);
+    if (p.frameT >= 1) { p.frame = (p.frame + 1) % 4; p.frameT = 0; }
+
+    const img = sprites[p.id];
+    if (img && img.complete && img.width > 0) {
+      const fw = img.width / 4;
+      const fh = img.height;
+      const dw = petSize * p.sqX;
+      const dh = petSize * p.sqY;
+      const drawX = p.x + (petSize - dw) * 0.5;
+      const drawY = p.y + (petSize - dh);
+
+      ctx.save();
+      if (p.dir > 0) {
+        ctx.translate(drawX + dw, drawY);
+        ctx.scale(-1, 1);
+        ctx.drawImage(img, p.frame * fw, 0, fw, fh, 0, 0, dw, dh);
+      } else {
+        ctx.drawImage(img, p.frame * fw, 0, fw, fh, drawX, drawY, dw, dh);
+      }
+      ctx.restore();
+    }
+
+    if (now < p.heartsUntil) {
+      const prog = 1 - (p.heartsUntil - now) / 2200;
+      ctx.fillStyle = "#f03c62";
+      ctx.font = "bold 16px sans-serif";
+      ctx.fillText("♥", p.x + petSize * 0.35, p.y - prog * 28);
+      ctx.fillText("♥", p.x + petSize * 0.62, p.y - ((prog + 0.3) % 1) * 28);
+    }
+
+    if (p.bubble && now < p.bubbleUntil) {
+      ctx.font = "bold 12px Consolas, monospace";
+      const tw = ctx.measureText(p.bubble).width;
+      const bw = tw + 22, bh = 28;
+      const bx = Math.max(8, Math.min(canvas.width - bw - 8, p.x + petSize * 0.5 - bw * 0.5));
+      const by = Math.max(8, p.y - bh - 10);
+      ctx.fillStyle = "#161a24";
+      ctx.strokeStyle = "#f08e42";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(bx, by, bw, bh, 7);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "#faf6ee";
+      ctx.fillText(p.bubble, bx + 11, by + 18);
+    }
+  }
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
