@@ -520,17 +520,17 @@
   <section class="dex-panel" id="gif-maker">
     <div class="dex-head">
       <strong>INSTANT README &amp; DISCORD MASCOT GIF MAKER (ZERO INSTALL)</strong>
-      <span id="gif-status">LOSSLESS GIF89A &middot; CLIENT-SIDE</span>
+      <span id="gif-status">LOSSLESS GIF89A &middot; SHEET &amp; AUTO-RIG</span>
     </div>
     <div class="dex-body">
       <div class="gif-maker-grid">
-        <div class="gif-preview-stage" id="gif-drop-zone" title="Drag &amp; drop any PNG or SVG here">
+        <div class="gif-preview-stage" id="gif-drop-zone" title="Drag &amp; drop a PNG, Sprite Sheet, SVG, or deskpet.xml here">
           <canvas id="gif-preview-canvas" width="128" height="128"></canvas>
         </div>
         <div>
           <div class="gif-controls" style="margin-bottom:8px;">
             <label class="slider-chip">MASCOT
-              <select id="gif-pet-select" class="ctrl-input" style="width:132px;padding:3px 6px;" onchange="syncGifMascotSelection()">
+              <select id="gif-pet-select" class="ctrl-input" style="width:128px;padding:3px 6px;" onchange="syncGifMascotSelection()">
                 <option value="highland_cow">Highland Cow</option>
                 <option value="dog">Dog</option>
                 <option value="polar_bear">Polar Bear</option>
@@ -538,9 +538,16 @@
                 <option value="stegosaurus">Stegosaurus</option>
               </select>
             </label>
+            <label class="slider-chip">MODE
+              <select id="gif-mode-select" class="ctrl-input" style="width:120px;padding:3px 6px;" onchange="refreshCleanedCustomImg()">
+                <option value="auto">Auto Detect</option>
+                <option value="single">Single Auto-Rig</option>
+                <option value="sheet">Sprite Sheet</option>
+              </select>
+            </label>
             <label class="slider-chip">JUICE FX
-              <select id="gif-fx-select" class="ctrl-input" style="width:124px;padding:3px 6px;">
-                <option value="walk">Walk Cycle (Auto-Rig)</option>
+              <select id="gif-fx-select" class="ctrl-input" style="width:128px;padding:3px 6px;">
+                <option value="walk">Walk Cycle</option>
                 <option value="run">Run / Sprint</option>
                 <option value="breathe">Idle Breathe (1px)</option>
                 <option value="hop">Squash Hop</option>
@@ -548,24 +555,28 @@
               </select>
             </label>
             <label class="slider-chip">BG
-              <select id="gif-bg-select" class="ctrl-input" style="width:122px;padding:3px 6px;">
+              <select id="gif-bg-select" class="ctrl-input" style="width:116px;padding:3px 6px;">
                 <option value="transparent">Transparent</option>
                 <option value="card">README Card</option>
               </select>
             </label>
+          </div>
+          <div class="gif-controls" id="gif-sheet-controls" style="display:none;margin-bottom:8px;">
+            <label class="slider-chip">COLS <input id="gif-sheet-cols" class="ctrl-input" type="number" min="1" max="32" value="9" style="width:52px;padding:2px 5px;" onchange="refreshCleanedCustomImg()" /></label>
+            <label class="slider-chip">ROWS <input id="gif-sheet-rows" class="ctrl-input" type="number" min="1" max="16" value="1" style="width:52px;padding:2px 5px;" onchange="refreshCleanedCustomImg()" /></label>
+            <label class="slider-chip">FRAMES <input id="gif-sheet-frames" class="ctrl-input" type="text" value="all" placeholder="all or 1-4" style="width:94px;padding:2px 6px;" onchange="refreshCleanedCustomImg()" /></label>
+          </div>
+          <div class="gif-controls" style="margin-bottom:8px;">
             <label class="slider-chip">SIZE
-              <select id="gif-size-select" class="ctrl-input" style="width:78px;padding:3px 6px;">
+              <select id="gif-size-select" class="ctrl-input" style="width:74px;padding:3px 6px;">
                 <option value="64">64px</option>
                 <option value="128" selected>128px</option>
                 <option value="256">256px</option>
               </select>
             </label>
             <label class="slider-chip">FPS <span id="gif-fps-val">8</span> <input id="gif-fps" type="range" min="4" max="14" value="8" oninput="updateGifPreviewFps()" /></label>
-          </div>
-          <div class="gif-controls">
-            <input id="gif-caption" class="ctrl-input" type="text" value="Highland Cow" maxlength="18" placeholder="Card label" style="width:124px;" />
             <label class="slider-chip">RIG
-              <select id="gif-body-select" class="ctrl-input" style="width:106px;padding:3px 6px;" onchange="refreshCleanedCustomImg()">
+              <select id="gif-body-select" class="ctrl-input" style="width:92px;padding:3px 6px;" onchange="refreshCleanedCustomImg()">
                 <option value="auto">Auto</option>
                 <option value="quadruped">4-Leg</option>
                 <option value="biped">2-Leg</option>
@@ -573,15 +584,19 @@
               </select>
             </label>
             <label class="slider-chip"><input id="gif-clean-bg" type="checkbox" checked onchange="refreshCleanedCustomImg()" /> CLEAN FRINGE</label>
-            <label class="slider-chip"><input id="gif-show-rig" type="checkbox" /> SHOW RIG</label>
+            <label class="slider-chip"><input id="gif-show-rig" type="checkbox" /> EDIT PINS (DRAG)</label>
+          </div>
+          <div class="gif-controls">
+            <input id="gif-caption" class="ctrl-input" type="text" value="Highland Cow" maxlength="18" placeholder="Card label" style="width:120px;" />
             <label class="ctrl-btn" style="display:inline-flex;align-items:center;gap:6px;">
-              UPLOAD PNG / SVG
-              <input id="gif-upload" type="file" accept="image/png,image/svg+xml,image/webp,image/jpeg" style="display:none;" onchange="handleGifUpload(event)" />
+              UPLOAD PNG / SHEET / XML
+              <input id="gif-upload" type="file" accept="image/png,image/svg+xml,image/webp,image/jpeg,.xml" style="display:none;" onchange="handleGifUpload(event)" />
             </label>
             <button class="ctrl-btn primary" onclick="exportMascotGif()">EXPORT .GIF</button>
+            <button class="ctrl-btn" onclick="exportMascotSpriteSheet()">EXPORT SHEET (.PNG)</button>
             <button class="ctrl-btn" id="gif-clear-btn" style="display:none;" onclick="syncGifMascotSelection()">USE BUILT-IN</button>
           </div>
-          <div class="hint-strip" style="margin-top:8px;">Drag &amp; drop any PNG/SVG or pick a built-in mascot &mdash; auto-cleans grey edges, animates Walk Loop on single sprites, and exports lossless GIF89a locally.</div>
+          <div class="hint-strip" style="margin-top:8px;">Drop a single PNG/SVG (auto-rigged), a multi-frame PNG sprite sheet (auto-sliced), or a <code>deskpet.xml</code> &mdash; exports lossless GIF89a 100% locally.</div>
         </div>
       </div>
     </div>
@@ -1256,6 +1271,6 @@ function loop(now) {
 requestAnimationFrame(loop);
 
 </script>
-<script src="gif_maker.js?v=2"></script>
+<script src="gif_maker.js?v=4"></script>
 </body>
 </html>
