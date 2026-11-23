@@ -17,6 +17,7 @@ use diypets::deskpet_state::{
     DeskpetState, DeskpetStateId, HerdEncounter, detect_herd_encounter, select_window_floor,
     window_floor_candidate,
 };
+use diypets::logging;
 use diypets::platform;
 use diypets::squash::{SquashSpring, apply_squash_nearest};
 use diypets::deskpet_xml::DeskpetPack;
@@ -247,7 +248,7 @@ impl LayeredSurface {
                 SourceConstantAlpha: 255,
                 AlphaFormat: AC_SRC_ALPHA as u8,
             };
-            let _ = UpdateLayeredWindow(
+            let res = UpdateLayeredWindow(
                 hwnd,
                 None,
                 Some(&pt_dst as *const _),
@@ -258,6 +259,27 @@ impl LayeredSurface {
                 Some(&blend as *const _),
                 ULW_ALPHA,
             );
+            static ULW_OK_LOGGED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+            static ULW_ERR_COUNT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+            match res {
+                Ok(()) => {
+                    if !ULW_OK_LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                        let nz = buffer[..pixel_count].iter().filter(|&&px| (px >> 24) > 0).count();
+                        logging::info(&format!(
+                            "UpdateLayeredWindow OK: hwnd={:?} pos=({x},{y}) size={}x{} opaque_px={nz}",
+                            hwnd.0, self.width, self.height
+                        ));
+                    }
+                }
+                Err(e) => {
+                    if ULW_ERR_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 10 {
+                        logging::error(&format!(
+                            "UpdateLayeredWindow FAILED: hwnd={:?} pos=({x},{y}) size={}x{} err={e:?}",
+                            hwnd.0, self.width, self.height
+                        ));
+                    }
+                }
+            }
         }
     }
 }
@@ -1185,6 +1207,10 @@ impl DeskpetApp {
         if should_show == self.last_visible {
             return;
         }
+        logging::info(&format!(
+            "sync_visibility: {} -> {} (quiet_mode={}, fullscreen_hidden={})",
+            self.last_visible, should_show, self.quiet_mode, self.fullscreen_hidden
+        ));
         self.last_visible = should_show;
         for pet in &mut self.pets {
             pet.window.set_visible(should_show);
@@ -1384,7 +1410,9 @@ impl ApplicationHandler for DeskpetApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let now_ms = self.start_time.elapsed().as_millis() as u64;
         if self.pets.is_empty() {
+            logging::info(&format!("resumed(): syncing herd={:?} pet_size={} click_through={} auto_hide_fullscreen={}", self.desired_herd, self.pet_size, self.click_through, self.auto_hide_fullscreen));
             self.sync_herd(event_loop, now_ms);
+            logging::info(&format!("resumed(): spawned {} pet window(s)", self.pets.len()));
         }
 
         if self.tray.is_none() {
@@ -1665,6 +1693,10 @@ impl ApplicationHandler for DeskpetApp {
                 pet.window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
+                static FIRST_REDRAW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+                if !FIRST_REDRAW.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                    logging::info(&format!("RedrawRequested fired for pet_idx={pet_idx} (total_pets={})", self.pets.len()));
+                }
                 let now = self.start_time.elapsed().as_millis() as u64;
 
                 let mut min_x: f32 = 0.0;
@@ -1721,54 +1753,6 @@ impl ApplicationHandler for DeskpetApp {
                     floor_y = base_floor_y;
                     wall_left = min_x;
                     wall_right = max_x;
-                    #[cfg(not(windows))]
-                    {
-                        let center_x = pet.state.x as i32 + (scaled_w / 2) as i32;
-                        let feet_y = (pet.state.y + ground_height) as i32 + 2;
-                        let mons: Vec<(i32, i32, i32, i32)> = event_loop
-                            .available_monitors()
-                            .map(|m| {
-                                let p = m.position();
-                                let s = m.size();
-                                (p.x, p.y, p.x + s.width as i32, p.y + s.height as i32)
-                            })
-                            .collect();
-                        if let Some(wrect) = platform::find_unix_window_under_point(center_x, feet_y, &mons) {
-                            let win_y = wrect.top as f32;
-                            let win_x = wrect.left as f32;
-                            let win_h = (wrect.bottom - wrect.top) as f32;
-                            if let Some(window_floor) = window_floor_candidate(
-                                win_y,
-                                ground_height,
-                                pet.state.y + ground_height,
-                                min_y,
-                            ) {
-                                let prev_f = floor_y;
-                                floor_y = select_window_floor(floor_y, Some(window_floor));
-                                if floor_y < prev_f - 0.5 {
-                                    if let Some((old_h, ox, oy)) = pet.standing_window {
-                                        if old_h == wrect.id {
-                                            let dx = wrect.left - ox;
-                                            let dy = wrect.top - oy;
-                                            if dx.abs() < 300 && dy.abs() < 300 {
-                                                pet.state.x += dx as f32;
-                                                pet.state.y += dy as f32;
-                                            }
-                                        }
-                                    }
-                                    pet.standing_window = Some((wrect.id, wrect.left, wrect.top));
-                                }
-                            }
-                            if win_y > 10.0
-                                && pet.state.y + (scaled_h as f32) > win_y
-                                && pet.state.y < win_y + win_h
-                                && pet.state.x < win_x
-                            {
-                                wall_right = wall_right.min(win_x - (scaled_w as f32));
-                            }
-                        }
-                    }
-
                     pet.cached_floor_y = Some(floor_y);
                     pet.cached_wall_left = Some(wall_left);
                     pet.cached_wall_right = Some(wall_right);
@@ -1883,6 +1867,54 @@ impl ApplicationHandler for DeskpetApp {
                                         }
                                     }
                                 }
+                            }
+                        }
+                    }
+
+                    #[cfg(not(windows))]
+                    {
+                        let center_x = pet.state.x as i32 + (scaled_w / 2) as i32;
+                        let feet_y = (pet.state.y + ground_height) as i32 + 2;
+                        let mons: Vec<(i32, i32, i32, i32)> = event_loop
+                            .available_monitors()
+                            .map(|m| {
+                                let p = m.position();
+                                let s = m.size();
+                                (p.x, p.y, p.x + s.width as i32, p.y + s.height as i32)
+                            })
+                            .collect();
+                        if let Some(wrect) = platform::find_unix_window_under_point(center_x, feet_y, &mons) {
+                            let win_y = wrect.top as f32;
+                            let win_x = wrect.left as f32;
+                            let win_h = (wrect.bottom - wrect.top) as f32;
+                            if let Some(window_floor) = window_floor_candidate(
+                                win_y,
+                                ground_height,
+                                pet.state.y + ground_height,
+                                min_y,
+                            ) {
+                                let prev_f = floor_y;
+                                floor_y = select_window_floor(floor_y, Some(window_floor));
+                                if floor_y < prev_f - 0.5 {
+                                    if let Some((old_h, ox, oy)) = pet.standing_window {
+                                        if old_h == wrect.id {
+                                            let dx = wrect.left - ox;
+                                            let dy = wrect.top - oy;
+                                            if dx.abs() < 300 && dy.abs() < 300 {
+                                                pet.state.x += dx as f32;
+                                                pet.state.y += dy as f32;
+                                            }
+                                        }
+                                    }
+                                    pet.standing_window = Some((wrect.id, wrect.left, wrect.top));
+                                }
+                            }
+                            if win_y > 10.0
+                                && pet.state.y + (scaled_h as f32) > win_y
+                                && pet.state.y < win_y + win_h
+                                && pet.state.x < win_x
+                            {
+                                wall_right = wall_right.min(win_x - (scaled_w as f32));
                             }
                         }
                     }
@@ -2109,6 +2141,9 @@ impl Drop for DeskpetApp {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) != Some("mcp") {
+        let _ = logging::init("diypets");
+    }
     if args.get(1).map(String::as_str) == Some("mcp") {
         agent_api::run_stdio_mcp_bridge();
         return;

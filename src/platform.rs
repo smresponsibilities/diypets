@@ -55,13 +55,17 @@ pub fn is_fullscreen_app_active(own_hwnds: &[isize], monitors: &[(i32, i32, i32,
     use windows::Win32::Foundation::RECT;
     use windows::Win32::Graphics::Dwm::{DWMWA_CLOAKED, DwmGetWindowAttribute};
     use windows::Win32::UI::WindowsAndMessaging::{
-        GWL_STYLE, GetClassNameW, GetForegroundWindow, GetWindowLongW, GetWindowRect, IsIconic, IsZoomed,
-        WS_CAPTION, WS_THICKFRAME,
+        GWL_STYLE, GetClassNameW, GetForegroundWindow, GetWindowLongW, GetWindowRect, IsIconic,
+        IsZoomed, WS_CAPTION, WS_THICKFRAME,
     };
 
     unsafe {
         let fg = GetForegroundWindow();
-        if fg.is_invalid() || own_hwnds.contains(&(fg.0 as isize)) || IsIconic(fg).as_bool() || IsZoomed(fg).as_bool() {
+        if fg.is_invalid()
+            || own_hwnds.contains(&(fg.0 as isize))
+            || IsIconic(fg).as_bool()
+            || IsZoomed(fg).as_bool()
+        {
             return false;
         }
 
@@ -78,20 +82,30 @@ pub fn is_fullscreen_app_active(own_hwnds: &[isize], monitors: &[(i32, i32, i32,
             return false;
         }
 
-        let mut class_buf = [0u16; 128];
-        let len = GetClassNameW(fg, &mut class_buf) as usize;
-        if len > 0 {
-            let class_name = String::from_utf16_lossy(&class_buf[..len]);
-            if matches!(
-                class_name.as_str(),
-                "Progman" | "WorkerW" | "Shell_TrayWnd" | "Shell_SecondaryTrayWnd"
-            ) {
-                return false;
-            }
+        let style = GetWindowLongW(fg, GWL_STYLE) as u32;
+        // Normal desktop apps have a caption bar or resizable frame; true fullscreen apps are borderless
+        if (style & WS_CAPTION.0) != 0 || (style & WS_THICKFRAME.0) != 0 {
+            return false;
         }
 
-        let style = GetWindowLongW(fg, GWL_STYLE) as u32;
-        if (style & WS_CAPTION.0) != 0 && (style & WS_THICKFRAME.0) != 0 {
+        let mut class_buf = [0u16; 128];
+        let len = GetClassNameW(fg, &mut class_buf) as usize;
+        let class_name = if len > 0 {
+            String::from_utf16_lossy(&class_buf[..len])
+        } else {
+            String::new()
+        };
+        if matches!(
+            class_name.as_str(),
+            "Progman"
+                | "WorkerW"
+                | "Shell_TrayWnd"
+                | "Shell_SecondaryTrayWnd"
+                | "Windows.UI.Core.CoreWindow"
+                | "ApplicationFrameWindow"
+                | "CASCADIA_HOSTING_WINDOW_CLASS"
+                | "NotifyIconOverflowWindow"
+        ) {
             return false;
         }
 
@@ -101,11 +115,12 @@ pub fn is_fullscreen_app_active(own_hwnds: &[isize], monitors: &[(i32, i32, i32,
         }
 
         for &(mx, my, mr, mb) in monitors {
-            if rect.left <= mx
-                && rect.top <= my
-                && rect.right >= mr
-                && rect.bottom >= mb
-            {
+            if rect.left <= mx && rect.top <= my && rect.right >= mr && rect.bottom >= mb {
+                #[cfg(debug_assertions)]
+                eprintln!(
+                    "[diypets] fullscreen auto-hide triggered by class={class_name:?} rect=({},{},{},{}) style=0x{style:08x}",
+                    rect.left, rect.top, rect.right, rect.bottom
+                );
                 return true;
             }
         }
