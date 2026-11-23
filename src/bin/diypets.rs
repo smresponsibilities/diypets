@@ -2250,6 +2250,96 @@ fn main() {
         println!("  Click-Through    : {} | Auto-Hide Fullscreen: {}", settings.click_through, settings.auto_hide_fullscreen);
         return;
     }
+    if args.get(1).map(String::as_str) == Some("hooks") {
+        let action = args.get(2).map(String::as_str).unwrap_or("status");
+        let is_project = args.iter().any(|a| a == "--project");
+        let scope = if is_project {
+            diypets::agent_hooks::HookScope::Project
+        } else {
+            diypets::agent_hooks::HookScope::User
+        };
+        match action {
+            "install" => {
+                let target_arg = args.get(3).map(String::as_str).unwrap_or("all");
+                match diypets::agent_hooks::AgentTarget::parse_targets(target_arg) {
+                    Ok(targets) => {
+                        for t in targets {
+                            match diypets::agent_hooks::install_hooks(t, scope) {
+                                Ok((path, n)) => println!("Installed {n} DIYPets hooks for {} -> {}", t.label(), path.display()),
+                                Err(e) => eprintln!("Failed to install {} hooks: {e}", t.label()),
+                            }
+                        }
+                    }
+                    Err(e) => eprintln!("{e}"),
+                }
+            }
+            "uninstall" | "remove" => {
+                let target_arg = args.get(3).map(String::as_str).unwrap_or("all");
+                match diypets::agent_hooks::AgentTarget::parse_targets(target_arg) {
+                    Ok(targets) => {
+                        for t in targets {
+                            match diypets::agent_hooks::uninstall_hooks(t, scope) {
+                                Ok((path, n)) => println!("Removed {n} DIYPets hooks for {} from {}", t.label(), path.display()),
+                                Err(e) => eprintln!("Failed to uninstall {} hooks: {e}", t.label()),
+                            }
+                        }
+                    }
+                    Err(e) => eprintln!("{e}"),
+                }
+            }
+            "status" => {
+                let scope_label = if is_project { "project" } else { "user" };
+                println!("DIYPets Coding-Agent Hooks ({scope_label} scope):");
+                for (target, path, count) in diypets::agent_hooks::status_report(scope) {
+                    println!("  {:<12}: {} hook(s) ({})", target.label(), count, path.display());
+                }
+            }
+            _ => {
+                println!("Usage:");
+                println!("  diypets hooks install <claude-code|cursor|all> [--project]");
+                println!("  diypets hooks uninstall <claude-code|cursor|all> [--project]");
+                println!("  diypets hooks status [--project]");
+            }
+        }
+        return;
+    }
+    if args.get(1).map(String::as_str) == Some("hook-event") {
+        let agent = args.get(2).map(String::as_str).unwrap_or("claude-code");
+        let event = args.get(3).map(String::as_str).unwrap_or("");
+        let mut stdin_buf = String::new();
+        if !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+            use std::io::Read;
+            let _ = std::io::stdin().take(4096).read_to_string(&mut stdin_buf);
+        }
+        if let Some(reaction) = diypets::agent_hooks::map_hook_event(agent, event, &stdin_buf) {
+            diypets::agent_hooks::send_hook_reaction_nonblocking(&reaction);
+        }
+        // Always exit 0 so hooks never block or fail a coding agent.
+        return;
+    }
+    if args.get(1).map(String::as_str) == Some("export-gif") {
+        let xml_arg = args.get(2).map(String::as_str);
+        let out_arg = args.get(3).map(String::as_str).unwrap_or("diypets_preview.gif");
+        let Some(xml_path) = xml_arg else {
+            eprintln!("Usage: diypets export-gif <path/to/deskpet.xml> [output.gif] [--card]");
+            return;
+        };
+        let is_card = args.iter().any(|a| a == "--card");
+        let cfg = if is_card {
+            diypets::gif_export::GifExportConfig::social_card(2)
+        } else {
+            diypets::gif_export::GifExportConfig::transparent(2)
+        };
+        match std::fs::read_to_string(xml_path)
+            .map_err(|e| format!("Failed to read {xml_path}: {e}"))
+            .and_then(|xml| diypets::gif_export::export_xml_pack_gif(&xml, "1", &cfg))
+            .and_then(|bytes| std::fs::write(out_arg, bytes).map_err(|e| format!("Write failed: {e}")))
+        {
+            Ok(()) => println!("Exported animated GIF -> {out_arg}"),
+            Err(e) => eprintln!("GIF export failed: {e}"),
+        }
+        return;
+    }
     if args.get(1).map(String::as_str) == Some("mcp") {
         agent_api::run_stdio_mcp_bridge();
         return;

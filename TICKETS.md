@@ -22,7 +22,8 @@
 - [ ] **T-006: True 8-Bit Pixel Editor Core (`diypets-creator`)**
   - *Reference:* **Aseprite** & **Pixelorama**.
   - *Scope:* Native low-res grid selector (`16x16`, `24x24`, `32x32`, `48x48`, `64x64`) with floating **1:1 Taskbar Live Preview**, **Indexed Palette Mode** (PICO-8, Endesga-32, Game Boy, NES live swatch recoloring), **Pixel-Perfect Brush** (L-double removal), and **2x2 / 4x4 Ordered Bayer Dithering**.
-- [ ] **T-007: 1-Click Shareable GIF Exporter & Direct `.aseprite` Importer**
+- [x] **T-007: 1-Click Shareable Lossless Pixel-Art GIF Exporter (`src/gif_export.rs` + Studio + CLI)**
+- [ ] **T-007b: Direct `.ase`/`.aseprite` Binary Chunk Importer**
   - *Reference:* **JuiceFX / Aseprite** instant share loop.
   - *Scope:* Export any pet animation loop directly to a transparent or themed `.gif` inside Studio for posting on X/Reddit/Discord; import `.ase`/`.aseprite` files with automatic tag mapping.
 - [ ] **T-008: Real Photo -> Desktop Pet ("Snap Your Real Pet")**
@@ -30,7 +31,7 @@
   - *Scope:* Offline cutout via `ort` -> 12-16 color 8-bit pixelizer + 1-click Auto-Outline -> geometric auto-rigging into `deskpet.xml`.
 
 ## P2 — Coding-Agent Ecosystem, IDE Awareness & Viral Reactivity (`v0.5.0`)
-- [ ] **T-009: 1-Click Coding-Agent Hooks (`diypets hooks install claude-code / cursor / codex`)**
+- [x] **T-009: 1-Click Coding-Agent Hooks (`diypets hooks install claude-code / cursor / all`)**
   - *Reference:* **clawd-on-desk** & **OpenPets** (real-time desktop status for coding agents, delivered at ~7.8 MB RAM instead of Electron).
   - *Scope:* Auto-wire agent lifecycle hooks so pets show *Thinking*, *Build Passed*, *Tests Failed*, and *Token Burst* states without manual CLI calls.
 - [ ] **T-010: Keystroke & Click Reflex Mode**
@@ -61,3 +62,13 @@
   - *Scope:* Create 5 scoped starter issues and 4 medium feature issues on GitHub linked to `CONTRIBUTING.md`.
 - [ ] **T-020: Shareable "My Desktop Herd" Snapshot Card**
   - *Scope:* 1-click PNG/GIF snapshot export showing your active herd for easy sharing on X, Reddit, and Discord.
+
+## P3b — Codebase Hardening & Platform Parity (v1.0 Readiness)
+- [ ] **T-021: Split Monolith Binaries into Submodules (`runner/`, `studio/`, `settings_ui/`)**
+  - Break `diypets.rs`, `diypets_creator.rs`, and `diypets_settings.rs` into small testable modules so community PRs stay clean.
+- [ ] **T-022: Local HTTP Agent API Security & Rate-Limiting Hardening**
+  - Enforce 4 KB body cap, per-second reaction rate limiting, and strict `127.0.0.1` binding across all agent routes.
+- [ ] **T-023: True Linux Wayland (`zwlr_layer_shell_v1` + `wl_region` click-through) & macOS Ledge Verification**
+  - Native Wayland transparent overlay surface with dynamic input masks and verified macOS `CGWindowListCopyWindowInfo` ledge walking.
+- [ ] **T-024: Code Signing (Windows Authenticode / macOS Notarization) & `cargo-audit`/`cargo-deny` CI**
+  - Eliminate SmartScreen/Gatekeeper warnings on downloaded binaries and enforce supply-chain checks in CI.

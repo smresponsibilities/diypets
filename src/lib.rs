@@ -1,3 +1,5 @@
+pub mod gif_export;
+pub mod agent_hooks;
 pub mod sprite_ingest;
 pub mod ui_toast;
 pub mod logging;

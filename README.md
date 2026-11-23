@@ -29,6 +29,8 @@ cargo install diypets
 diypets                       # start desktop pet runner
 diypets say "Build passed"    # trigger a speech bubble on the active pet
 diypets mcp                   # run stdio MCP server for Claude / Cursor / Codex
+diypets hooks install all     # auto-wire Claude Code & Cursor lifecycle hooks
+diypets export-gif pet.xml    # export a lossless transparent looping GIF
 diypets doctor                # print config path, logs, herd state, and build info
 diypets --version             # print version, git commit, and target triple
 diypets-settings              # open herd & behavior settings UI

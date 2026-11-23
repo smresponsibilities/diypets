@@ -906,6 +906,102 @@ impl StudioApp {
         self.pending_activate = false;
     }
 
+    fn export_studio_gif(&mut self, social_card: bool) {
+        let default_name = format!(
+            "{}_{}.gif",
+            sanitize_pack_id(&self.project.pack_id),
+            if social_card { "card" } else { "transparent" }
+        );
+        let Some(path) = rfd::FileDialog::new()
+            .set_file_name(&default_name)
+            .add_filter("Animated GIF", &["gif"])
+            .save_file()
+        else {
+            return;
+        };
+        match self.project.build_export_artifacts() {
+            Ok((sheet, _icon, xml)) => {
+                let cfg = if social_card {
+                    diypets::gif_export::GifExportConfig::social_card(2)
+                } else {
+                    diypets::gif_export::GifExportConfig::transparent(2)
+                };
+                match diypets::gif_export::export_sheet_and_xml_gif(&sheet, &xml, "1", &cfg) {
+                    Ok(bytes) => match std::fs::write(&path, bytes) {
+                        Ok(()) => {
+                            self.status_msg = Some((
+                                format!("Exported animated GIF to {}", path.display()),
+                                false,
+                            ));
+                        }
+                        Err(e) => {
+                            self.status_msg = Some((format!("GIF write error: {e}"), true));
+                        }
+                    },
+                    Err(e) => {
+                        self.status_msg = Some((format!("GIF encode error: {e}"), true));
+                    }
+                }
+            }
+            Err(e) => {
+                self.status_msg = Some((format!("Export build error: {e}"), true));
+            }
+        }
+    }
+
+    fn export_imported_sheet_gif(&mut self, social_card: bool) {
+        let Some(raw) = &self.sheet_import_img else {
+            self.status_msg = Some(("Pick a sprite sheet first.".to_string(), true));
+            return;
+        };
+        let ing = ingest_sprite_sheet(raw, self.current_slice_mode(), 128);
+        if ing.frames.is_empty() {
+            self.status_msg = Some(("No frames detected to export as GIF.".to_string(), true));
+            return;
+        }
+        let default_name = format!("{}.gif", sanitize_pack_id(&self.sheet_name));
+        let Some(path) = rfd::FileDialog::new()
+            .set_file_name(&default_name)
+            .add_filter("Animated GIF", &["gif"])
+            .save_file()
+        else {
+            return;
+        };
+        let iv = self.sheet_fps_ms.clamp(50, 500);
+        let walk_frames: Vec<image::RgbaImage> = ing
+            .walk_indices
+            .iter()
+            .filter_map(|&idx| ing.frames.get(idx).cloned())
+            .collect();
+        let chosen = if walk_frames.is_empty() {
+            ing.frames
+        } else {
+            walk_frames
+        };
+        let delays = vec![iv; chosen.len()];
+        let cfg = if social_card {
+            diypets::gif_export::GifExportConfig::social_card(2)
+        } else {
+            diypets::gif_export::GifExportConfig::transparent(2)
+        };
+        match diypets::gif_export::encode_animated_gif(&chosen, &delays, &cfg) {
+            Ok(bytes) => match std::fs::write(&path, bytes) {
+                Ok(()) => {
+                    self.status_msg = Some((
+                        format!("Exported sprite sheet GIF to {}", path.display()),
+                        false,
+                    ));
+                }
+                Err(e) => {
+                    self.status_msg = Some((format!("GIF write error: {e}"), true));
+                }
+            },
+            Err(e) => {
+                self.status_msg = Some((format!("GIF encode error: {e}"), true));
+            }
+        }
+    }
+
     fn current_slice_mode(&self) -> SliceMode {
         match self.sheet_slice_mode {
             1 => SliceMode::ConnectedComponents {
@@ -2031,6 +2127,9 @@ impl eframe::App for StudioApp {
                     if ui.button("Export Sheet to Library").clicked() {
                         self.export_imported_sheet(false);
                     }
+                    if ui.button("Export Sheet as Transparent GIF...").clicked() {
+                        self.export_imported_sheet_gif(false);
+                    }
                 }
             StudioTab::Export => {
                     ui.label(egui::RichText::new("Pet Metadata").strong());
@@ -2065,6 +2164,14 @@ impl eframe::App for StudioApp {
                     ui.add_space(4.0);
                     if ui.button("Save Shareable .xml File...").clicked() {
                         self.export_standalone_xml_dialog();
+                    }
+                    ui.separator();
+                    ui.label(egui::RichText::new("Shareable GIF Export").strong());
+                    if ui.button("Export Transparent GIF...").on_hover_text("Lossless pixel-art transparent loop (zero ghosting)").clicked() {
+                        self.export_studio_gif(false);
+                    }
+                    if ui.button("Export Social Card GIF...").on_hover_text("Dark-teal framed loop ready for X, Reddit, and Discord").clicked() {
+                        self.export_studio_gif(true);
                     }
 
                     if let Some(existing) = self.confirm_overwrite_path.clone() {
