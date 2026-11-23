@@ -17,7 +17,7 @@ A lightweight (~7.8 MB RAM), cross-platform desktop mascot engine with **Multi-P
 [Interactive Demo](https://shivammahajan.com/diypets) · [Install](#install) · [Play Mode & Herd](#play-mode--herd) · [MCP & CLI](#ai-agent-mcp--cli) · [Studio V4](#diypets-studio-v4)
 
 <!-- AUTO:STATS:START -->
-> **Latest:** 0.3.0 · **5 Made by SM originals** + **27+ on-demand eSheep packs** · **~7.8 MB RAM** · **stdio & HTTP MCP**
+> **Latest:** 0.3.1 · **5 Made by SM originals** + **27+ on-demand eSheep packs** · **~7.8 MB RAM** · **stdio & HTTP MCP**
 <!-- AUTO:STATS:END -->
 
 </div>
@@ -26,7 +26,7 @@ A lightweight (~7.8 MB RAM), cross-platform desktop mascot engine with **Multi-P
 =======
 
 <!-- AUTO:STATS:START -->
-> **Latest release:** `v0.3.0` · **5 Made by SM originals** + **27+ on-demand eSheep packs** · **~7.8 MB RAM** · **MCP API on `:3721`**
+> **Latest release:** `v0.3.1` · **5 Made by SM originals** + **27+ on-demand eSheep packs** · **~7.8 MB RAM** · **MCP API on `:3721`**
 <!-- AUTO:STATS:END -->
 
 >>>>>>> 7ac6297889f6332b765c229238fc0393c86acce2

@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.1] - 2026-11-23
+### Fixed
+- **Windows Layered Visibility & Border Regression:** Replaced winit `set_visible()` toggling on Windows with native `ShowWindow` (`SW_HIDE` / `SW_SHOWNOACTIVATE`) + `WS_POPUP` / `WS_EX_LAYERED` style enforcement and automatic `UpdateLayeredWindow` (`0x80070057`) self-healing so pets never lose transparency or show classic window chrome.
+- **Fullscreen Auto-Hide Accuracy:** Ignored maximized windows (`IsZoomed`), captioned/resizable frames (`WS_CAPTION | WS_THICKFRAME`), and transient popups (`WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`) with a 2-poll debounce.
+- **Unix Window-Ledge Branch:** Moved macOS/Linux window-ledge polling into the `climb_windows` branch.
+
+### Added
+- **Rotating File Logger (`src/logging.rs`):** Writes timestamped runtime logs and panic backtraces to the user config `logs/` directory with automatic 7-day / 5-file / 2 MiB cleanup.
+- **Interactive Web Playground (`docs/`):** Deployed at `https://shivammahajan.com/diypets/` with live herd controls, card climbing, Follow Cursor formation spacing, and full OpenGraph/JSON-LD SEO metadata.
+- **CI Hardening:** Added `rustfmt`, `clippy -D warnings`, `rust-cache`, concurrency cancellation, and `rustsec/audit-check`.
 ## [0.3.0] - 2026-11-23
 ### Added
 - **RotSprite Pixel-Art Rotation (`src/rotsprite.rs`):** 4x EPX (Scale2x) upscale -> rotate -> nearest downsample wired into `studio_model::render_pose` so rotated rigged limbs stay razor-sharp with zero blur or tearing.
