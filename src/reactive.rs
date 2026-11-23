@@ -57,7 +57,8 @@ impl CpuSampler {
             use windows::Win32::Foundation::FILETIME;
             use windows::Win32::System::Threading::GetSystemTimes;
 
-            let ft_u64 = |ft: FILETIME| ((ft.dwHighDateTime as u64) << 32) | (ft.dwLowDateTime as u64);
+            let ft_u64 =
+                |ft: FILETIME| ((ft.dwHighDateTime as u64) << 32) | (ft.dwLowDateTime as u64);
             let mut idle = FILETIME::default();
             let mut kernel = FILETIME::default();
             let mut user = FILETIME::default();

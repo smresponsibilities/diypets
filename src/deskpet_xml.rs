@@ -98,7 +98,8 @@ impl DeskpetPack {
         }
         let tile_w = width / tiles_x;
         let tile_h = height / tiles_y;
-        let ground_y = image_node.descendants()
+        let ground_y = image_node
+            .descendants()
             .find(|n| n.tag_name().name().eq_ignore_ascii_case("GroundY"))
             .and_then(|n| n.text())
             .and_then(|s| s.parse::<u32>().ok())
@@ -323,6 +324,16 @@ impl DeskpetPack {
                 {
                     action = act.to_string();
                 }
+            }
+
+            // Studio exports Action as an Animation child; eSheep packs may nest it in Sequence.
+            if action.is_empty()
+                && let Some(act) = anim_node
+                    .children()
+                    .find(|n| n.tag_name().name().eq_ignore_ascii_case("Action"))
+                    .and_then(|n| n.text())
+            {
+                action = act.trim().to_string();
             }
 
             let parse_nexts = |parent_node: roxmltree::Node| -> Vec<DeskpetNext> {

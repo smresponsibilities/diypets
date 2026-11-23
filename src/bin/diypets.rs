@@ -17,16 +17,16 @@ use diypets::deskpet_state::{
     DeskpetState, DeskpetStateId, HerdEncounter, detect_herd_encounter, select_window_floor,
     window_floor_candidate,
 };
+use diypets::deskpet_xml::DeskpetPack;
 use diypets::logging;
 use diypets::platform;
-use diypets::squash::SquashSpring;
-#[cfg(windows)]
-use diypets::squash::apply_squash_nearest;
-use diypets::deskpet_xml::DeskpetPack;
 use diypets::settings::{
     MAX_ACTIVE_PETS, Settings, find_pack_icon, find_pack_xml, pack_search_dirs,
     resolve_project_root, sibling_binary,
 };
+use diypets::squash::SquashSpring;
+#[cfg(windows)]
+use diypets::squash::apply_squash_nearest;
 #[cfg(not(windows))]
 use softbuffer::{Context, Surface};
 use tray_icon::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
@@ -91,10 +91,7 @@ mod scaling_tests {
     fn nearest_scaling_keeps_opaque_and_transparent_edges_crisp() {
         assert_eq!(
             scale_nearest(&[0xffff8000, 0], 2, 1, 4, 2),
-            vec![
-                0xffff8000, 0xffff8000, 0, 0,
-                0xffff8000, 0xffff8000, 0, 0
-            ]
+            vec![0xffff8000, 0xffff8000, 0, 0, 0xffff8000, 0xffff8000, 0, 0]
         );
     }
 
@@ -108,17 +105,19 @@ mod scaling_tests {
 fn load_pack(pack_id: &str) -> DeskpetPack {
     if let Some(xml_path) = find_pack_xml(pack_id)
         && let Ok(xml_data) = std::fs::read_to_string(&xml_path)
-            && let Ok(pack) = DeskpetPack::parse(&xml_data) {
-                return pack;
-            }
+        && let Ok(pack) = DeskpetPack::parse(&xml_data)
+    {
+        return pack;
+    }
     DeskpetPack::parse(DEFAULT_XML_DATA).unwrap()
 }
 
 fn pet_icon(id: &str, pack: &DeskpetPack) -> Option<image::RgbaImage> {
     if let Some(icon_path) = find_pack_icon(id)
-        && let Ok(img) = image::open(&icon_path) {
-            return Some(make_square_app_icon(&img.to_rgba8(), 64));
-        }
+        && let Ok(img) = image::open(&icon_path)
+    {
+        return Some(make_square_app_icon(&img.to_rgba8(), 64));
+    }
     if let Some(first) = pack.frames.first() {
         let rgba: Vec<u8> = first
             .iter()
@@ -153,7 +152,11 @@ fn apply_topmost(window: &Window, topmost: bool) {
     };
     if let Some(hwnd) = hwnd_of(window) {
         unsafe {
-            let insert_after = if topmost { HWND_TOPMOST } else { HWND_NOTOPMOST };
+            let insert_after = if topmost {
+                HWND_TOPMOST
+            } else {
+                HWND_NOTOPMOST
+            };
             let _ = SetWindowPos(
                 hwnd,
                 insert_after,
@@ -258,12 +261,17 @@ impl LayeredSurface {
                 Some(&blend as *const _),
                 ULW_ALPHA,
             );
-            static ULW_OK_LOGGED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-            static ULW_ERR_COUNT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+            static ULW_OK_LOGGED: std::sync::atomic::AtomicBool =
+                std::sync::atomic::AtomicBool::new(false);
+            static ULW_ERR_COUNT: std::sync::atomic::AtomicU32 =
+                std::sync::atomic::AtomicU32::new(0);
             match res {
                 Ok(()) => {
                     if !ULW_OK_LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-                        let nz = buffer[..pixel_count].iter().filter(|&&px| (px >> 24) > 0).count();
+                        let nz = buffer[..pixel_count]
+                            .iter()
+                            .filter(|&&px| (px >> 24) > 0)
+                            .count();
                         logging::info(&format!(
                             "UpdateLayeredWindow OK: hwnd={:?} pos=({x},{y}) size={}x{} opaque_px={nz}",
                             hwnd.0, self.width, self.height
@@ -294,7 +302,8 @@ impl LayeredSurface {
                             "UpdateLayeredWindow recovered after resetting WS_EX_LAYERED on hwnd={:?}",
                             hwnd.0
                         ));
-                    } else if ULW_ERR_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 10 {
+                    } else if ULW_ERR_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 10
+                    {
                         logging::error(&format!(
                             "UpdateLayeredWindow FAILED (after retry): hwnd={:?} pos=({x},{y}) size={}x{} err={e:?}",
                             hwnd.0, self.width, self.height
@@ -444,9 +453,13 @@ fn show_pet_context_menu(
     };
     use windows::core::PCWSTR;
 
-    let Some(hwnd) = hwnd_of(window) else { return 0 };
+    let Some(hwnd) = hwnd_of(window) else {
+        return 0;
+    };
     unsafe {
-        let Ok(hmenu) = CreatePopupMenu() else { return 0 };
+        let Ok(hmenu) = CreatePopupMenu() else {
+            return 0;
+        };
         let add_item = |id: usize, label: &str, enabled: bool, checked: bool| {
             let wide: Vec<u16> = label.encode_utf16().chain(std::iter::once(0)).collect();
             let mut flags = MF_STRING;
@@ -487,16 +500,9 @@ fn show_pet_context_menu(
     }
 }
 
-
-
 fn stamp_hearts_argb(buf: &mut [u32], w: u32, h: u32, progress: f32) {
     const HEART: [&str; 6] = [
-        ".##.##.",
-        "#######",
-        "#######",
-        ".#####.",
-        "..###..",
-        "...#...",
+        ".##.##.", "#######", "#######", ".#####.", "..###..", "...#...",
     ];
     let scale: i32 = if w >= 96 { 2 } else { 1 };
     let fill: u32 = 0xFF_F0_3C_62;
@@ -605,7 +611,8 @@ impl SpeechBubbleOverlay {
             return;
         }
         self.last_pos = Some((bx, by));
-        self.window.set_outer_position(PhysicalPosition::new(bx, by));
+        self.window
+            .set_outer_position(PhysicalPosition::new(bx, by));
 
         #[cfg(windows)]
         if let Some(layered) = &mut self.layered {
@@ -641,7 +648,12 @@ struct ToyBallOverlay {
 }
 
 impl ToyBallOverlay {
-    fn spawn(event_loop: &ActiveEventLoop, start_x: f32, start_y: f32, now_ms: u64) -> Option<Self> {
+    fn spawn(
+        event_loop: &ActiveEventLoop,
+        start_x: f32,
+        start_y: f32,
+        now_ms: u64,
+    ) -> Option<Self> {
         let (w, h, pixels) = render_pixel_ball_argb();
         let attr = Window::default_attributes()
             .with_title("diypets-ball")
@@ -725,7 +737,8 @@ impl ToyBallOverlay {
             return;
         }
         self.last_pos = Some((px, py));
-        self.window.set_outer_position(PhysicalPosition::new(px, py));
+        self.window
+            .set_outer_position(PhysicalPosition::new(px, py));
 
         #[cfg(windows)]
         if let Some(layered) = &mut self.layered {
@@ -833,9 +846,10 @@ struct DeskpetApp {
 impl DeskpetApp {
     fn spawn_sibling(slot: &mut Option<std::process::Child>, binary_stem: &str) {
         if let Some(child) = slot.as_mut()
-            && matches!(child.try_wait(), Ok(None)) {
-                return;
-            }
+            && matches!(child.try_wait(), Ok(None))
+        {
+            return;
+        }
         if let Some(exe) = sibling_binary(binary_stem) {
             let mut cmd = std::process::Command::new(exe);
             cmd.current_dir(resolve_project_root());
@@ -846,11 +860,17 @@ impl DeskpetApp {
     }
 
     fn slot_size(&self, slot: usize) -> u32 {
-        self.desired_sizes.get(slot).copied().unwrap_or(self.pet_size)
+        self.desired_sizes
+            .get(slot)
+            .copied()
+            .unwrap_or(self.pet_size)
     }
 
     fn slot_speed(&self, slot: usize) -> i32 {
-        self.desired_speeds.get(slot).copied().unwrap_or(self.walk_speed)
+        self.desired_speeds
+            .get(slot)
+            .copied()
+            .unwrap_or(self.walk_speed)
     }
 
     fn persist_current_settings(&mut self) {
@@ -877,7 +897,12 @@ impl DeskpetApp {
         let (sx, sy) = self
             .pets
             .first()
-            .map(|p| ((p.state.x + 140.0).max(120.0), (p.state.y - 240.0).max(40.0)))
+            .map(|p| {
+                (
+                    (p.state.x + 140.0).max(120.0),
+                    (p.state.y - 240.0).max(40.0),
+                )
+            })
             .unwrap_or((600.0, 120.0));
         self.ball = ToyBallOverlay::spawn(event_loop, sx, sy, now_ms);
     }
@@ -935,9 +960,7 @@ impl DeskpetApp {
         };
 
         #[cfg(not(windows))]
-        window
-            .set_cursor_hittest(!self.click_through)
-            .unwrap_or(());
+        window.set_cursor_hittest(!self.click_through).unwrap_or(());
         #[cfg(windows)]
         let _ = window.set_cursor_hittest(true);
         window.set_visible(true);
@@ -1014,12 +1037,14 @@ impl DeskpetApp {
                 let pack = load_pack(&wanted);
                 if let Some(img) = pet_icon(&wanted, &pack) {
                     if i == 0
-                        && let Some(tray) = &self.tray {
-                            let icon =
-                                TrayIconImage::from_rgba(img.to_vec(), img.width(), img.height())
-                                    .ok();
-                            if let Err(e) = tray.set_icon(icon) { logging::warn(&format!("runner: tray icon update failed: {e}")); }
+                        && let Some(tray) = &self.tray
+                    {
+                        let icon =
+                            TrayIconImage::from_rgba(img.to_vec(), img.width(), img.height()).ok();
+                        if let Err(e) = tray.set_icon(icon) {
+                            logging::warn(&format!("runner: tray icon update failed: {e}"));
                         }
+                    }
                     self.pets[i].window.set_window_icon(
                         winit::window::Icon::from_rgba(img.to_vec(), img.width(), img.height())
                             .ok(),
@@ -1053,7 +1078,8 @@ impl DeskpetApp {
                     .request_inner_size(winit::dpi::PhysicalSize::new(scaled_w, scaled_h));
                 #[cfg(not(windows))]
                 if let Some(surface) = &mut self.pets[i].surface
-                    && let (Some(w), Some(h)) = (NonZeroU32::new(scaled_w), NonZeroU32::new(scaled_h))
+                    && let (Some(w), Some(h)) =
+                        (NonZeroU32::new(scaled_w), NonZeroU32::new(scaled_h))
                 {
                     let _ = surface.resize(w, h);
                 }
@@ -1101,12 +1127,16 @@ impl DeskpetApp {
         self.walk_speed = settings.walk_speed;
         if self.start_on_login != settings.start_on_login {
             self.start_on_login = settings.start_on_login;
-            if let Err(e) = autostart::set_enabled(self.start_on_login) { logging::warn(&format!("runner: autostart toggle failed: {e}")); }
+            if let Err(e) = autostart::set_enabled(self.start_on_login) {
+                logging::warn(&format!("runner: autostart toggle failed: {e}"));
+            }
         }
 
         let herd = settings.active_herd();
         self.desired_sizes = (0..herd.len()).map(|i| settings.slot_pet_size(i)).collect();
-        self.desired_speeds = (0..herd.len()).map(|i| settings.slot_walk_speed(i)).collect();
+        self.desired_speeds = (0..herd.len())
+            .map(|i| settings.slot_walk_speed(i))
+            .collect();
         self.desired_herd = herd;
         self.sync_herd(event_loop, now_ms);
 
@@ -1176,7 +1206,9 @@ impl DeskpetApp {
                     }
                 }
                 "say" => {}
-                "open_settings" => Self::spawn_sibling(&mut self.settings_process, "diypets-settings"),
+                "open_settings" => {
+                    Self::spawn_sibling(&mut self.settings_process, "diypets-settings")
+                }
                 "open_creator" => Self::spawn_sibling(&mut self.creator_process, "diypets-creator"),
                 "follow" | "follow_cursor" => {
                     self.follow_cursor = cmd.enabled.unwrap_or(!self.follow_cursor);
@@ -1204,20 +1236,19 @@ impl DeskpetApp {
                         pet.state.set_state(DeskpetStateId::Custom("1".to_string()));
                     }
                 }
-                "spawn"
-                    if self.desired_herd.len() < MAX_ACTIVE_PETS => {
-                        let id = cmd.pack_id.unwrap_or_else(|| {
-                            self.desired_herd
-                                .first()
-                                .cloned()
-                                .unwrap_or_else(|| "highland_cow".to_string())
-                        });
-                        self.desired_herd.push(id);
-                        self.desired_sizes.push(self.pet_size);
-                        self.desired_speeds.push(self.walk_speed);
-                        self.sync_herd(event_loop, now_ms);
-                        self.persist_current_settings();
-                    }
+                "spawn" if self.desired_herd.len() < MAX_ACTIVE_PETS => {
+                    let id = cmd.pack_id.unwrap_or_else(|| {
+                        self.desired_herd
+                            .first()
+                            .cloned()
+                            .unwrap_or_else(|| "highland_cow".to_string())
+                    });
+                    self.desired_herd.push(id);
+                    self.desired_sizes.push(self.pet_size);
+                    self.desired_speeds.push(self.walk_speed);
+                    self.sync_herd(event_loop, now_ms);
+                    self.persist_current_settings();
+                }
                 _ => {}
             }
         }
@@ -1499,23 +1530,24 @@ impl DeskpetApp {
                 }
             }
         } else if self.follow_cursor
-            && let Some((cx, _cy)) = platform::global_cursor_pos() {
-                for pet in &mut self.pets {
-                    if pet.is_dragging || pet.state.current_anim_id == "13" {
-                        continue;
+            && let Some((cx, _cy)) = platform::global_cursor_pos()
+        {
+            for pet in &mut self.pets {
+                if pet.is_dragging || pet.state.current_anim_id == "13" {
+                    continue;
+                }
+                let pet_cx = pet.state.x + pet.state.pet_size as f32 * 0.5;
+                let dx = cx - pet_cx;
+                if dx.abs() > 48.0 {
+                    pet.state.is_moving_left = dx < 0.0;
+                    if matches!(pet.state.current_anim_id.as_str(), "2" | "12") {
+                        pet.state.set_state(DeskpetStateId::Custom("1".to_string()));
                     }
-                    let pet_cx = pet.state.x + pet.state.pet_size as f32 * 0.5;
-                    let dx = cx - pet_cx;
-                    if dx.abs() > 48.0 {
-                        pet.state.is_moving_left = dx < 0.0;
-                        if matches!(pet.state.current_anim_id.as_str(), "2" | "12") {
-                            pet.state.set_state(DeskpetStateId::Custom("1".to_string()));
-                        }
-                    } else if matches!(pet.state.current_anim_id.as_str(), "1" | "8") {
-                        pet.state.set_state(DeskpetStateId::Custom("2".to_string()));
-                    }
+                } else if matches!(pet.state.current_anim_id.as_str(), "1" | "8") {
+                    pet.state.set_state(DeskpetStateId::Custom("2".to_string()));
                 }
             }
+        }
     }
 }
 
@@ -1523,9 +1555,15 @@ impl ApplicationHandler for DeskpetApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let now_ms = self.start_time.elapsed().as_millis() as u64;
         if self.pets.is_empty() {
-            logging::info(&format!("resumed(): syncing herd={:?} pet_size={} click_through={} auto_hide_fullscreen={}", self.desired_herd, self.pet_size, self.click_through, self.auto_hide_fullscreen));
+            logging::info(&format!(
+                "resumed(): syncing herd={:?} pet_size={} click_through={} auto_hide_fullscreen={}",
+                self.desired_herd, self.pet_size, self.click_through, self.auto_hide_fullscreen
+            ));
             self.sync_herd(event_loop, now_ms);
-            logging::info(&format!("resumed(): spawned {} pet window(s)", self.pets.len()));
+            logging::info(&format!(
+                "resumed(): spawned {} pet window(s)",
+                self.pets.len()
+            ));
         }
 
         if self.tray.is_none() {
@@ -1573,19 +1611,32 @@ impl ApplicationHandler for DeskpetApp {
                 self.follow_cursor,
                 None,
             );
-            let quiet = CheckMenuItem::with_id("quiet_mode", "Quiet Mode (Hide Pets)", true, self.quiet_mode, None);
-            let typing_item = CheckMenuItem::with_id("typing_reflex", "Typing Cadence Reflex (Bongo)", true, self.typing_reflex, None);
-            let cpu_item = CheckMenuItem::with_id("cpu_sprint", "CPU Build Sprint (RunCat)", true, self.cpu_sprint, None);
+            let quiet = CheckMenuItem::with_id(
+                "quiet_mode",
+                "Quiet Mode (Hide Pets)",
+                true,
+                self.quiet_mode,
+                None,
+            );
+            let typing_item = CheckMenuItem::with_id(
+                "typing_reflex",
+                "Typing Cadence Reflex (Bongo)",
+                true,
+                self.typing_reflex,
+                None,
+            );
+            let cpu_item = CheckMenuItem::with_id(
+                "cpu_sprint",
+                "CPU Build Sprint (RunCat)",
+                true,
+                self.cpu_sprint,
+                None,
+            );
             let sleep = MenuItem::with_id("sleep", "Sleep All", true, None);
             let creator = MenuItem::with_id("creator", "DIYPets Studio", true, None);
             let settings = MenuItem::with_id("settings", "Application Settings", true, None);
-            let topmost = CheckMenuItem::with_id(
-                "topmost",
-                "Always on Top",
-                true,
-                self.is_topmost,
-                None,
-            );
+            let topmost =
+                CheckMenuItem::with_id("topmost", "Always on Top", true, self.is_topmost, None);
             let autostart_item = CheckMenuItem::with_id(
                 "autostart",
                 "Start on Login",
@@ -1617,10 +1668,13 @@ impl ApplicationHandler for DeskpetApp {
                 .with_menu(Box::new(menu));
             if let Some(img) = &image
                 && let Ok(icon) = TrayIconImage::from_rgba(img.to_vec(), img.width(), img.height())
-                {
-                    builder = builder.with_icon(icon);
-                }
-            self.tray = builder.build().map_err(|e| eprintln!("Tray icon: {e}")).ok();
+            {
+                builder = builder.with_icon(icon);
+            }
+            self.tray = builder
+                .build()
+                .map_err(|e| eprintln!("Tray icon: {e}"))
+                .ok();
         }
 
         self.next_frame = Instant::now();
@@ -1708,7 +1762,9 @@ impl ApplicationHandler for DeskpetApp {
                 let px = position.x as f32;
                 let py = position.y as f32;
                 #[cfg(not(windows))]
-                if pet.is_dragging && let Ok(outer) = pet.window.outer_position() {
+                if pet.is_dragging
+                    && let Ok(outer) = pet.window.outer_position()
+                {
                     let new_x = outer.x as f32 + (px - pet.drag_grab_offset.0);
                     let new_y = outer.y as f32 + (py - pet.drag_grab_offset.1);
                     pet.cursor_velocity = (new_x - pet.state.x, new_y - pet.state.y);
@@ -1754,52 +1810,54 @@ impl ApplicationHandler for DeskpetApp {
                 );
                 #[cfg(windows)]
                 {
-                let now_ms = self.start_time.elapsed().as_millis() as u64;
-                match cmd {
-                    1 => {
-                        let pet = &mut self.pets[pet_idx];
-                        pet.heart_until_ms = now_ms + 2200;
-                        pet.state.is_tossing = true;
-                        pet.state.toss_force_x = if pet.state.is_moving_left { -3.0 } else { 3.0 };
-                        pet.state.toss_vert_vel = -10.0;
-                        pet.squash.trigger_hop();
-                        self.bubble = SpeechBubbleOverlay::create(event_loop, "<3", now_ms + 2200);
-                    }
-                    2 => {
-                        self.pets[pet_idx]
-                            .state
-                            .set_state(DeskpetStateId::Custom("sleep".to_string()));
-                    }
-                    3 if can_clone => {
-                        let clone_id = self.pets[pet_idx].pack_id.clone();
-                        self.desired_herd.push(clone_id);
-                        self.desired_sizes.push(self.pet_size);
-                        self.desired_speeds.push(self.walk_speed);
-                        self.sync_herd(event_loop, now_ms);
-                        self.persist_current_settings();
-                    }
-                    4 if can_dismiss => {
-                        self.pets.remove(pet_idx);
-                        if pet_idx < self.desired_herd.len() {
-                            self.desired_herd.remove(pet_idx);
+                    let now_ms = self.start_time.elapsed().as_millis() as u64;
+                    match cmd {
+                        1 => {
+                            let pet = &mut self.pets[pet_idx];
+                            pet.heart_until_ms = now_ms + 2200;
+                            pet.state.is_tossing = true;
+                            pet.state.toss_force_x =
+                                if pet.state.is_moving_left { -3.0 } else { 3.0 };
+                            pet.state.toss_vert_vel = -10.0;
+                            pet.squash.trigger_hop();
+                            self.bubble =
+                                SpeechBubbleOverlay::create(event_loop, "<3", now_ms + 2200);
                         }
-                        if pet_idx < self.desired_sizes.len() {
-                            self.desired_sizes.remove(pet_idx);
+                        2 => {
+                            self.pets[pet_idx]
+                                .state
+                                .set_state(DeskpetStateId::Custom("sleep".to_string()));
                         }
-                        if pet_idx < self.desired_speeds.len() {
-                            self.desired_speeds.remove(pet_idx);
+                        3 if can_clone => {
+                            let clone_id = self.pets[pet_idx].pack_id.clone();
+                            self.desired_herd.push(clone_id);
+                            self.desired_sizes.push(self.pet_size);
+                            self.desired_speeds.push(self.walk_speed);
+                            self.sync_herd(event_loop, now_ms);
+                            self.persist_current_settings();
                         }
-                        self.persist_current_settings();
+                        4 if can_dismiss => {
+                            self.pets.remove(pet_idx);
+                            if pet_idx < self.desired_herd.len() {
+                                self.desired_herd.remove(pet_idx);
+                            }
+                            if pet_idx < self.desired_sizes.len() {
+                                self.desired_sizes.remove(pet_idx);
+                            }
+                            if pet_idx < self.desired_speeds.len() {
+                                self.desired_speeds.remove(pet_idx);
+                            }
+                            self.persist_current_settings();
+                        }
+                        5 => Self::spawn_sibling(&mut self.settings_process, "diypets-settings"),
+                        6 => Self::spawn_sibling(&mut self.creator_process, "diypets-creator"),
+                        7 => self.drop_toy_ball(event_loop, now_ms),
+                        8 => {
+                            self.follow_cursor = !self.follow_cursor;
+                            self.persist_current_settings();
+                        }
+                        _ => {}
                     }
-                    5 => Self::spawn_sibling(&mut self.settings_process, "diypets-settings"),
-                    6 => Self::spawn_sibling(&mut self.creator_process, "diypets-creator"),
-                    7 => self.drop_toy_ball(event_loop, now_ms),
-                    8 => {
-                        self.follow_cursor = !self.follow_cursor;
-                        self.persist_current_settings();
-                    }
-                    _ => {}
-                }
                 }
             }
             WindowEvent::MouseInput {
@@ -1825,9 +1883,13 @@ impl ApplicationHandler for DeskpetApp {
                 pet.window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
-                static FIRST_REDRAW: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+                static FIRST_REDRAW: std::sync::atomic::AtomicBool =
+                    std::sync::atomic::AtomicBool::new(false);
                 if !FIRST_REDRAW.swap(true, std::sync::atomic::Ordering::Relaxed) {
-                    logging::info(&format!("RedrawRequested fired for pet_idx={pet_idx} (total_pets={})", self.pets.len()));
+                    logging::info(&format!(
+                        "RedrawRequested fired for pet_idx={pet_idx} (total_pets={})",
+                        self.pets.len()
+                    ));
                 }
                 let now = self.start_time.elapsed().as_millis() as u64;
 
@@ -1846,7 +1908,11 @@ impl ApplicationHandler for DeskpetApp {
 
                 #[cfg(windows)]
                 let own_hwnds: Vec<windows::Win32::Foundation::HWND> = {
-                    let mut v: Vec<_> = self.pets.iter().filter_map(|p| hwnd_of(&p.window)).collect();
+                    let mut v: Vec<_> = self
+                        .pets
+                        .iter()
+                        .filter_map(|p| hwnd_of(&p.window))
+                        .collect();
                     if let Some(b) = &self.bubble
                         && let Some(h) = hwnd_of(&b.window)
                     {
@@ -1974,14 +2040,15 @@ impl ApplicationHandler for DeskpetApp {
                                                     let hid = hwnd.0 as isize;
                                                     if let Some((old_h, ox, oy)) =
                                                         pet.standing_window
-                                                        && old_h == hid {
-                                                            let dx = rect.left - ox;
-                                                            let dy = rect.top - oy;
-                                                            if dx.abs() < 300 && dy.abs() < 300 {
-                                                                pet.state.x += dx as f32;
-                                                                pet.state.y += dy as f32;
-                                                            }
+                                                        && old_h == hid
+                                                    {
+                                                        let dx = rect.left - ox;
+                                                        let dy = rect.top - oy;
+                                                        if dx.abs() < 300 && dy.abs() < 300 {
+                                                            pet.state.x += dx as f32;
+                                                            pet.state.y += dy as f32;
                                                         }
+                                                    }
                                                     pet.standing_window =
                                                         Some((hid, rect.left, rect.top));
                                                 }
@@ -2014,7 +2081,9 @@ impl ApplicationHandler for DeskpetApp {
                                 (p.x, p.y, p.x + s.width as i32, p.y + s.height as i32)
                             })
                             .collect();
-                        if let Some(wrect) = platform::find_unix_window_under_point(center_x, feet_y, &mons) {
+                        if let Some(wrect) =
+                            platform::find_unix_window_under_point(center_x, feet_y, &mons)
+                        {
                             let win_y = wrect.top as f32;
                             let win_x = wrect.left as f32;
                             let win_h = (wrect.bottom - wrect.top) as f32;
@@ -2070,15 +2139,19 @@ impl ApplicationHandler for DeskpetApp {
                     pet.state.screen_w = max_x - min_x;
                     pet.state.screen_h = max_y - min_y;
                     pet.state.area_h = floor_y + ground_height;
-                    pet.state.tick_in_bounds(delta, floor_y, wall_left, wall_right);
+                    pet.state
+                        .tick_in_bounds(delta, floor_y, wall_left, wall_right);
                     let now_airborne = pet.state.y < floor_y - 3.0;
                     if pet.was_airborne && !now_airborne {
                         pet.squash.trigger_land();
                     }
                     pet.was_airborne = now_airborne;
                 }
-                let is_idle_or_sleep = matches!(pet.state.current_anim_id.as_str(), "2" | "12" | "13");
-                let (sq_x, sq_y) = pet.squash.step(delta as f32 / 1000.0, now as f32 / 1000.0, is_idle_or_sleep);
+                let is_idle_or_sleep =
+                    matches!(pet.state.current_anim_id.as_str(), "2" | "12" | "13");
+                let (sq_x, sq_y) =
+                    pet.squash
+                        .step(delta as f32 / 1000.0, now as f32 / 1000.0, is_idle_or_sleep);
 
                 let frame_idx = pet.state.current_frame().unwrap_or(0) as usize;
                 let pos_x = pet.state.x.round() as i32;
@@ -2217,11 +2290,10 @@ impl ApplicationHandler for DeskpetApp {
 
                     let show_hearts = now < pet.heart_until_ms;
                     let present_buf = if show_hearts {
-                        if use_cache
-                            && let Some(cached) = pet.frame_cache.get(&cache_key) {
-                                pet.scaled_buf.clear();
-                                pet.scaled_buf.extend_from_slice(cached);
-                            }
+                        if use_cache && let Some(cached) = pet.frame_cache.get(&cache_key) {
+                            pet.scaled_buf.clear();
+                            pet.scaled_buf.extend_from_slice(cached);
+                        }
                         let rem = pet.heart_until_ms.saturating_sub(now) as f32;
                         let prog = (1.0 - (rem / 2200.0)).clamp(0.0, 1.0);
                         stamp_hearts_argb(&mut pet.scaled_buf, scaled_w, scaled_h, prog);
@@ -2243,7 +2315,14 @@ impl ApplicationHandler for DeskpetApp {
                         pet.layered = LayeredSurface::new(scaled_w, scaled_h);
                     }
                     let final_buf = if (sq_x - 1.0).abs() >= 0.006 || (sq_y - 1.0).abs() >= 0.006 {
-                        apply_squash_nearest(present_buf, &mut pet.squash_buf, scaled_w, scaled_h, sq_x, sq_y);
+                        apply_squash_nearest(
+                            present_buf,
+                            &mut pet.squash_buf,
+                            scaled_w,
+                            scaled_h,
+                            sq_x,
+                            sq_y,
+                        );
                         pet.squash_buf.as_slice()
                     } else {
                         present_buf
@@ -2271,9 +2350,13 @@ impl Drop for DeskpetApp {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    if args.get(1).map(String::as_str) != Some("mcp")
-        && logging::init("diypets").is_none() { eprintln!("diypets: warning: could not initialize file logger"); }
-    if matches!(args.get(1).map(String::as_str), Some("--version" | "-V" | "version")) {
+    if args.get(1).map(String::as_str) != Some("mcp") && logging::init("diypets").is_none() {
+        eprintln!("diypets: warning: could not initialize file logger");
+    }
+    if matches!(
+        args.get(1).map(String::as_str),
+        Some("--version" | "-V" | "version")
+    ) {
         println!(
             "diypets v{} ({}, {}, {})",
             env!("CARGO_PKG_VERSION"),
@@ -2286,13 +2369,34 @@ fn main() {
     if args.get(1).map(String::as_str) == Some("doctor") {
         let cfg_path = Settings::default_path();
         let settings = Settings::load_sanitized(&cfg_path);
-        println!("DIYPets Doctor v{} ({})", env!("CARGO_PKG_VERSION"), env!("DIYPETS_GIT_HASH"));
-        println!("  Target / Profile : {} / {}", env!("DIYPETS_TARGET"), env!("DIYPETS_PROFILE"));
-        println!("  Config Path      : {} (exists={})", cfg_path.display(), cfg_path.is_file());
+        println!(
+            "DIYPets Doctor v{} ({})",
+            env!("CARGO_PKG_VERSION"),
+            env!("DIYPETS_GIT_HASH")
+        );
+        println!(
+            "  Target / Profile : {} / {}",
+            env!("DIYPETS_TARGET"),
+            env!("DIYPETS_PROFILE")
+        );
+        println!(
+            "  Config Path      : {} (exists={})",
+            cfg_path.display(),
+            cfg_path.is_file()
+        );
         println!("  Log Directory    : {}", logging::log_dir().display());
-        println!("  Active Herd      : {:?} (extra={:?})", settings.pet_pack, settings.extra_pets);
-        println!("  Size / Speed     : {}px / {}", settings.pet_size, settings.walk_speed);
-        println!("  Click-Through    : {} | Auto-Hide Fullscreen: {}", settings.click_through, settings.auto_hide_fullscreen);
+        println!(
+            "  Active Herd      : {:?} (extra={:?})",
+            settings.pet_pack, settings.extra_pets
+        );
+        println!(
+            "  Size / Speed     : {}px / {}",
+            settings.pet_size, settings.walk_speed
+        );
+        println!(
+            "  Click-Through    : {} | Auto-Hide Fullscreen: {}",
+            settings.click_through, settings.auto_hide_fullscreen
+        );
         return;
     }
     if args.get(1).map(String::as_str) == Some("hooks") {
@@ -2310,7 +2414,11 @@ fn main() {
                     Ok(targets) => {
                         for t in targets {
                             match diypets::agent_hooks::install_hooks(t, scope) {
-                                Ok((path, n)) => println!("Installed {n} DIYPets hooks for {} -> {}", t.label(), path.display()),
+                                Ok((path, n)) => println!(
+                                    "Installed {n} DIYPets hooks for {} -> {}",
+                                    t.label(),
+                                    path.display()
+                                ),
                                 Err(e) => eprintln!("Failed to install {} hooks: {e}", t.label()),
                             }
                         }
@@ -2324,7 +2432,11 @@ fn main() {
                     Ok(targets) => {
                         for t in targets {
                             match diypets::agent_hooks::uninstall_hooks(t, scope) {
-                                Ok((path, n)) => println!("Removed {n} DIYPets hooks for {} from {}", t.label(), path.display()),
+                                Ok((path, n)) => println!(
+                                    "Removed {n} DIYPets hooks for {} from {}",
+                                    t.label(),
+                                    path.display()
+                                ),
                                 Err(e) => eprintln!("Failed to uninstall {} hooks: {e}", t.label()),
                             }
                         }
@@ -2336,7 +2448,12 @@ fn main() {
                 let scope_label = if is_project { "project" } else { "user" };
                 println!("DIYPets Coding-Agent Hooks ({scope_label} scope):");
                 for (target, path, count) in diypets::agent_hooks::status_report(scope) {
-                    println!("  {:<12}: {} hook(s) ({})", target.label(), count, path.display());
+                    println!(
+                        "  {:<12}: {} hook(s) ({})",
+                        target.label(),
+                        count,
+                        path.display()
+                    );
                 }
             }
             _ => {
@@ -2354,7 +2471,9 @@ fn main() {
         let mut stdin_buf = String::new();
         if !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
             use std::io::Read;
-            if let Err(e) = std::io::stdin().take(4096).read_to_string(&mut stdin_buf) { logging::warn(&format!("hook-event: stdin read failed: {e}")); }
+            if let Err(e) = std::io::stdin().take(4096).read_to_string(&mut stdin_buf) {
+                logging::warn(&format!("hook-event: stdin read failed: {e}"));
+            }
         }
         if let Some(reaction) = diypets::agent_hooks::map_hook_event(agent, event, &stdin_buf) {
             diypets::agent_hooks::send_hook_reaction_nonblocking(&reaction);
@@ -2364,7 +2483,10 @@ fn main() {
     }
     if args.get(1).map(String::as_str) == Some("export-gif") {
         let xml_arg = args.get(2).map(String::as_str);
-        let out_arg = args.get(3).map(String::as_str).unwrap_or("diypets_preview.gif");
+        let out_arg = args
+            .get(3)
+            .map(String::as_str)
+            .unwrap_or("diypets_preview.gif");
         let Some(xml_path) = xml_arg else {
             eprintln!("Usage: diypets export-gif <path/to/deskpet.xml> [output.gif] [--card]");
             return;
@@ -2378,8 +2500,9 @@ fn main() {
         match std::fs::read_to_string(xml_path)
             .map_err(|e| format!("Failed to read {xml_path}: {e}"))
             .and_then(|xml| diypets::gif_export::export_xml_pack_gif(&xml, "1", &cfg))
-            .and_then(|bytes| std::fs::write(out_arg, bytes).map_err(|e| format!("Write failed: {e}")))
-        {
+            .and_then(|bytes| {
+                std::fs::write(out_arg, bytes).map_err(|e| format!("Write failed: {e}"))
+            }) {
             Ok(()) => println!("Exported animated GIF -> {out_arg}"),
             Err(e) => eprintln!("GIF export failed: {e}"),
         }
@@ -2391,7 +2514,11 @@ fn main() {
     }
     if args.get(1).map(String::as_str) == Some("say") {
         let msg = args[2..].join(" ");
-        let msg = if msg.trim().is_empty() { "Hello!".to_string() } else { msg };
+        let msg = if msg.trim().is_empty() {
+            "Hello!".to_string()
+        } else {
+            msg
+        };
         match agent_api::send_cli_react("say", Some(&msg)) {
             Ok(_) => println!("DIYPets said: {msg}"),
             Err(e) => {
@@ -2454,7 +2581,9 @@ fn main() {
         .ok();
     let herd = settings.active_herd();
     let desired_sizes = (0..herd.len()).map(|i| settings.slot_pet_size(i)).collect();
-    let desired_speeds = (0..herd.len()).map(|i| settings.slot_walk_speed(i)).collect();
+    let desired_speeds = (0..herd.len())
+        .map(|i| settings.slot_walk_speed(i))
+        .collect();
 
     let mut app = DeskpetApp {
         pets: Vec::new(),
@@ -2493,7 +2622,9 @@ fn main() {
     };
 
     let event_loop = EventLoop::new().unwrap();
-    if let Err(e) = event_loop.run_app(&mut app) { logging::error(&format!("runner: event loop exited with error: {e}")); }
+    if let Err(e) = event_loop.run_app(&mut app) {
+        logging::error(&format!("runner: event loop exited with error: {e}"));
+    }
 }
 
 #[cfg(test)]

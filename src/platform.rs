@@ -101,8 +101,8 @@ pub fn is_fullscreen_app_active(own_hwnds: &[isize], monitors: &[(i32, i32, i32,
     use windows::Win32::Foundation::RECT;
     use windows::Win32::Graphics::Dwm::{DWMWA_CLOAKED, DwmGetWindowAttribute};
     use windows::Win32::UI::WindowsAndMessaging::{
-        GWL_EXSTYLE, GWL_STYLE, GetClassNameW, GetForegroundWindow, GetWindowLongW, GetWindowRect, IsIconic,
-        IsZoomed, WS_CAPTION, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_THICKFRAME,
+        GWL_EXSTYLE, GWL_STYLE, GetClassNameW, GetForegroundWindow, GetWindowLongW, GetWindowRect,
+        IsIconic, IsZoomed, WS_CAPTION, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_THICKFRAME,
     };
 
     unsafe {
@@ -204,7 +204,11 @@ pub fn spawn_unix_pet_menu(tx: Sender<AgentCommand>, follow_cursor: bool) {
                     .ok()
                     .and_then(|o| {
                         let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
-                        if s.is_empty() || s == "false" { None } else { Some(s) }
+                        if s.is_empty() || s == "false" {
+                            None
+                        } else {
+                            Some(s)
+                        }
                     })
             }
             #[cfg(all(unix, not(target_os = "macos")))]
@@ -249,7 +253,9 @@ pub fn spawn_unix_pet_menu(tx: Sender<AgentCommand>, follow_cursor: bool) {
             pack_id: None,
             duration_ms: None,
             enabled: None,
-        }) { crate::logging::warn(&format!("platform: failed forwarding agent command: {e}")); }
+        }) {
+            crate::logging::warn(&format!("platform: failed forwarding agent command: {e}"));
+        }
     });
 }
 
@@ -277,9 +283,9 @@ pub fn pick_window_under_point(
         if x < w.left || x > w.right || y < w.top || y > w.bottom {
             continue;
         }
-        let is_fullscreen = monitors
-            .iter()
-            .any(|&(mx, my, mr, mb)| w.left <= mx && w.top <= my && w.right >= mr && w.bottom >= mb);
+        let is_fullscreen = monitors.iter().any(|&(mx, my, mr, mb)| {
+            w.left <= mx && w.top <= my && w.right >= mr && w.bottom >= mb
+        });
         if !is_fullscreen {
             return Some(w);
         }
@@ -326,7 +332,13 @@ out.join('\n');"#;
             let top = p.next()?.parse::<i32>().ok()?;
             let right = p.next()?.parse::<i32>().ok()?;
             let bottom = p.next()?.parse::<i32>().ok()?;
-            Some(WindowRect { id, left, top, right, bottom })
+            Some(WindowRect {
+                id,
+                left,
+                top,
+                right,
+                bottom,
+            })
         })
         .collect()
 }
@@ -354,7 +366,13 @@ fn poll_unix_windows_once() -> Vec<WindowRect> {
             if w < 80 || h < 40 {
                 return None;
             }
-            Some(WindowRect { id, left, top, right: left + w, bottom: top + h })
+            Some(WindowRect {
+                id,
+                left,
+                top,
+                right: left + w,
+                bottom: top + h,
+            })
         })
         .collect()
 }
@@ -363,12 +381,14 @@ fn poll_unix_windows_once() -> Vec<WindowRect> {
 #[cfg(not(windows))]
 pub fn start_unix_window_poller() {
     let _ = unix_windows_store();
-    std::thread::spawn(|| loop {
-        let rects = poll_unix_windows_once();
-        if let Ok(mut guard) = unix_windows_store().lock() {
-            *guard = rects;
+    std::thread::spawn(|| {
+        loop {
+            let rects = poll_unix_windows_once();
+            if let Ok(mut guard) = unix_windows_store().lock() {
+                *guard = rects;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(300));
         }
-        std::thread::sleep(std::time::Duration::from_millis(300));
     });
 }
 
@@ -393,9 +413,27 @@ mod tests {
     fn pick_window_under_point_skips_fullscreen_and_selects_topmost() {
         let monitors = [(0, 0, 1920, 1080)];
         let windows = [
-            WindowRect { id: 1, left: 0, top: 0, right: 1920, bottom: 1080 },
-            WindowRect { id: 2, left: 200, top: 300, right: 900, bottom: 700 },
-            WindowRect { id: 3, left: 100, top: 250, right: 950, bottom: 800 },
+            WindowRect {
+                id: 1,
+                left: 0,
+                top: 0,
+                right: 1920,
+                bottom: 1080,
+            },
+            WindowRect {
+                id: 2,
+                left: 200,
+                top: 300,
+                right: 900,
+                bottom: 700,
+            },
+            WindowRect {
+                id: 3,
+                left: 100,
+                top: 250,
+                right: 950,
+                bottom: 800,
+            },
         ];
         let hit = pick_window_under_point(&windows, 400, 302, &monitors).unwrap();
         assert_eq!(hit.id, 2);
@@ -408,21 +446,93 @@ mod tests {
         let full_rect = (0, 0, 1920, 1080);
 
         // 1. Maximized standard window (IsZoomed = true) must NEVER hide pets
-        assert!(!should_auto_hide_fullscreen(false, false, true, false, 0, 0, "Chrome_WidgetWin_1", full_rect, &monitors));
+        assert!(!should_auto_hide_fullscreen(
+            false,
+            false,
+            true,
+            false,
+            0,
+            0,
+            "Chrome_WidgetWin_1",
+            full_rect,
+            &monitors
+        ));
 
         // 2. Window with WS_CAPTION or WS_THICKFRAME must NEVER hide pets
-        assert!(!should_auto_hide_fullscreen(false, false, false, false, 0x00C0_0000, 0, "Chrome_WidgetWin_1", full_rect, &monitors));
-        assert!(!should_auto_hide_fullscreen(false, false, false, false, 0x0004_0000, 0, "Chrome_WidgetWin_1", full_rect, &monitors));
+        assert!(!should_auto_hide_fullscreen(
+            false,
+            false,
+            false,
+            false,
+            0x00C0_0000,
+            0,
+            "Chrome_WidgetWin_1",
+            full_rect,
+            &monitors
+        ));
+        assert!(!should_auto_hide_fullscreen(
+            false,
+            false,
+            false,
+            false,
+            0x0004_0000,
+            0,
+            "Chrome_WidgetWin_1",
+            full_rect,
+            &monitors
+        ));
 
         // 3. Transient toolwindows / no-activate overlays must NEVER hide pets
-        assert!(!should_auto_hide_fullscreen(false, false, false, false, 0, 0x0000_0080, "PopupClass", full_rect, &monitors));
-        assert!(!should_auto_hide_fullscreen(false, false, false, false, 0, 0x0800_0000, "PopupClass", full_rect, &monitors));
+        assert!(!should_auto_hide_fullscreen(
+            false,
+            false,
+            false,
+            false,
+            0,
+            0x0000_0080,
+            "PopupClass",
+            full_rect,
+            &monitors
+        ));
+        assert!(!should_auto_hide_fullscreen(
+            false,
+            false,
+            false,
+            false,
+            0,
+            0x0800_0000,
+            "PopupClass",
+            full_rect,
+            &monitors
+        ));
 
         // 4. Desktop shell / Windows Terminal classes must NEVER hide pets
-        assert!(!should_auto_hide_fullscreen(false, false, false, false, 0, 0, "WorkerW", full_rect, &monitors));
-        assert!(!should_auto_hide_fullscreen(false, false, false, false, 0, 0, "CASCADIA_HOSTING_WINDOW_CLASS", full_rect, &monitors));
+        assert!(!should_auto_hide_fullscreen(
+            false, false, false, false, 0, 0, "WorkerW", full_rect, &monitors
+        ));
+        assert!(!should_auto_hide_fullscreen(
+            false,
+            false,
+            false,
+            false,
+            0,
+            0,
+            "CASCADIA_HOSTING_WINDOW_CLASS",
+            full_rect,
+            &monitors
+        ));
 
         // 5. True borderless fullscreen game/video covering monitor DOES trigger auto-hide
-        assert!(should_auto_hide_fullscreen(false, false, false, false, 0x8000_0000, 0, "SDL_app", full_rect, &monitors));
+        assert!(should_auto_hide_fullscreen(
+            false,
+            false,
+            false,
+            false,
+            0x8000_0000,
+            0,
+            "SDL_app",
+            full_rect,
+            &monitors
+        ));
     }
 }

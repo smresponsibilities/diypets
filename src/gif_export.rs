@@ -276,8 +276,8 @@ pub fn export_sheet_and_xml_gif(
         let safe_fid = fid % total_tiles;
         let col = safe_fid % tiles_x;
         let row = safe_fid / tiles_x;
-        let tile = image::imageops::crop_imm(sheet, col * tile_w, row * tile_h, tile_w, tile_h)
-            .to_image();
+        let tile =
+            image::imageops::crop_imm(sheet, col * tile_w, row * tile_h, tile_w, tile_h).to_image();
         frames.push(tile);
         delays.push(interval_ms);
     }
@@ -363,7 +363,11 @@ mod tests {
         let mut img = RgbaImage::new(20, 20);
         for y in 0..20 {
             for x in 0..20 {
-                img.put_pixel(x, y, Rgba([(x * 12) as u8, (y * 12) as u8, ((x + y) * 5) as u8, 255]));
+                img.put_pixel(
+                    x,
+                    y,
+                    Rgba([(x * 12) as u8, (y * 12) as u8, ((x + y) * 5) as u8, 255]),
+                );
             }
         }
         let bytes = encode_animated_gif(&[img], &[150], &GifExportConfig::social_card(1))

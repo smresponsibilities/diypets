@@ -8,7 +8,6 @@ use diypets::catalog::{
     open_folder_in_os, strip_chroma_key_if_opaque,
 };
 use diypets::deskpet_xml::DeskpetPack;
-use diypets::ui_toast::ToastQueue;
 use diypets::settings::{
     MAX_ACTIVE_PETS, PET_SIZE_MAX, PET_SIZE_MIN, Settings, WALK_SPEED_MAX, WALK_SPEED_MIN,
     catalog_icons_dir, find_pack_icon, find_pack_xml, pack_search_dirs, resolve_project_root,
@@ -16,6 +15,7 @@ use diypets::settings::{
 };
 use diypets::studio_model::Archetype;
 use diypets::svg_import::import_svg_to_project;
+use diypets::ui_toast::ToastQueue;
 use eframe::egui;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
@@ -27,13 +27,7 @@ use std::time::{Duration, Instant};
 const MAX_THUMB_DIM: u32 = 128;
 const REFRESH_INTERVAL: Duration = Duration::from_secs(2);
 
-const BUNDLED_ORIGINALS: &[&str] = &[
-    "highland_cow",
-    "dog",
-    "polar_bear",
-    "goat",
-    "stegosaurus",
-];
+const BUNDLED_ORIGINALS: &[&str] = &["highland_cow", "dog", "polar_bear", "goat", "stegosaurus"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SettingsTab {
@@ -217,29 +211,40 @@ fn load_best_thumbnail(
     if let Some(icons_dir) = catalog_icons_dir() {
         let bundled_icon = icons_dir.join(format!("{id}.png"));
         if bundled_icon.is_file()
-            && let Some(img) = load_square_thumbnail(&bundled_icon) {
-                return Some(img);
-            }
+            && let Some(img) = load_square_thumbnail(&bundled_icon)
+        {
+            return Some(img);
+        }
     }
 
     let cached_path = cache_dir.join(format!("{id}_v2.png"));
     if let Some(dir) = pack_dir {
         let xml_path = dir.join("deskpet.xml");
-        if cached_path.is_file() && cache_is_fresh(&cached_path, &xml_path)
-            && let Some(img) = load_square_thumbnail(&cached_path) {
-                return Some(img);
-            }
+        if cached_path.is_file()
+            && cache_is_fresh(&cached_path, &xml_path)
+            && let Some(img) = load_square_thumbnail(&cached_path)
+        {
+            return Some(img);
+        }
         if let Some(thumb) = extract_xml_tile0_thumbnail(&xml_path)
             .or_else(|| load_square_thumbnail(&dir.join("strip.png")))
         {
-            if let Err(e) = std::fs::create_dir_all(cache_dir) { diypets::logging::warn(&format!("settings: failed to create cache dir: {e}")); }
-            if let Err(e) = thumb.save(&cached_path) { diypets::logging::warn(&format!("settings: failed to save cached icon {}: {e}", cached_path.display())); }
+            if let Err(e) = std::fs::create_dir_all(cache_dir) {
+                diypets::logging::warn(&format!("settings: failed to create cache dir: {e}"));
+            }
+            if let Err(e) = thumb.save(&cached_path) {
+                diypets::logging::warn(&format!(
+                    "settings: failed to save cached icon {}: {e}",
+                    cached_path.display()
+                ));
+            }
             return Some(thumb);
         }
     } else if cached_path.is_file()
-        && let Some(img) = load_square_thumbnail(&cached_path) {
-            return Some(img);
-        }
+        && let Some(img) = load_square_thumbnail(&cached_path)
+    {
+        return Some(img);
+    }
 
     if let Some(entry) = catalog_entry {
         return download_and_cache_icon(entry);
@@ -249,9 +254,10 @@ fn load_best_thumbnail(
 
 fn load_startup_icon(active_pack: &str) -> Option<Arc<egui::IconData>> {
     if let Some(icon_path) = find_pack_icon(active_pack)
-        && let Ok(img) = image::open(&icon_path) {
-            return Some(rgba_to_egui_icon(&img.to_rgba8()));
-        }
+        && let Ok(img) = image::open(&icon_path)
+    {
+        return Some(rgba_to_egui_icon(&img.to_rgba8()));
+    }
     default_app_icon(64).map(|sq| {
         Arc::new(egui::IconData {
             rgba: sq.into_raw(),
@@ -291,11 +297,8 @@ enum DownloadOutcome {
 fn load_gallery(mut add: impl FnMut(PetPreview) + Send) {
     let cache_dir = thumb_cache_dir();
     let catalog = load_embedded_catalog();
-    let catalog_map: HashMap<String, CatalogEntry> = catalog
-        .iter()
-        .cloned()
-        .map(|e| (e.id.clone(), e))
-        .collect();
+    let catalog_map: HashMap<String, CatalogEntry> =
+        catalog.iter().cloned().map(|e| (e.id.clone(), e)).collect();
 
     let mut local_dirs: HashMap<String, PathBuf> = HashMap::new();
     for root in pack_search_dirs() {
@@ -349,58 +352,61 @@ fn load_gallery(mut add: impl FnMut(PetPreview) + Send) {
             let catalog_map = &catalog_map;
             let cache_dir = &cache_dir;
 
-            scope.spawn(move || loop {
-                let next = {
-                    let mut guard = queue.lock().unwrap();
-                    guard.next()
-                };
-                let Some(id) = next else { break };
-
-                let pack_dir = local_dirs.get(&id).map(PathBuf::as_path);
-                let cat_entry = catalog_map.get(&id).cloned();
-
-                let (name, author, category, size_kb) = if let Some(entry) = &cat_entry {
-                    let cat = if entry.is_made_by_sm() {
-                        PackCategory::MadeBySM
-                    } else {
-                        PackCategory::ESheep
+            scope.spawn(move || {
+                loop {
+                    let next = {
+                        let mut guard = queue.lock().unwrap();
+                        guard.next()
                     };
-                    (
-                        entry.name.clone(),
-                        entry.author.clone(),
-                        cat,
-                        Some(entry.size_kb),
-                    )
-                } else if let Some(dir) = pack_dir {
-                    let xml_path = dir.join("deskpet.xml");
-                    let (n, a) = read_xml_metadata_fast(&xml_path, &id);
-                    let cat = classify_local_pack(&id, dir, &a);
-                    let kb = std::fs::metadata(&xml_path)
-                        .map(|m| m.len().div_ceil(1024))
-                        .ok();
-                    (n, a, cat, kb)
-                } else {
-                    continue;
-                };
+                    let Some(id) = next else { break };
 
-                let installed = pack_dir.is_some() || is_pack_installed(&id);
-                let user_downloaded = is_user_downloaded(&id);
-                let rgba_preview = load_best_thumbnail(&id, pack_dir, cat_entry.as_ref(), cache_dir);
+                    let pack_dir = local_dirs.get(&id).map(PathBuf::as_path);
+                    let cat_entry = catalog_map.get(&id).cloned();
 
-                let preview = PetPreview {
-                    id,
-                    name,
-                    author,
-                    category,
-                    installed,
-                    user_downloaded,
-                    size_kb,
-                    catalog_entry: cat_entry,
-                    rgba_preview,
-                    texture: None,
-                };
-                if let Ok(mut cb) = add_cb.lock() {
-                    cb(preview);
+                    let (name, author, category, size_kb) = if let Some(entry) = &cat_entry {
+                        let cat = if entry.is_made_by_sm() {
+                            PackCategory::MadeBySM
+                        } else {
+                            PackCategory::ESheep
+                        };
+                        (
+                            entry.name.clone(),
+                            entry.author.clone(),
+                            cat,
+                            Some(entry.size_kb),
+                        )
+                    } else if let Some(dir) = pack_dir {
+                        let xml_path = dir.join("deskpet.xml");
+                        let (n, a) = read_xml_metadata_fast(&xml_path, &id);
+                        let cat = classify_local_pack(&id, dir, &a);
+                        let kb = std::fs::metadata(&xml_path)
+                            .map(|m| m.len().div_ceil(1024))
+                            .ok();
+                        (n, a, cat, kb)
+                    } else {
+                        continue;
+                    };
+
+                    let installed = pack_dir.is_some() || is_pack_installed(&id);
+                    let user_downloaded = is_user_downloaded(&id);
+                    let rgba_preview =
+                        load_best_thumbnail(&id, pack_dir, cat_entry.as_ref(), cache_dir);
+
+                    let preview = PetPreview {
+                        id,
+                        name,
+                        author,
+                        category,
+                        installed,
+                        user_downloaded,
+                        size_kb,
+                        catalog_entry: cat_entry,
+                        rgba_preview,
+                        texture: None,
+                    };
+                    if let Ok(mut cb) = add_cb.lock() {
+                        cb(preview);
+                    }
                 }
             });
         }
@@ -421,7 +427,10 @@ fn card_frame(selected: bool) -> egui::Frame {
     };
     egui::Frame::default()
         .fill(fill)
-        .stroke(egui::Stroke::new(if selected { 1.5 } else { 1.0 }, stroke_col))
+        .stroke(egui::Stroke::new(
+            if selected { 1.5 } else { 1.0 },
+            stroke_col,
+        ))
         .inner_margin(10.0)
         .corner_radius(egui::CornerRadius::same(10))
 }
@@ -499,17 +508,20 @@ impl MyApp {
         let ctx_upd = ctx.clone();
         std::thread::spawn(move || {
             let current = env!("CARGO_PKG_VERSION");
-            if let Ok(resp) = ureq::get("https://api.github.com/repos/smresponsibilities/diypets/releases/latest")
-                .set("User-Agent", "diypets-updater")
-                .timeout(Duration::from_secs(4))
-                .call()
+            if let Ok(resp) =
+                ureq::get("https://api.github.com/repos/smresponsibilities/diypets/releases/latest")
+                    .set("User-Agent", "diypets-updater")
+                    .timeout(Duration::from_secs(4))
+                    .call()
                 && let Ok(text) = resp.into_string()
                 && let Ok(v) = serde_json::from_str::<serde_json::Value>(&text)
                 && let Some(tag) = v.get("tag_name").and_then(|t| t.as_str())
             {
                 let latest = tag.trim_start_matches('v');
                 if !latest.is_empty() && latest != current {
-                    if let Err(e) = upd_tx.send(tag.to_string()) { diypets::logging::warn(&format!("settings: update check send failed: {e}")); }
+                    if let Err(e) = upd_tx.send(tag.to_string()) {
+                        diypets::logging::warn(&format!("settings: update check send failed: {e}"));
+                    }
                     ctx_upd.request_repaint();
                 }
             }
@@ -598,7 +610,10 @@ impl MyApp {
                 })
                 .collect();
             if let Some(img) = image::RgbaImage::from_raw(pack.tile_w, pack.tile_h, rgba)
-                && let Err(e) = img.save(dest_dir.join("icon.png")) { diypets::logging::warn(&format!("settings: failed to save imported icon.png: {e}")); }
+                && let Err(e) = img.save(dest_dir.join("icon.png"))
+            {
+                diypets::logging::warn(&format!("settings: failed to save imported icon.png: {e}"));
+            }
         }
         self.settings.pet_pack = id.clone();
         self.last_scan = Instant::now() - REFRESH_INTERVAL;
@@ -632,7 +647,10 @@ impl MyApp {
         self.last_scan = Instant::now() - REFRESH_INTERVAL;
         self.scan_for_new_local_pets();
         self.status_banner = Some((
-            format!("Auto-rigged SVG '{}' & activated on desktop!", proj.display_name),
+            format!(
+                "Auto-rigged SVG '{}' & activated on desktop!",
+                proj.display_name
+            ),
             false,
         ));
         true
@@ -658,9 +676,10 @@ impl MyApp {
 
     fn launch_sibling(slot: &mut Option<std::process::Child>, stem: &str) {
         if let Some(child) = slot.as_mut()
-            && matches!(child.try_wait(), Ok(None)) {
-                return;
-            }
+            && matches!(child.try_wait(), Ok(None))
+        {
+            return;
+        }
         if let Some(exe) = sibling_binary(stem) {
             let mut cmd = std::process::Command::new(exe);
             cmd.current_dir(resolve_project_root());
@@ -687,7 +706,9 @@ impl MyApp {
                     error,
                 },
             };
-            if let Err(e) = tx.send(outcome) { diypets::logging::warn(&format!("settings: download result send failed: {e}")); }
+            if let Err(e) = tx.send(outcome) {
+                diypets::logging::warn(&format!("settings: download result send failed: {e}"));
+            }
             ctx.request_repaint();
         });
     }
@@ -805,14 +826,13 @@ impl MyApp {
 
                                     ui.add_space(5.0);
                                     ui.label(
-                                        egui::RichText::new(&pet.name)
-                                            .strong()
-                                            .size(13.0)
-                                            .color(if is_selected {
+                                        egui::RichText::new(&pet.name).strong().size(13.0).color(
+                                            if is_selected {
                                                 egui::Color32::WHITE
                                             } else {
                                                 egui::Color32::from_rgb(232, 236, 244)
-                                            }),
+                                            },
+                                        ),
                                     );
                                     if !pet.author.is_empty() {
                                         ui.label(
@@ -850,13 +870,17 @@ impl MyApp {
                                                     egui::RichText::new("Active")
                                                         .size(10.5)
                                                         .strong()
-                                                        .color(egui::Color32::from_rgb(134, 239, 172)),
+                                                        .color(egui::Color32::from_rgb(
+                                                            134, 239, 172,
+                                                        )),
                                                 );
                                             }
                                             if can_add_more
                                                 && ui
                                                     .small_button("+ Herd")
-                                                    .on_hover_text("Spawn alongside your current pets")
+                                                    .on_hover_text(
+                                                        "Spawn alongside your current pets",
+                                                    )
                                                     .clicked()
                                             {
                                                 add_clicked = true;
@@ -923,10 +947,9 @@ impl eframe::App for MyApp {
                         changed = true;
                     }
                 }
-                Some("svg")
-                    if self.import_svg_path(&path) => {
-                        changed = true;
-                    }
+                Some("svg") if self.import_svg_path(&path) => {
+                    changed = true;
+                }
                 _ => {}
             }
         }
@@ -969,15 +992,16 @@ impl eframe::App for MyApp {
 
         for pet in &mut self.pets {
             if pet.texture.is_none()
-                && let Some(rgba) = &pet.rgba_preview {
-                    let img = rgba_to_color_image(rgba);
-                    let tex_opts = if img.size[0].max(img.size[1]) >= 80 {
-                        egui::TextureOptions::LINEAR
-                    } else {
-                        egui::TextureOptions::NEAREST
-                    };
-                    pet.texture = Some(ui.ctx().load_texture(&pet.id, img, tex_opts));
-                }
+                && let Some(rgba) = &pet.rgba_preview
+            {
+                let img = rgba_to_color_image(rgba);
+                let tex_opts = if img.size[0].max(img.size[1]) >= 80 {
+                    egui::TextureOptions::LINEAR
+                } else {
+                    egui::TextureOptions::NEAREST
+                };
+                pet.texture = Some(ui.ctx().load_texture(&pet.id, img, tex_opts));
+            }
         }
 
         let mut open_creator = false;
@@ -1027,13 +1051,18 @@ impl eframe::App for MyApp {
                         open_creator = true;
                     }
                     if ui.button("Import .xml / .svg").clicked() {
-                    self.toasts.info("Select a .xml pack or .svg file to import");
+                        self.toasts
+                            .info("Select a .xml pack or .svg file to import");
                         if self.import_xml_dialog() {
                             changed = true;
                         }
                     }
-                    if ui.button("Launch Pet").on_hover_text("Start the desktop pet runner").clicked() {
-                    self.toasts.success("Launching DIYPets on desktop");
+                    if ui
+                        .button("Launch Pet")
+                        .on_hover_text("Start the desktop pet runner")
+                        .clicked()
+                    {
+                        self.toasts.success("Launching DIYPets on desktop");
                         launch_runner = true;
                     }
                 });
@@ -1049,7 +1078,10 @@ impl eframe::App for MyApp {
                         ui.horizontal_wrapped(|ui| {
                             ui.colored_label(
                                 egui::Color32::from_rgb(134, 239, 172),
-                                format!("Update available: {tag} (current v{})", env!("CARGO_PKG_VERSION")),
+                                format!(
+                                    "Update available: {tag} (current v{})",
+                                    env!("CARGO_PKG_VERSION")
+                                ),
                             );
                             ui.hyperlink_to(
                                 "Download Latest",
@@ -1417,16 +1449,17 @@ impl eframe::App for MyApp {
             Self::launch_sibling(&mut self.runner_process, "diypets");
         }
         if let Some(add_id) = to_add_extra
-            && self.settings.add_extra_pet(&add_id) {
-                changed = true;
-                self.status_banner = Some((
-                    format!(
-                        "Added '{add_id}' to your desktop herd ({}/{MAX_ACTIVE_PETS})!",
-                        1 + self.settings.extra_pets.len()
-                    ),
-                    false,
-                ));
-            }
+            && self.settings.add_extra_pet(&add_id)
+        {
+            changed = true;
+            self.status_banner = Some((
+                format!(
+                    "Added '{add_id}' to your desktop herd ({}/{MAX_ACTIVE_PETS})!",
+                    1 + self.settings.extra_pets.len()
+                ),
+                false,
+            ));
+        }
         if let Some(entry) = to_download {
             self.start_download(entry, ui.ctx().clone());
         }
@@ -1442,7 +1475,8 @@ impl eframe::App for MyApp {
                         self.settings.pet_pack = "highland_cow".to_string();
                     }
                     changed = true;
-                    self.status_banner = Some((format!("Removed downloaded pack {del_id}."), false));
+                    self.status_banner =
+                        Some((format!("Removed downloaded pack {del_id}."), false));
                 }
                 Err(e) => {
                     self.status_banner = Some((e, true));
@@ -1452,15 +1486,15 @@ impl eframe::App for MyApp {
 
         if self.icon_pack != self.settings.pet_pack
             && let Some(pet) = self.pets.iter().find(|p| p.id == self.settings.pet_pack)
-                && let Some(icon) = pet.window_icon() {
-                    ui.ctx()
-                        .send_viewport_cmd(egui::ViewportCommand::Icon(Some(icon)));
-                    self.icon_pack = pet.id.clone();
-                }
-        if changed
-            && let Err(e) = self.settings.save(&self.path) {
-                eprintln!("Failed to save settings: {}", e);
-            }
+            && let Some(icon) = pet.window_icon()
+        {
+            ui.ctx()
+                .send_viewport_cmd(egui::ViewportCommand::Icon(Some(icon)));
+            self.icon_pack = pet.id.clone();
+        }
+        if changed && let Err(e) = self.settings.save(&self.path) {
+            eprintln!("Failed to save settings: {}", e);
+        }
 
         ui.ctx().request_repaint_after(REFRESH_INTERVAL);
     }
@@ -1503,7 +1537,11 @@ mod tests {
         for pet in pets {
             let icon = pet.window_icon().expect(&pet.id);
             assert_eq!((icon.width, icon.height), (64, 64));
-            assert!(icon.rgba.as_chunks::<4>().0.iter().any(|p| p[3] != 0), "{}", pet.id);
+            assert!(
+                icon.rgba.as_chunks::<4>().0.iter().any(|p| p[3] != 0),
+                "{}",
+                pet.id
+            );
         }
     }
 

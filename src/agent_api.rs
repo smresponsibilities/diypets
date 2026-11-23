@@ -244,11 +244,7 @@ pub fn handle_http_request_with_herd(
     }
 }
 
-fn handle_mcp_jsonrpc(
-    body: &str,
-    tx: &Sender<AgentCommand>,
-    active_herd: &[String],
-) -> String {
+fn handle_mcp_jsonrpc(body: &str, tx: &Sender<AgentCommand>, active_herd: &[String]) -> String {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(body) else {
         return http_json(
             "400 Bad Request",
@@ -366,7 +362,10 @@ fn handle_mcp_jsonrpc(
                     }
                 }
                 "set_follow_cursor" => {
-                    let enabled = args.get("enabled").and_then(|b| b.as_bool()).unwrap_or(true);
+                    let enabled = args
+                        .get("enabled")
+                        .and_then(|b| b.as_bool())
+                        .unwrap_or(true);
                     let cmd = AgentCommand {
                         mood: "follow_cursor".to_string(),
                         text: None,
@@ -393,7 +392,9 @@ fn handle_mcp_jsonrpc(
                         "content": [{ "type": "text", "text": summary.to_string() }]
                     })
                 }
-                _ => serde_json::json!({ "isError": true, "content": [{ "type": "text", "text": "unknown tool" }] }),
+                _ => {
+                    serde_json::json!({ "isError": true, "content": [{ "type": "text", "text": "unknown tool" }] })
+                }
             }
         }
         _ => serde_json::json!({}),
@@ -502,10 +503,7 @@ pub fn start_local_server(tx: Sender<AgentCommand>, shared_herd: SharedHerd) {
                         r#"{"ok":false,"error":"request exceeds 4096 byte limit"}"#,
                     ),
                     ReadRequestOutcome::Ok(req) => {
-                        let snapshot = shared_herd
-                            .lock()
-                            .map(|g| g.clone())
-                            .unwrap_or_default();
+                        let snapshot = shared_herd.lock().map(|g| g.clone()).unwrap_or_default();
                         handle_http_request_with_herd(&req, &tx, &snapshot)
                     }
                 }
@@ -537,7 +535,9 @@ pub fn send_cli_command(cmd: &AgentCommand) -> Result<String, String> {
         "POST /react HTTP/1.1\r\nHost: 127.0.0.1:{DEFAULT_PORT}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}",
         payload.len()
     );
-    stream.write_all(req.as_bytes()).map_err(|e| e.to_string())?;
+    stream
+        .write_all(req.as_bytes())
+        .map_err(|e| e.to_string())?;
     let mut resp = String::new();
     stream
         .read_to_string(&mut resp)
@@ -636,7 +636,9 @@ fn forward_mcp_to_daemon(json_line: &str) -> Result<String, String> {
         "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:{DEFAULT_PORT}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{json_line}",
         json_line.len()
     );
-    stream.write_all(req.as_bytes()).map_err(|e| e.to_string())?;
+    stream
+        .write_all(req.as_bytes())
+        .map_err(|e| e.to_string())?;
     let mut resp = String::new();
     stream
         .read_to_string(&mut resp)
@@ -781,7 +783,9 @@ mod tests {
 
     #[test]
     fn stdio_mcp_bridge_handles_handshake_notifications_and_tools_list() {
-        let init = process_stdio_mcp_line(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#).unwrap();
+        let init =
+            process_stdio_mcp_line(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#)
+                .unwrap();
         assert!(init.contains("\"protocolVersion\":\"2024-11-05\""));
         assert!(init.contains("\"name\":\"diypets\""));
 
@@ -791,7 +795,8 @@ mod tests {
             "notifications must not emit a stdout response"
         );
 
-        let list = process_stdio_mcp_line(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#).unwrap();
+        let list =
+            process_stdio_mcp_line(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#).unwrap();
         assert!(list.contains("react_pet"));
         assert!(list.contains("drop_ball"));
         assert!(list.contains("list_herd"));

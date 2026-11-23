@@ -8,8 +8,8 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const MAX_LOG_AGE_SECS: u64 = 7 * 24 * 60 * 60; // Auto-delete logs older than 7 days
-const MAX_LOG_FILES: usize = 5;                 // Keep at most 5 recent log files
-const MAX_LOG_BYTES: u64 = 2 * 1024 * 1024;     // Cap single log file at 2 MiB
+const MAX_LOG_FILES: usize = 5; // Keep at most 5 recent log files
+const MAX_LOG_BYTES: u64 = 2 * 1024 * 1024; // Cap single log file at 2 MiB
 
 struct LogState {
     path: PathBuf,
@@ -95,7 +95,11 @@ fn unix_secs() -> u64 {
 pub fn init(bin_name: &str) -> Option<PathBuf> {
     let dir = log_dir();
     let _ = fs::create_dir_all(&dir);
-    let cleaned = cleanup_logs_in(&dir, Duration::from_secs(MAX_LOG_AGE_SECS), MAX_LOG_FILES.saturating_sub(1));
+    let cleaned = cleanup_logs_in(
+        &dir,
+        Duration::from_secs(MAX_LOG_AGE_SECS),
+        MAX_LOG_FILES.saturating_sub(1),
+    );
 
     let ts = unix_secs();
     let pid = std::process::id();
@@ -126,7 +130,9 @@ pub fn init(bin_name: &str) -> Option<PathBuf> {
 }
 
 pub fn active_log_path() -> Option<PathBuf> {
-    LOGGER.get().and_then(|m| m.lock().ok().map(|s| s.path.clone()))
+    LOGGER
+        .get()
+        .and_then(|m| m.lock().ok().map(|s| s.path.clone()))
 }
 
 fn write_line(level: &str, msg: &str) {
@@ -137,25 +143,25 @@ fn write_line(level: &str, msg: &str) {
     if let Some(lock) = LOGGER.get()
         && let Ok(mut state) = lock.lock()
     {
-            if state.bytes_written > MAX_LOG_BYTES {
-                // Rotate in place by truncating once size cap is hit
-                if let Ok(f) = OpenOptions::new()
-                    .create(true)
-                    .write(true)
-                    .truncate(true)
-                    .open(&state.path)
-                {
-                    state.file = f;
-                    state.bytes_written = 0;
-                    let note = "[ROTATED] Log exceeded 2 MiB cap and was truncated.\n";
-                    let _ = state.file.write_all(note.as_bytes());
-                    state.bytes_written += note.len() as u64;
-                }
+        if state.bytes_written > MAX_LOG_BYTES {
+            // Rotate in place by truncating once size cap is hit
+            if let Ok(f) = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(&state.path)
+            {
+                state.file = f;
+                state.bytes_written = 0;
+                let note = "[ROTATED] Log exceeded 2 MiB cap and was truncated.\n";
+                let _ = state.file.write_all(note.as_bytes());
+                state.bytes_written += note.len() as u64;
             }
-            if state.file.write_all(line.as_bytes()).is_ok() {
-                let _ = state.file.flush();
-                state.bytes_written += line.len() as u64;
-            }
+        }
+        if state.file.write_all(line.as_bytes()).is_ok() {
+            let _ = state.file.flush();
+            state.bytes_written += line.len() as u64;
+        }
     }
 }
 

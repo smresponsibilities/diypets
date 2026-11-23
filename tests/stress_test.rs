@@ -22,7 +22,9 @@ fn stress_eight_simultaneous_pets_40000_physics_ticks() {
     }
     for arch in [Archetype::Bird, Archetype::Crawler, Archetype::Swimmer] {
         let proj = StudioProject::template_by_archetype(arch);
-        let (_, _, xml) = proj.build_export_artifacts().unwrap_or_else(|_| panic!("{}", arch.label()));
+        let (_, _, xml) = proj
+            .build_export_artifacts()
+            .unwrap_or_else(|_| panic!("{}", arch.label()));
         let pack = DeskpetPack::parse(&xml).unwrap_or_else(|_| panic!("{}", arch.label()));
         states.push(DeskpetState::new(pack));
     }
@@ -49,7 +51,10 @@ fn stress_eight_simultaneous_pets_40000_physics_ticks() {
 
             pet.tick(16, floor_y, screen_w);
 
-            assert!(pet.x.is_finite() && pet.y.is_finite(), "NaN/Inf on pet {i} step {step}");
+            assert!(
+                pet.x.is_finite() && pet.y.is_finite(),
+                "NaN/Inf on pet {i} step {step}"
+            );
             assert!(
                 pet.x >= -1.0 && pet.x <= screen_w + 1.0,
                 "pet {i} escaped horizontal bounds: x={} (screen_w={})",
@@ -101,7 +106,10 @@ fn stress_all_bundled_packs_parse_and_simulate_cleanly() {
         assert!(st.current_frame().is_some(), "{name} failed sleep fallback");
         checked += 1;
     }
-    assert!(checked >= 5, "expected at least 5 bundled packs, found {checked}");
+    assert!(
+        checked >= 5,
+        "expected at least 5 bundled packs, found {checked}"
+    );
 }
 
 #[test]

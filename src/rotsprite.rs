@@ -34,10 +34,18 @@ pub fn epx_2x(src: &[u8], w: usize, h: usize) -> (usize, usize, Vec<u8>) {
             let mut p4 = p;
 
             if a != d && c != b {
-                if c == a { p1 = a; }
-                if a == b { p2 = b; }
-                if d == c { p3 = c; }
-                if b == d { p4 = d; }
+                if c == a {
+                    p1 = a;
+                }
+                if a == b {
+                    p2 = b;
+                }
+                if d == c {
+                    p3 = c;
+                }
+                if b == d {
+                    p4 = d;
+                }
             }
 
             let mut put = |dx: usize, dy: usize, col: [u8; 4]| {
@@ -115,9 +123,25 @@ mod tests {
             }
         }
         let rot = rotsprite_rgba(&src, 16, 16, 8.0, 8.0, 0.35);
-        let opaque_count = rot.as_chunks::<4>().0.iter().filter(|p| p[3] == 255).count();
-        let semi_count = rot.as_chunks::<4>().0.iter().filter(|p| p[3] > 0 && p[3] < 255).count();
-        assert!(opaque_count >= 24, "rotated square should retain solid area");
-        assert_eq!(semi_count, 0, "RotSprite must produce 0 blurred semi-alpha pixels");
+        let opaque_count = rot
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|p| p[3] == 255)
+            .count();
+        let semi_count = rot
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|p| p[3] > 0 && p[3] < 255)
+            .count();
+        assert!(
+            opaque_count >= 24,
+            "rotated square should retain solid area"
+        );
+        assert_eq!(
+            semi_count, 0,
+            "RotSprite must produce 0 blurred semi-alpha pixels"
+        );
     }
 }

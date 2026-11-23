@@ -46,7 +46,9 @@ pub fn set_enabled(enable: bool) -> Result<(), String> {
         let exe = runner_executable().ok_or("cannot locate diypets executable")?;
         let quoted = format!("\"{}\"", exe.display());
         let out = std::process::Command::new("reg")
-            .args(["add", key, "/v", APP_ID, "/t", "REG_SZ", "/d", &quoted, "/f"])
+            .args([
+                "add", key, "/v", APP_ID, "/t", "REG_SZ", "/d", &quoted, "/f",
+            ])
             .creation_flags(CREATE_NO_WINDOW)
             .output()
             .map_err(|e| format!("failed to run reg.exe: {e}"))?;
@@ -57,7 +59,10 @@ pub fn set_enabled(enable: bool) -> Result<(), String> {
         if let Err(e) = std::process::Command::new("reg")
             .args(["delete", key, "/v", APP_ID, "/f"])
             .creation_flags(CREATE_NO_WINDOW)
-            .output() { crate::logging::warn(&format!("autostart: reg command failed: {e}")); }
+            .output()
+        {
+            crate::logging::warn(&format!("autostart: reg command failed: {e}"));
+        }
     }
     Ok(())
 }

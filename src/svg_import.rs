@@ -264,7 +264,11 @@ fn parse_points_list(pts: &str) -> Vec<(f32, f32)> {
         .filter(|t| !t.is_empty())
         .filter_map(|t| t.parse::<f32>().ok())
         .collect();
-    nums.as_chunks::<2>().0.iter().map(|c| (c[0], c[1])).collect()
+    nums.as_chunks::<2>()
+        .0
+        .iter()
+        .map(|c| (c[0], c[1]))
+        .collect()
 }
 
 fn parse_svg_path_d(d: &str) -> Option<Path> {
@@ -310,7 +314,10 @@ fn parse_svg_path_d(d: &str) -> Option<Path> {
         if *i == start {
             return None;
         }
-        std::str::from_utf8(&bytes[start..*i]).ok()?.parse::<f32>().ok()
+        std::str::from_utf8(&bytes[start..*i])
+            .ok()?
+            .parse::<f32>()
+            .ok()
     };
 
     while i < bytes.len() {
@@ -324,8 +331,12 @@ fn parse_svg_path_d(d: &str) -> Option<Path> {
         }
         match cmd {
             b'M' | b'm' => {
-                let Some(x) = read_num(bytes, &mut i) else { break };
-                let Some(y) = read_num(bytes, &mut i) else { break };
+                let Some(x) = read_num(bytes, &mut i) else {
+                    break;
+                };
+                let Some(y) = read_num(bytes, &mut i) else {
+                    break;
+                };
                 if cmd == b'm' {
                     cx += x;
                     cy += y;
@@ -340,8 +351,12 @@ fn parse_svg_path_d(d: &str) -> Option<Path> {
                 cmd = if cmd == b'm' { b'l' } else { b'L' };
             }
             b'L' | b'l' => {
-                let Some(x) = read_num(bytes, &mut i) else { break };
-                let Some(y) = read_num(bytes, &mut i) else { break };
+                let Some(x) = read_num(bytes, &mut i) else {
+                    break;
+                };
+                let Some(y) = read_num(bytes, &mut i) else {
+                    break;
+                };
                 if cmd == b'l' {
                     cx += x;
                     cy += y;
@@ -353,13 +368,17 @@ fn parse_svg_path_d(d: &str) -> Option<Path> {
                 last_ctrl = None;
             }
             b'H' | b'h' => {
-                let Some(x) = read_num(bytes, &mut i) else { break };
+                let Some(x) = read_num(bytes, &mut i) else {
+                    break;
+                };
                 cx = if cmd == b'h' { cx + x } else { x };
                 pb.line_to(cx, cy);
                 last_ctrl = None;
             }
             b'V' | b'v' => {
-                let Some(y) = read_num(bytes, &mut i) else { break };
+                let Some(y) = read_num(bytes, &mut i) else {
+                    break;
+                };
                 cy = if cmd == b'v' { cy + y } else { y };
                 pb.line_to(cx, cy);
                 last_ctrl = None;

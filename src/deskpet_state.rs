@@ -37,8 +37,20 @@ fn eval_arithmetic(expr: &str) -> Result<f64, ()> {
                     let rhs = self.parse_unary()?;
                     val = match op {
                         b'*' => val * rhs,
-                        b'/' => if rhs.abs() < f64::EPSILON { return Err(()); } else { val / rhs },
-                        _ => if rhs.abs() < f64::EPSILON { return Err(()); } else { val % rhs },
+                        b'/' => {
+                            if rhs.abs() < f64::EPSILON {
+                                return Err(());
+                            } else {
+                                val / rhs
+                            }
+                        }
+                        _ => {
+                            if rhs.abs() < f64::EPSILON {
+                                return Err(());
+                            } else {
+                                val % rhs
+                            }
+                        }
                     };
                 } else {
                     break;
@@ -48,8 +60,14 @@ fn eval_arithmetic(expr: &str) -> Result<f64, ()> {
         }
         fn parse_unary(&mut self) -> Result<f64, ()> {
             match self.peek() {
-                Some(b'+') => { self.pos += 1; self.parse_unary() }
-                Some(b'-') => { self.pos += 1; Ok(-self.parse_unary()?) }
+                Some(b'+') => {
+                    self.pos += 1;
+                    self.parse_unary()
+                }
+                Some(b'-') => {
+                    self.pos += 1;
+                    Ok(-self.parse_unary()?)
+                }
                 _ => self.parse_primary(),
             }
         }
@@ -87,7 +105,10 @@ fn eval_arithmetic(expr: &str) -> Result<f64, ()> {
         }
     }
 
-    let mut p = Parser { bytes: expr.as_bytes(), pos: 0 };
+    let mut p = Parser {
+        bytes: expr.as_bytes(),
+        pos: 0,
+    };
     let val = p.parse_expr()?;
     p.skip_ws();
     if p.pos != p.bytes.len() || !val.is_finite() {
@@ -424,8 +445,10 @@ impl DeskpetState {
             None => return,
         };
 
-        if !self.is_tossing && !anim.next_gravity.is_empty()
-            && self.y < floor_y && self.y >= floor_y - 8.0
+        if !self.is_tossing
+            && !anim.next_gravity.is_empty()
+            && self.y < floor_y
+            && self.y >= floor_y - 8.0
         {
             self.y = floor_y;
         }
@@ -578,7 +601,12 @@ impl DeskpetState {
         }
     }
 
-    fn pick_next_animation(&mut self, anim: &DeskpetAnimation, trigger: Trigger, border_vertical: bool) {
+    fn pick_next_animation(
+        &mut self,
+        anim: &DeskpetAnimation,
+        trigger: Trigger,
+        border_vertical: bool,
+    ) {
         let raw_pool = match trigger {
             Trigger::Next => &anim.next,
             Trigger::Border => &anim.next_border,
@@ -637,7 +665,9 @@ impl DeskpetState {
 
 #[cfg(test)]
 mod window_floor_tests {
-    use super::{DeskpetPack, DeskpetState, DeskpetStateId, window_floor_candidate, select_window_floor};
+    use super::{
+        DeskpetPack, DeskpetState, DeskpetStateId, select_window_floor, window_floor_candidate,
+    };
 
     #[test]
     fn near_taskbar_window_does_not_raise_floor() {
@@ -710,8 +740,11 @@ mod window_floor_tests {
 
     #[test]
     fn authored_foot_baseline_scales_with_pet_size() {
-        let xml = include_str!("../assets/highland_cow/deskpet.xml")
-            .replacen("<TilesY>16</TilesY>", "<TilesY>16</TilesY><GroundY>117</GroundY>", 1);
+        let xml = include_str!("../assets/highland_cow/deskpet.xml").replacen(
+            "<TilesY>16</TilesY>",
+            "<TilesY>16</TilesY><GroundY>117</GroundY>",
+            1,
+        );
         let mut pet = DeskpetState::new(DeskpetPack::parse(&xml).unwrap());
         pet.pet_size = 256;
         assert_eq!(pet.ground_height(), 234.0);
@@ -823,7 +856,11 @@ mod window_floor_tests {
         pet.x = -500.0;
         pet.y = 500.0;
         pet.tick_in_bounds(16, 800.0, -1920.0, 1920.0);
-        assert!(pet.x < 0.0 && pet.x >= -1920.0, "pet clamped away from left monitor: {}", pet.x);
+        assert!(
+            pet.x < 0.0 && pet.x >= -1920.0,
+            "pet clamped away from left monitor: {}",
+            pet.x
+        );
     }
 
     #[test]

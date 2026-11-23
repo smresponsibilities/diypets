@@ -182,7 +182,10 @@ pub struct RigPart {
 
 impl RigPart {
     pub fn new(name: impl Into<String>, role: PartRole) -> Self {
-        let paired = matches!(role, PartRole::FrontLimb | PartRole::BackLimb | PartRole::Wing);
+        let paired = matches!(
+            role,
+            PartRole::FrontLimb | PartRole::BackLimb | PartRole::Wing
+        );
         let behind_body = matches!(role, PartRole::Tail);
         let (swing_deg, phase_offset_deg) = match role {
             PartRole::FrontLimb => (20.0, 0.0),
@@ -426,7 +429,11 @@ pub fn sanitize_pack_id(input: &str) -> String {
         }
     }
     let t = out.trim_matches('_').to_string();
-    if t.is_empty() { "my_pet".to_string() } else { t }
+    if t.is_empty() {
+        "my_pet".to_string()
+    } else {
+        t
+    }
 }
 
 pub fn paint_ellipse(buf: &mut [RgbaPixel], cx: f32, cy: f32, rx: f32, ry: f32, color: RgbaPixel) {
@@ -621,10 +628,16 @@ pub fn paint_standard_faces(
 pub fn rgba_buf_to_png_b64(buf: &[RgbaPixel]) -> String {
     let mut img = image::RgbaImage::new(BOARD_SIZE as u32, BOARD_SIZE as u32);
     for (i, &px) in buf.iter().enumerate() {
-        img.put_pixel((i % BOARD_SIZE) as u32, (i / BOARD_SIZE) as u32, image::Rgba(px));
+        img.put_pixel(
+            (i % BOARD_SIZE) as u32,
+            (i / BOARD_SIZE) as u32,
+            image::Rgba(px),
+        );
     }
     let mut bytes = Vec::new();
-    if let Err(e) = img.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png) { crate::logging::warn(&format!("studio_model: PNG encode failed: {e}")); }
+    if let Err(e) = img.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png) {
+        crate::logging::warn(&format!("studio_model: PNG encode failed: {e}"));
+    }
     STANDARD.encode(&bytes)
 }
 
@@ -727,7 +740,11 @@ impl StudioProject {
             outline_color: [44, 30, 26],
             global_limb_scale: 1.0,
             global_swing_mult: 1.0,
-            body_bob: if archetype == Archetype::Crawler { 0.8 } else { 1.8 },
+            body_bob: if archetype == Archetype::Crawler {
+                0.8
+            } else {
+                1.8
+            },
             wave_amplitude: match archetype {
                 Archetype::Crawler => 5.5,
                 Archetype::Swimmer => 4.2,
@@ -777,6 +794,10 @@ impl StudioProject {
         paint_ellipse_clipped(&mut p.body, 80.0, 58.0, 3.2, 7.0, stripe);
         paint_ellipse_clipped(&mut p.body, 67.0, 64.0, 16.0, 5.0, fur_light);
 
+        // Tabby stripes stay inside the torso silhouette.
+        paint_ellipse_clipped(&mut p.body, 78.0, 69.0, 2.0, 6.0, stripe);
+        paint_ellipse_clipped(&mut p.body, 86.0, 70.0, 1.8, 5.0, stripe);
+
         // Chibi head facing LEFT with pointed ears
         paint_triangle(&mut p.body, (29.0, 48.0), (31.0, 31.0), (41.0, 43.0), fur);
         paint_triangle(&mut p.body, (44.0, 43.0), (52.0, 31.0), (56.0, 48.0), fur);
@@ -788,6 +809,7 @@ impl StudioProject {
         // Cute cream muzzle + pink nose
         paint_ellipse_clipped(&mut p.body, 31.0, 59.5, 9.0, 6.2, belly);
         paint_ellipse(&mut p.body, 25.5, 57.5, 2.2, 1.6, nose);
+        paint_ellipse_clipped(&mut p.body, 29.0, 63.0, 2.6, 0.8, ink);
         paint_soft_underside_shade(&mut p.body, 5, 0.90);
 
         paint_standard_faces(&mut p.faces, 35.5, 52.5, ink, blush);
@@ -797,6 +819,8 @@ impl StudioProject {
         paint_ellipse(&mut fl.pixels, 51.0, 88.0, 6.2, 11.5, fur);
         paint_ellipse(&mut fl.pixels, 48.5, 98.5, 6.5, 4.2, belly);
         paint_soft_underside_shade(&mut fl.pixels, 3, 0.90);
+        paint_ellipse_clipped(&mut fl.pixels, 46.0, 100.0, 0.7, 1.0, ink);
+        paint_ellipse_clipped(&mut fl.pixels, 50.0, 100.0, 0.7, 1.0, ink);
         fl.socket_near = (51, 80);
         fl.socket_far = (45, 79);
         fl.pivot = (51, 80);
@@ -845,16 +869,19 @@ impl StudioProject {
         paint_ellipse(&mut p.body, 62.0, 45.0, 18.5, 17.5, skin);
         paint_ellipse(&mut p.body, 65.0, 34.0, 19.0, 10.0, hair);
         paint_ellipse(&mut p.body, 46.0, 39.0, 8.5, 3.8, hoodie);
+        paint_triangle(&mut p.body, (48.0, 36.0), (55.0, 30.0), (60.0, 41.0), hair);
+        paint_ellipse_clipped(&mut p.body, 70.0, 75.0, 1.0, 6.0, [52, 105, 176, 255]);
+        paint_ellipse_clipped(&mut p.body, 63.0, 82.0, 5.0, 2.0, [69, 126, 196, 255]);
         paint_soft_underside_shade(&mut p.body, 4, 0.90);
 
         paint_standard_faces(&mut p.faces, 52.0, 47.0, ink, blush);
 
         let mut arm = RigPart::new("Arm", PartRole::FrontLimb);
-        paint_ellipse(&mut arm.pixels, 64.0, 74.0, 5.2, 10.5, hoodie);
-        paint_ellipse(&mut arm.pixels, 63.0, 84.0, 4.6, 4.2, skin);
-        arm.socket_near = (66, 66);
-        arm.socket_far = (58, 66);
-        arm.pivot = (64, 65);
+        paint_ellipse(&mut arm.pixels, 54.0, 74.0, 5.5, 11.0, hoodie);
+        paint_ellipse(&mut arm.pixels, 52.0, 84.0, 4.8, 4.5, skin);
+        arm.socket_near = (57, 66);
+        arm.socket_far = (64, 66);
+        arm.pivot = (57, 65);
         arm.swing_deg = 24.0;
 
         let mut leg = RigPart::new("Leg", PartRole::BackLimb);
@@ -895,13 +922,21 @@ impl StudioProject {
         let mut wing = RigPart::new("Wing", PartRole::Wing);
         paint_ellipse(&mut wing.pixels, 70.0, 68.0, 15.5, 9.0, wing_c);
         paint_ellipse_clipped(&mut wing.pixels, 74.0, 71.0, 10.0, 5.5, sky);
+        paint_ellipse_clipped(&mut wing.pixels, 75.0, 74.0, 7.0, 1.0, wing_c);
+        paint_ellipse_clipped(&mut wing.pixels, 78.0, 71.0, 5.0, 0.8, wing_c);
         wing.socket_near = (60, 66);
         wing.socket_far = (56, 62);
         wing.pivot = (58, 66);
         wing.swing_deg = 32.0;
 
         let mut tail = RigPart::new("Tail", PartRole::Tail);
-        paint_triangle(&mut tail.pixels, (84.0, 66.0), (107.0, 59.0), (104.0, 74.0), wing_c);
+        paint_triangle(
+            &mut tail.pixels,
+            (84.0, 66.0),
+            (107.0, 59.0),
+            (104.0, 74.0),
+            wing_c,
+        );
         tail.socket_near = (85, 68);
         tail.pivot = (85, 68);
         tail.swing_deg = 14.0;
@@ -934,8 +969,10 @@ impl StudioProject {
         let tongue = [238, 76, 86, 255];
         let blush = [252, 160, 170, 255];
 
-        paint_ellipse(&mut p.body, 28.0, 74.0, 13.0, 10.5, green);
-        paint_ellipse(&mut p.body, 14.0, 76.0, 4.5, 1.5, tongue);
+        paint_ellipse(&mut p.body, 28.0, 74.0, 14.0, 11.5, green);
+        paint_ellipse(&mut p.body, 15.0, 76.0, 5.0, 1.0, tongue);
+        paint_triangle(&mut p.body, (11.0, 75.0), (7.0, 73.0), (9.0, 76.0), tongue);
+        paint_triangle(&mut p.body, (11.0, 77.0), (7.0, 79.0), (9.0, 76.0), tongue);
         for i in 0..9 {
             let cx = 38.0 + i as f32 * 8.5;
             let ry = (9.5 - i as f32 * 0.72).max(2.8);
@@ -944,9 +981,17 @@ impl StudioProject {
         for i in 0..8 {
             let cx = 38.0 + i as f32 * 8.5;
             let ry = (9.5 - i as f32 * 0.72).max(2.8);
-            paint_ellipse_clipped(&mut p.body, cx, 82.0 + (i as f32 * 0.3), 5.8, ry * 0.45, belly);
+            paint_ellipse_clipped(
+                &mut p.body,
+                cx,
+                82.0 + (i as f32 * 0.3),
+                5.8,
+                ry * 0.45,
+                belly,
+            );
             if i % 2 == 1 {
                 paint_ellipse_clipped(&mut p.body, cx, 73.5, 3.2, ry * 0.48, spot);
+                paint_ellipse_clipped(&mut p.body, cx + 1.0, 73.0, 1.2, 1.0, [137, 226, 142, 255]);
             }
         }
         paint_soft_underside_shade(&mut p.body, 3, 0.90);
@@ -974,6 +1019,9 @@ impl StudioProject {
         paint_ellipse(&mut p.body, 62.0, 51.0, 11.0, 6.0, fin_c);
         paint_ellipse_clipped(&mut p.body, 54.0, 76.0, 20.0, 9.0, cream);
         paint_ellipse_clipped(&mut p.body, 67.0, 63.0, 8.0, 6.0, cream);
+        paint_ellipse_clipped(&mut p.body, 49.0, 65.0, 1.0, 5.0, [174, 72, 47, 255]);
+        paint_ellipse_clipped(&mut p.body, 69.0, 73.0, 2.0, 1.2, [222, 95, 49, 255]);
+        paint_ellipse_clipped(&mut p.body, 76.0, 69.0, 2.0, 1.2, [222, 95, 49, 255]);
         paint_soft_underside_shade(&mut p.body, 4, 0.90);
 
         paint_standard_faces(&mut p.faces, 39.0, 65.0, ink, blush);
@@ -988,6 +1036,8 @@ impl StudioProject {
         let mut tail = RigPart::new("Tail Fin", PartRole::Tail);
         paint_ellipse(&mut tail.pixels, 95.0, 62.0, 11.0, 6.5, fin_c);
         paint_ellipse(&mut tail.pixels, 95.0, 74.0, 11.0, 6.5, fin_c);
+        paint_ellipse_clipped(&mut tail.pixels, 97.0, 62.0, 7.0, 1.0, [220, 113, 61, 255]);
+        paint_ellipse_clipped(&mut tail.pixels, 97.0, 74.0, 7.0, 1.0, [220, 113, 61, 255]);
         tail.socket_near = (84, 68);
         tail.pivot = (85, 68);
         tail.swing_deg = 24.0;
@@ -1096,8 +1146,9 @@ impl StudioProject {
         for x in 0..BOARD_SIZE {
             let u = ((x as f32 - bx0 as f32) / span).clamp(0.0, 1.0);
             let envelope = u.powf(0.75);
-            let shift = ((u * std::f32::consts::TAU * 1.35 - wave_phase).sin() * wave_amp * envelope)
-                .round() as isize;
+            let shift =
+                ((u * std::f32::consts::TAU * 1.35 - wave_phase).sin() * wave_amp * envelope)
+                    .round() as isize;
             for y in 0..BOARD_SIZE {
                 let src_y = y as isize - shift;
                 if src_y >= 0 && src_y < BOARD_SIZE as isize {
@@ -1178,7 +1229,14 @@ impl StudioProject {
                 } else {
                     limb_frame_xform
                 };
-                target.draw_pixmap(0, 0, pm.as_ref(), &PixmapPaint::default(), frame.pre_concat(lx), None);
+                target.draw_pixmap(
+                    0,
+                    0,
+                    pm.as_ref(),
+                    &PixmapPaint::default(),
+                    frame.pre_concat(lx),
+                    None,
+                );
             };
 
         // Pass 1: Far paired limbs on separate far_layer (gets its own clean depth-separated outline!)
@@ -1198,7 +1256,14 @@ impl StudioProject {
             }
         }
         let body_draw = torso_xform.pre_concat(Transform::from_translate(ox, oy));
-        main_layer.draw_pixmap(0, 0, body_pm.as_ref(), &PixmapPaint::default(), body_draw, None);
+        main_layer.draw_pixmap(
+            0,
+            0,
+            body_pm.as_ref(),
+            &PixmapPaint::default(),
+            body_draw,
+            None,
+        );
         for part in &self.parts {
             if !part.behind_body {
                 draw_part_instance(&mut main_layer, part, false, part_angle(part, false));
@@ -1244,9 +1309,19 @@ impl StudioProject {
 
     fn stamp_zzz(pm: &mut Pixmap, x0: i32, y0: i32) {
         let glyph: &[(i32, i32)] = &[
-            (0, 0), (1, 0), (2, 0), (3, 0), (4, 0),
-            (3, 1), (2, 2), (1, 3),
-            (0, 4), (1, 4), (2, 4), (3, 4), (4, 4),
+            (0, 0),
+            (1, 0),
+            (2, 0),
+            (3, 0),
+            (4, 0),
+            (3, 1),
+            (2, 2),
+            (1, 3),
+            (0, 4),
+            (1, 4),
+            (2, 4),
+            (3, 4),
+            (4, 4),
         ];
         let w = pm.width() as i32;
         let h = pm.height() as i32;
@@ -1348,13 +1423,25 @@ impl StudioProject {
                     phase_rad: t * 2.4,
                     tail_amp: 0.45,
                     ear_amp: 0.3,
-                    wing_amp: if self.archetype == Archetype::Swimmer { 0.4 } else { 0.08 },
+                    wing_amp: if self.archetype == Archetype::Swimmer {
+                        0.4
+                    } else {
+                        0.08
+                    },
                     torso_dy: breath * 0.7,
                     torso_scale_y: 1.0 - breath * 0.018,
                     body_tilt_deg: (t * 1.1).sin() * 1.0,
-                    wave_amp_px: if self.archetype == Archetype::Swimmer { 2.0 } else { 0.0 },
+                    wave_amp_px: if self.archetype == Archetype::Swimmer {
+                        2.0
+                    } else {
+                        0.0
+                    },
                     wave_phase: t * 3.0,
-                    face: if blink { FaceSlot::Blink } else { FaceSlot::Neutral },
+                    face: if blink {
+                        FaceSlot::Blink
+                    } else {
+                        FaceSlot::Neutral
+                    },
                     ..Default::default()
                 }
             }
@@ -1429,7 +1516,11 @@ impl StudioProject {
                 tail_amp: 0.5,
                 whole_dy: ((t * 6.5).sin().abs() - 0.5) * 2.2,
                 rotate_whole_deg: 90.0,
-                wave_amp_px: if self.archetype == Archetype::Crawler { 4.2 } else { 0.0 },
+                wave_amp_px: if self.archetype == Archetype::Crawler {
+                    4.2
+                } else {
+                    0.0
+                },
                 wave_phase: t * 6.5,
                 ..Default::default()
             },
@@ -1698,10 +1789,9 @@ impl StudioProject {
   </Animation>
   <Animation id="2">
     <Name>turn</Name>
-    <Action>flip</Action>
     <Start><X>0</X><Y>0</Y><Interval>160</Interval><Opacity>1</Opacity></Start>
     <End><X>0</X><Y>0</Y><Interval>160</Interval><Opacity>1</Opacity></End>
-    <Sequence repeat="0" repeatfrom="0"><Frame>8</Frame><Frame>9</Frame></Sequence>
+    <Sequence repeat="0" repeatfrom="0"><Frame>8</Frame><Frame>9</Frame><Action>flip</Action></Sequence>
     <Gravity><Next probability="100">5</Next></Gravity>
     <Next probability="100">1</Next>
   </Animation>
@@ -1788,7 +1878,9 @@ impl StudioProject {
         let dst = pack_dir.join("deskpet.xml");
         std::fs::write(&tmp, &xml).map_err(|e| format!("cannot write xml: {e}"))?;
         if std::fs::rename(&tmp, &dst).is_err() {
-            if let Err(e) = std::fs::remove_file(&tmp) { crate::logging::warn(&format!("studio_model: temp file cleanup failed: {e}")); }
+            if let Err(e) = std::fs::remove_file(&tmp) {
+                crate::logging::warn(&format!("studio_model: temp file cleanup failed: {e}"));
+            }
             std::fs::write(&dst, &xml).map_err(|e| format!("cannot write xml: {e}"))?;
         }
         icon_tile
@@ -1805,8 +1897,7 @@ impl StudioProject {
     }
 
     pub fn load_json(path: &Path) -> Result<Self, String> {
-        let text =
-            std::fs::read_to_string(path).map_err(|e| format!("read project error: {e}"))?;
+        let text = std::fs::read_to_string(path).map_err(|e| format!("read project error: {e}"))?;
         let dto: SavedProjectV2 =
             serde_json::from_str(&text).map_err(|e| format!("parse project json error: {e}"))?;
         dto.into_project()
@@ -1981,8 +2072,11 @@ mod tests {
         for &arch in Archetype::all() {
             let mut proj = StudioProject::template_by_archetype(arch);
             proj.custom_animations.push(CustomAnimation::dance_preset());
-            let (_sheet, _icon, xml) = proj.build_export_artifacts().unwrap_or_else(|e| panic!("{}: {e:?}", arch.label()));
-            let pack = DeskpetPack::parse(&xml).unwrap_or_else(|e| panic!("{}: {e:?}", arch.label()));
+            let (_sheet, _icon, xml) = proj
+                .build_export_artifacts()
+                .unwrap_or_else(|e| panic!("{}: {e:?}", arch.label()));
+            let pack =
+                DeskpetPack::parse(&xml).unwrap_or_else(|e| panic!("{}: {e:?}", arch.label()));
             assert!(pack.frames.len() >= 24);
             assert!(pack.animations.contains_key("1"));
             assert!(pack.animations.contains_key("19"));

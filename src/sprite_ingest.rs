@@ -653,9 +653,23 @@ mod tests {
     fn manual_grid_fallback_and_state_bucketing_work_end_to_end() {
         let mut sheet = RgbaImage::new(80, 16);
         for i in 0..4u32 {
-            fill_rect(&mut sheet, i * 16 + 2, 2, 12, 12, Rgba([100, 200, 120, 255]));
+            fill_rect(
+                &mut sheet,
+                i * 16 + 2,
+                2,
+                12,
+                12,
+                Rgba([100, 200, 120, 255]),
+            );
         }
-        fill_rect(&mut sheet, 4 * 16 + 2, 10, 12, 5, Rgba([100, 200, 120, 255]));
+        fill_rect(
+            &mut sheet,
+            4 * 16 + 2,
+            10,
+            12,
+            5,
+            Rgba([100, 200, 120, 255]),
+        );
 
         let res = ingest_sprite_sheet(
             &sheet,

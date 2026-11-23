@@ -273,7 +273,8 @@ impl Settings {
         if self.herd_overrides.len() <= slot {
             self.herd_overrides.resize(slot + 1, PetOverride::default());
         }
-        self.herd_overrides[slot].walk_speed = speed.map(|v| v.clamp(WALK_SPEED_MIN, WALK_SPEED_MAX));
+        self.herd_overrides[slot].walk_speed =
+            speed.map(|v| v.clamp(WALK_SPEED_MIN, WALK_SPEED_MAX));
     }
 
     pub fn reset_slot_override(&mut self, slot: usize) {
@@ -328,7 +329,12 @@ impl Settings {
             .map_err(|e| format!("cannot write {}: {e}", tmp_path.display()))?;
 
         if fs::rename(&tmp_path, path).is_err() {
-            if let Err(e) = fs::remove_file(&tmp_path) { crate::logging::warn(&format!("settings: temp cleanup failed {}: {e}", tmp_path.display())); }
+            if let Err(e) = fs::remove_file(&tmp_path) {
+                crate::logging::warn(&format!(
+                    "settings: temp cleanup failed {}: {e}",
+                    tmp_path.display()
+                ));
+            }
             fs::write(path, &text).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
         }
         Ok(())
@@ -346,7 +352,9 @@ impl Settings {
         s.herd_overrides.truncate(1 + s.extra_pets.len());
         for o in &mut s.herd_overrides {
             o.size = o.size.map(|v| v.clamp(PET_SIZE_MIN, PET_SIZE_MAX));
-            o.walk_speed = o.walk_speed.map(|v| v.clamp(WALK_SPEED_MIN, WALK_SPEED_MAX));
+            o.walk_speed = o
+                .walk_speed
+                .map(|v| v.clamp(WALK_SPEED_MIN, WALK_SPEED_MAX));
         }
         s
     }
@@ -428,17 +436,17 @@ mod tests {
     fn herd_clamps_to_max_and_strips_unsafe_paths() {
         let s = Settings {
             extra_pets: vec![
-            "../bad".to_string(),
-            "dog".to_string(),
-            "goat".to_string(),
-            "polar_bear".to_string(),
-            "stegosaurus".to_string(),
-            "esheep64".to_string(),
-            "fox".to_string(),
-            "neko".to_string(),
-            "extra_overflow".to_string(),
-            "extra_overflow_2".to_string(),
-        ],
+                "../bad".to_string(),
+                "dog".to_string(),
+                "goat".to_string(),
+                "polar_bear".to_string(),
+                "stegosaurus".to_string(),
+                "esheep64".to_string(),
+                "fox".to_string(),
+                "neko".to_string(),
+                "extra_overflow".to_string(),
+                "extra_overflow_2".to_string(),
+            ],
             ..Default::default()
         };
         let clean = s.sanitized();

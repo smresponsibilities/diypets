@@ -85,15 +85,18 @@ fn read_json_or_empty(path: &Path) -> Result<Value, String> {
     if !path.is_file() {
         return Ok(Value::Object(Map::new()));
     }
-    let raw = fs::read_to_string(path)
-        .map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
+    let raw =
+        fs::read_to_string(path).map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
     if raw.trim().is_empty() {
         return Ok(Value::Object(Map::new()));
     }
     let parsed: Value = serde_json::from_str(&raw)
         .map_err(|e| format!("Invalid JSON in {}: {e}", path.display()))?;
     if !parsed.is_object() {
-        return Err(format!("Expected top-level JSON object in {}", path.display()));
+        return Err(format!(
+            "Expected top-level JSON object in {}",
+            path.display()
+        ));
     }
     Ok(parsed)
 }
@@ -122,17 +125,32 @@ fn atomic_write_json(path: &Path, value: &Value) -> Result<(), String> {
         if let Err(rename_err) = fs::rename(&tmp_path, path) {
             // Windows rejects rename onto an existing file; replace safely after staging.
             fs::copy(&tmp_path, path).map_err(|copy_err| {
-                if let Err(rm_err) = fs::remove_file(&tmp_path) { crate::logging::warn(&format!("agent_hooks: temp cleanup failed for {}: {rm_err}", tmp_path.display())); }
+                if let Err(rm_err) = fs::remove_file(&tmp_path) {
+                    crate::logging::warn(&format!(
+                        "agent_hooks: temp cleanup failed for {}: {rm_err}",
+                        tmp_path.display()
+                    ));
+                }
                 format!(
                     "Failed to update {} (rename: {rename_err}; copy: {copy_err})",
                     path.display()
                 )
             })?;
-            if let Err(rm_err) = fs::remove_file(&tmp_path) { crate::logging::warn(&format!("agent_hooks: temp cleanup failed for {}: {rm_err}", tmp_path.display())); }
+            if let Err(rm_err) = fs::remove_file(&tmp_path) {
+                crate::logging::warn(&format!(
+                    "agent_hooks: temp cleanup failed for {}: {rm_err}",
+                    tmp_path.display()
+                ));
+            }
         }
     } else {
         fs::rename(&tmp_path, path).map_err(|e| {
-            if let Err(rm_err) = fs::remove_file(&tmp_path) { crate::logging::warn(&format!("agent_hooks: temp cleanup failed for {}: {rm_err}", tmp_path.display())); }
+            if let Err(rm_err) = fs::remove_file(&tmp_path) {
+                crate::logging::warn(&format!(
+                    "agent_hooks: temp cleanup failed for {}: {rm_err}",
+                    tmp_path.display()
+                ));
+            }
             format!("Failed to write {}: {e}", path.display())
         })?;
     }
@@ -253,7 +271,9 @@ pub fn install_cursor_hooks_json(root: &mut Value) -> usize {
     let Some(root_obj) = root.as_object_mut() else {
         return 0;
     };
-    root_obj.entry("version".to_string()).or_insert_with(|| json!(1));
+    root_obj
+        .entry("version".to_string())
+        .or_insert_with(|| json!(1));
 
     let hooks_val = root_obj
         .entry("hooks".to_string())
@@ -481,7 +501,10 @@ mod tests {
         assert_eq!(cfg["theme"], "dark");
         assert_eq!(cfg["hooks"]["PostToolUse"].as_array().unwrap().len(), 1);
         assert_eq!(cfg["hooks"]["Stop"].as_array().unwrap().len(), 1);
-        assert_eq!(count_installed_hooks(AgentTarget::ClaudeCode, &cfg), CLAUDE_EVENTS.len());
+        assert_eq!(
+            count_installed_hooks(AgentTarget::ClaudeCode, &cfg),
+            CLAUDE_EVENTS.len()
+        );
 
         let removed = uninstall_claude_code_hooks_json(&mut cfg);
         assert_eq!(removed, CLAUDE_EVENTS.len());
@@ -502,7 +525,10 @@ mod tests {
         assert_eq!(installed, CURSOR_EVENTS.len());
         assert_eq!(cfg["version"], 1);
         assert_eq!(cfg["hooks"]["afterFileEdit"].as_array().unwrap().len(), 1);
-        assert_eq!(count_installed_hooks(AgentTarget::Cursor, &cfg), CURSOR_EVENTS.len());
+        assert_eq!(
+            count_installed_hooks(AgentTarget::Cursor, &cfg),
+            CURSOR_EVENTS.len()
+        );
 
         let removed = uninstall_cursor_hooks_json(&mut cfg);
         assert_eq!(removed, CURSOR_EVENTS.len());
@@ -515,8 +541,8 @@ mod tests {
         assert_eq!(ok.text, "Claude finished!");
 
         let payload = "{\"tool_name\":\"Bash\n\r\tExtraLongToolNameShouldTruncate\"}";
-        let fail = map_hook_event("claude-code", "PostToolUseFailure", payload)
-            .expect("failure maps");
+        let fail =
+            map_hook_event("claude-code", "PostToolUseFailure", payload).expect("failure maps");
         assert!(!fail.text.contains('\n'));
         assert!(fail.text.ends_with("failed!"));
 

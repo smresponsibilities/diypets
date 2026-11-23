@@ -1,16 +1,21 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use diypets::catalog::default_app_icon;
-use diypets::juice_fx::{JuiceEffect, build_costumes_pack_xml, detect_foot_y, flip_horizontal, generate_juice_frames, snap_feet_to_baseline};
-use diypets::sprite_ingest::{IngestedSheet, SliceMode, ingest_sprite_sheet, strip_border_background};
-use diypets::ui_toast::ToastQueue;
+use diypets::juice_fx::{
+    JuiceEffect, build_costumes_pack_xml, detect_foot_y, flip_horizontal, generate_juice_frames,
+    snap_feet_to_baseline,
+};
 use diypets::settings::{Settings, local_project_root, user_packs_dir};
+use diypets::sprite_ingest::{
+    IngestedSheet, SliceMode, ingest_sprite_sheet, strip_border_background,
+};
 use diypets::studio_model::{
-    Archetype, BOARD_SIZE, CustomAnimation, CustomKeyframe, FaceSlot, PartRole,
-    PreviewClip, RgbaPixel, RigPart, StudioProject, paint_ellipse, paint_outline,
-    rgba_image_fit_to_board, sanitize_pack_id,
+    Archetype, BOARD_SIZE, CustomAnimation, CustomKeyframe, FaceSlot, PartRole, PreviewClip,
+    RgbaPixel, RigPart, StudioProject, paint_ellipse, paint_outline, rgba_image_fit_to_board,
+    sanitize_pack_id,
 };
 use diypets::svg_import::import_svg_to_project;
+use diypets::ui_toast::ToastQueue;
 use eframe::egui;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -369,7 +374,8 @@ impl Default for StudioApp {
             confirm_overwrite_path: None,
             pending_activate: false,
             status_msg: Some((
-                "Welcome to DIYPets Studio V2 — pick a template, draw, or click Import 2D SVG!".to_string(),
+                "Welcome to DIYPets Studio V2 — pick a template, draw, or click Import 2D SVG!"
+                    .to_string(),
                 false,
             )),
             last_toasted_status: None,
@@ -559,7 +565,13 @@ impl StudioApp {
         self.mark_dirty();
     }
 
-    fn paint_line(&mut self, s: (usize, usize), e: (usize, usize), color: RgbaPixel, shade: Option<bool>) {
+    fn paint_line(
+        &mut self,
+        s: (usize, usize),
+        e: (usize, usize),
+        color: RgbaPixel,
+        shade: Option<bool>,
+    ) {
         let (mut x0, mut y0) = (s.0 as isize, s.1 as isize);
         let (x1, y1) = (e.0 as isize, e.1 as isize);
         let dx = (x1 - x0).abs();
@@ -674,7 +686,9 @@ impl StudioApp {
     }
 
     fn copy_selection(&mut self) {
-        let (x0, y0, x1, y1) = self.sel_rect.unwrap_or((0, 0, BOARD_SIZE - 1, BOARD_SIZE - 1));
+        let (x0, y0, x1, y1) = self
+            .sel_rect
+            .unwrap_or((0, 0, BOARD_SIZE - 1, BOARD_SIZE - 1));
         let w = x1 - x0 + 1;
         let h = y1 - y0 + 1;
         let src = self.active_buf();
@@ -692,10 +706,10 @@ impl StudioApp {
         let Some((w, h, data)) = self.clipboard_pixels.clone() else {
             return;
         };
-        let (ox, oy) = self
-            .sel_rect
-            .map(|(x0, y0, _, _)| (x0, y0))
-            .unwrap_or(((BOARD_SIZE.saturating_sub(w)) / 2, (BOARD_SIZE.saturating_sub(h)) / 2));
+        let (ox, oy) = self.sel_rect.map(|(x0, y0, _, _)| (x0, y0)).unwrap_or((
+            (BOARD_SIZE.saturating_sub(w)) / 2,
+            (BOARD_SIZE.saturating_sub(h)) / 2,
+        ));
         self.push_undo();
         let dst = self.active_buf_mut();
         for dy in 0..h {
@@ -751,7 +765,11 @@ impl StudioApp {
     fn auto_outline_layer(&mut self) {
         self.push_undo();
         let col = c32_to_rgba(self.current_color);
-        let outline_col = if col[3] == 0 { [24, 18, 22, 255] } else { [col[0], col[1], col[2], 255] };
+        let outline_col = if col[3] == 0 {
+            [24, 18, 22, 255]
+        } else {
+            [col[0], col[1], col[2], 255]
+        };
         let src = self.active_buf().to_vec();
         let dst = self.active_buf_mut();
         for y in 0..BOARD_SIZE {
@@ -769,7 +787,10 @@ impl StudioApp {
             }
         }
         self.mark_dirty();
-        self.status_msg = Some(("Applied 1px Auto-Outline to active layer.".to_string(), false));
+        self.status_msg = Some((
+            "Applied 1px Auto-Outline to active layer.".to_string(),
+            false,
+        ));
     }
 
     fn nudge_layer(&mut self, dx: isize, dy: isize) {
@@ -814,7 +835,10 @@ impl StudioApp {
                 self.pack_id_locked = false;
                 self.mark_dirty();
                 self.status_msg = Some((
-                    format!("Imported SVG '{}' -> auto-split into Body + {count} rigged part(s)!", stem),
+                    format!(
+                        "Imported SVG '{}' -> auto-split into Body + {count} rigged part(s)!",
+                        stem
+                    ),
                     false,
                 ));
             }
@@ -835,7 +859,10 @@ impl StudioApp {
                 let fitted = rgba_image_fit_to_board(&img.to_rgba8());
                 self.active_buf_mut().copy_from_slice(&fitted);
                 self.mark_dirty();
-                self.status_msg = Some((format!("Imported PNG into {}", self.active_layer_title()), false));
+                self.status_msg = Some((
+                    format!("Imported PNG into {}", self.active_layer_title()),
+                    false,
+                ));
             }
             Err(e) => self.status_msg = Some((format!("PNG import error: {e}"), true)),
         }
@@ -850,7 +877,9 @@ impl StudioApp {
             return;
         };
         match self.project.save_json(&path) {
-            Ok(()) => self.status_msg = Some((format!("Saved project to {}", path.display()), false)),
+            Ok(()) => {
+                self.status_msg = Some((format!("Saved project to {}", path.display()), false))
+            }
             Err(e) => self.status_msg = Some((e, true)),
         }
     }
@@ -885,7 +914,10 @@ impl StudioApp {
         };
         match self.project.build_export_artifacts() {
             Ok((_, _, xml)) => match std::fs::write(&path, xml) {
-                Ok(()) => self.status_msg = Some((format!("Saved shareable XML to {}", path.display()), false)),
+                Ok(()) => {
+                    self.status_msg =
+                        Some((format!("Saved shareable XML to {}", path.display()), false))
+                }
                 Err(e) => self.status_msg = Some((format!("Write error: {e}"), true)),
             },
             Err(e) => self.status_msg = Some((e, true)),
@@ -918,14 +950,26 @@ impl StudioApp {
                     let sp = Settings::default_path();
                     let mut s = Settings::load_sanitized(&sp);
                     s.pet_pack = self.project.pack_id.clone();
-                    if let Err(e) = s.save(&sp) { diypets::logging::warn(&format!("creator: failed to save settings {}: {e}", sp.display())); self.toasts.warn(format!("Could not save settings: {e}")); }
+                    if let Err(e) = s.save(&sp) {
+                        diypets::logging::warn(&format!(
+                            "creator: failed to save settings {}: {e}",
+                            sp.display()
+                        ));
+                        self.toasts.warn(format!("Could not save settings: {e}"));
+                    }
                     self.status_msg = Some((
-                        format!("Exported & activated '{}' on your desktop!", self.project.display_name),
+                        format!(
+                            "Exported & activated '{}' on your desktop!",
+                            self.project.display_name
+                        ),
                         false,
                     ));
                 } else {
                     self.status_msg = Some((
-                        format!("Exported to {} (visible in Settings -> Made by SM)!", target.display()),
+                        format!(
+                            "Exported to {} (visible in Settings -> Made by SM)!",
+                            target.display()
+                        ),
                         false,
                     ));
                 }
@@ -970,7 +1014,12 @@ impl StudioApp {
                 let frame = if tile0.width() == board && tile0.height() == board {
                     tile0
                 } else {
-                    image::imageops::resize(&tile0, board, board, image::imageops::FilterType::Nearest)
+                    image::imageops::resize(
+                        &tile0,
+                        board,
+                        board,
+                        image::imageops::FilterType::Nearest,
+                    )
                 };
                 self.push_costume_undo();
                 self.costume_foot_y = detect_foot_y(&frame);
@@ -982,7 +1031,8 @@ impl StudioApp {
                     self.costume_selected = self.costume_frames.len() - 1;
                 }
                 self.costume_dirty = true;
-                self.toasts.info("Captured current drawing into Costumes flipbook");
+                self.toasts
+                    .info("Captured current drawing into Costumes flipbook");
             }
             Err(e) => {
                 diypets::logging::warn(&format!("creator: capture costume failed: {e}"));
@@ -996,7 +1046,8 @@ impl StudioApp {
             self.capture_costume_from_project(true);
             if self.costume_frames.is_empty() {
                 let board = BOARD_SIZE as u32;
-                self.costume_frames.push(image::RgbaImage::new(board, board));
+                self.costume_frames
+                    .push(image::RgbaImage::new(board, board));
                 self.costume_selected = 0;
                 self.costume_dirty = true;
             }
@@ -1025,11 +1076,8 @@ impl StudioApp {
                 [cur.width() as usize, cur.height() as usize],
                 cur.as_flat_samples().as_slice(),
             );
-            self.costume_canvas_tex = Some(ctx.load_texture(
-                "t005_costume_canvas",
-                ci,
-                egui::TextureOptions::NEAREST,
-            ));
+            self.costume_canvas_tex =
+                Some(ctx.load_texture("t005_costume_canvas", ci, egui::TextureOptions::NEAREST));
         }
         self.costume_dirty = false;
     }
@@ -1095,7 +1143,10 @@ impl StudioApp {
         self.ensure_costume_init();
         let id = sanitize_pack_id(&self.project.pack_id);
         if BUNDLED_PROTECTED.contains(&id.as_str()) {
-            self.status_msg = Some((format!("'{id}' is reserved. Pick a unique Pack ID in Draw/Export."), true));
+            self.status_msg = Some((
+                format!("'{id}' is reserved. Pick a unique Pack ID in Draw/Export."),
+                true,
+            ));
             return;
         }
         match build_costumes_pack_xml(
@@ -1118,20 +1169,25 @@ impl StudioApp {
                 }
                 if let Err(e) = icon.save(target.join("icon.png")) {
                     diypets::logging::warn(&format!("creator: costumes icon.png save failed: {e}"));
-                    self.toasts.warn(format!("Pack saved, but icon.png failed: {e}"));
+                    self.toasts
+                        .warn(format!("Pack saved, but icon.png failed: {e}"));
                 }
                 if activate {
                     let sp = Settings::default_path();
                     let mut s = Settings::load_sanitized(&sp);
                     s.pet_pack = id.clone();
                     if let Err(e) = s.save(&sp) {
-                        diypets::logging::warn(&format!("creator: costumes settings save failed: {e}"));
+                        diypets::logging::warn(&format!(
+                            "creator: costumes settings save failed: {e}"
+                        ));
                         self.toasts.warn(format!("Could not save settings: {e}"));
                     } else {
-                        self.toasts.info(format!("Activated Costumes pack '{id}' on desktop!"));
+                        self.toasts
+                            .info(format!("Activated Costumes pack '{id}' on desktop!"));
                     }
                 } else {
-                    self.toasts.info(format!("Saved Costumes pack '{id}' to library"));
+                    self.toasts
+                        .info(format!("Saved Costumes pack '{id}' to library"));
                 }
                 self.status_msg = Some((
                     format!(
@@ -1172,7 +1228,10 @@ impl StudioApp {
             Ok(bytes) => match std::fs::write(&path, bytes) {
                 Ok(()) => {
                     self.toasts.info("Exported Costumes GIF!");
-                    self.status_msg = Some((format!("Exported Costumes GIF -> {}", path.display()), false));
+                    self.status_msg = Some((
+                        format!("Exported Costumes GIF -> {}", path.display()),
+                        false,
+                    ));
                 }
                 Err(e) => self.status_msg = Some((format!("GIF write error: {e}"), true)),
             },
@@ -1186,17 +1245,26 @@ impl StudioApp {
 
         ui.label(egui::RichText::new("Scratch-Style Costumes").strong());
         ui.label(
-            egui::RichText::new("Duplicate & tweak frames or generate instant 8-bit motion with JuiceFX.")
-                .size(11.0)
-                .color(egui::Color32::GRAY),
+            egui::RichText::new(
+                "Duplicate & tweak frames or generate instant 8-bit motion with JuiceFX.",
+            )
+            .size(11.0)
+            .color(egui::Color32::GRAY),
         );
         ui.add_space(4.0);
 
         ui.horizontal(|ui| {
-            if ui.button("Capture Draw").on_hover_text("Snap your current Draw/SVG pet into Costume #1").clicked() {
+            if ui
+                .button("Capture Draw")
+                .on_hover_text("Snap your current Draw/SVG pet into Costume #1")
+                .clicked()
+            {
                 self.capture_costume_from_project(true);
             }
-            if ui.button("+ Duplicate").on_hover_text("Duplicate selected costume to tweak the next frame").clicked()
+            if ui
+                .button("+ Duplicate")
+                .on_hover_text("Duplicate selected costume to tweak the next frame")
+                .clicked()
                 && let Some(cur) = self.costume_frames.get(self.costume_selected).cloned()
             {
                 self.push_costume_undo();
@@ -1215,18 +1283,24 @@ impl StudioApp {
                 self.costume_frames[self.costume_selected] = flip_horizontal(&cur);
                 self.costume_dirty = true;
             }
-            if ui.button("Snap Feet").on_hover_text("Align selected costume feet flush to the amber baseline").clicked()
+            if ui
+                .button("Snap Feet")
+                .on_hover_text("Align selected costume feet flush to the amber baseline")
+                .clicked()
                 && let Some(cur) = self.costume_frames.get(self.costume_selected).cloned()
             {
                 self.push_costume_undo();
-                self.costume_frames[self.costume_selected] = snap_feet_to_baseline(&cur, self.costume_foot_y);
+                self.costume_frames[self.costume_selected] =
+                    snap_feet_to_baseline(&cur, self.costume_foot_y);
                 self.costume_dirty = true;
             }
             if ui.button("Undo").clicked()
                 && let Some(prev) = self.costume_undo.pop()
             {
                 self.costume_frames = prev;
-                self.costume_selected = self.costume_selected.min(self.costume_frames.len().saturating_sub(1));
+                self.costume_selected = self
+                    .costume_selected
+                    .min(self.costume_frames.len().saturating_sub(1));
                 self.costume_dirty = true;
             }
         });
@@ -1237,7 +1311,9 @@ impl StudioApp {
         for &effect in JuiceEffect::all() {
             if ui
                 .button(effect.label())
-                .on_hover_text("Generate a crisp looping animation from the currently selected costume")
+                .on_hover_text(
+                    "Generate a crisp looping animation from the currently selected costume",
+                )
                 .clicked()
             {
                 self.apply_juice_fx(effect);
@@ -1245,34 +1321,42 @@ impl StudioApp {
         }
 
         ui.separator();
-        ui.label(egui::RichText::new(format!("Costumes Flipbook ({})", self.costume_frames.len())).strong());
+        ui.label(
+            egui::RichText::new(format!("Costumes Flipbook ({})", self.costume_frames.len()))
+                .strong(),
+        );
         let mut delete_idx: Option<usize> = None;
         let mut swap_pair: Option<(usize, usize)> = None;
         let frame_count = self.costume_frames.len();
-        egui::ScrollArea::vertical().max_height(210.0).show(ui, |ui| {
-            for idx in 0..frame_count {
-                let selected = self.costume_selected == idx;
-                ui.horizontal(|ui| {
-                    if let Some(tex) = self.costume_thumbs.get(idx) {
-                        ui.image((tex.id(), egui::vec2(32.0, 32.0)));
-                    }
-                    if ui.selectable_label(selected, format!("Costume #{}", idx + 1)).clicked() {
-                        self.costume_selected = idx;
-                        self.costume_playing = false;
-                        self.costume_dirty = true;
-                    }
-                    if idx > 0 && ui.small_button("^").clicked() {
-                        swap_pair = Some((idx, idx - 1));
-                    }
-                    if idx + 1 < frame_count && ui.small_button("v").clicked() {
-                        swap_pair = Some((idx, idx + 1));
-                    }
-                    if frame_count > 1 && ui.small_button("X").clicked() {
-                        delete_idx = Some(idx);
-                    }
-                });
-            }
-        });
+        egui::ScrollArea::vertical()
+            .max_height(210.0)
+            .show(ui, |ui| {
+                for idx in 0..frame_count {
+                    let selected = self.costume_selected == idx;
+                    ui.horizontal(|ui| {
+                        if let Some(tex) = self.costume_thumbs.get(idx) {
+                            ui.image((tex.id(), egui::vec2(32.0, 32.0)));
+                        }
+                        if ui
+                            .selectable_label(selected, format!("Costume #{}", idx + 1))
+                            .clicked()
+                        {
+                            self.costume_selected = idx;
+                            self.costume_playing = false;
+                            self.costume_dirty = true;
+                        }
+                        if idx > 0 && ui.small_button("^").clicked() {
+                            swap_pair = Some((idx, idx - 1));
+                        }
+                        if idx + 1 < frame_count && ui.small_button("v").clicked() {
+                            swap_pair = Some((idx, idx + 1));
+                        }
+                        if frame_count > 1 && ui.small_button("X").clicked() {
+                            delete_idx = Some(idx);
+                        }
+                    });
+                }
+            });
         if let Some((a, b)) = swap_pair {
             self.push_costume_undo();
             self.costume_frames.swap(a, b);
@@ -1282,7 +1366,9 @@ impl StudioApp {
         if let Some(rm) = delete_idx {
             self.push_costume_undo();
             self.costume_frames.remove(rm);
-            self.costume_selected = self.costume_selected.min(self.costume_frames.len().saturating_sub(1));
+            self.costume_selected = self
+                .costume_selected
+                .min(self.costume_frames.len().saturating_sub(1));
             self.costume_dirty = true;
         }
 
@@ -1318,13 +1404,18 @@ impl StudioApp {
                 self.costume_selected = play_idx;
                 self.costume_dirty = true;
             }
-            ui.ctx().request_repaint_after(std::time::Duration::from_millis(24));
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(24));
         }
         self.sync_costume_textures(ui.ctx());
 
         // Top controls strip
         ui.horizontal_wrapped(|ui| {
-            let play_lbl = if self.costume_playing { "Pause Loop" } else { "Play Loop" };
+            let play_lbl = if self.costume_playing {
+                "Pause Loop"
+            } else {
+                "Play Loop"
+            };
             if ui.button(play_lbl).clicked() {
                 self.costume_playing = !self.costume_playing;
                 self.costume_play_start = Instant::now();
@@ -1344,7 +1435,8 @@ impl StudioApp {
             ui.checkbox(&mut self.mirror_draw_x, "Mirror X");
             for &(r, g, b) in PALETTE.iter().take(12) {
                 let col = egui::Color32::from_rgb(r, g, b);
-                let (rect, resp) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::click());
+                let (rect, resp) =
+                    ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::click());
                 ui.painter().rect_filled(rect, 2.0, col);
                 if self.current_color == col {
                     ui.painter().rect_stroke(
@@ -1364,7 +1456,8 @@ impl StudioApp {
         // Main interactive 128x128 Costume Canvas
         let avail = ui.available_size();
         let side = avail.x.min(avail.y).clamp(240.0, 560.0);
-        let (rect, resp) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::click_and_drag());
+        let (rect, resp) =
+            ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::click_and_drag());
         let painter = ui.painter_at(rect);
         Self::draw_checkerboard(&painter, rect, (side / 16.0).max(8.0), self.light_checker);
 
@@ -1400,13 +1493,22 @@ impl StudioApp {
             let fy_norm = (self.costume_foot_y as f32 + 0.5) / BOARD_SIZE as f32;
             let foot_screen_y = rect.top() + fy_norm * rect.height();
             let mid_x = rect.center().x;
-            let guide = egui::Stroke::new(1.5, egui::Color32::from_rgba_unmultiplied(255, 196, 64, 210));
+            let guide = egui::Stroke::new(
+                1.5,
+                egui::Color32::from_rgba_unmultiplied(255, 196, 64, 210),
+            );
             painter.line_segment(
-                [egui::pos2(rect.left(), foot_screen_y), egui::pos2(rect.right(), foot_screen_y)],
+                [
+                    egui::pos2(rect.left(), foot_screen_y),
+                    egui::pos2(rect.right(), foot_screen_y),
+                ],
                 guide,
             );
             painter.line_segment(
-                [egui::pos2(mid_x, foot_screen_y - 12.0), egui::pos2(mid_x, foot_screen_y + 12.0)],
+                [
+                    egui::pos2(mid_x, foot_screen_y - 12.0),
+                    egui::pos2(mid_x, foot_screen_y + 12.0),
+                ],
                 guide,
             );
             painter.circle_stroke(egui::pos2(mid_x, foot_screen_y), 5.0, guide);
@@ -1571,8 +1673,12 @@ impl StudioApp {
         for fb in &ingested.frame_boxes {
             let x0 = (fb.x * scale).min(pw.saturating_sub(1));
             let y0 = (fb.y * scale).min(ph.saturating_sub(1));
-            let x1 = ((fb.x + fb.w) * scale).saturating_sub(1).min(pw.saturating_sub(1));
-            let y1 = ((fb.y + fb.h) * scale).saturating_sub(1).min(ph.saturating_sub(1));
+            let x1 = ((fb.x + fb.w) * scale)
+                .saturating_sub(1)
+                .min(pw.saturating_sub(1));
+            let y1 = ((fb.y + fb.h) * scale)
+                .saturating_sub(1)
+                .min(ph.saturating_sub(1));
             for x in x0..=x1 {
                 preview.put_pixel(x, y0, box_col);
                 preview.put_pixel(x, y1, box_col);
@@ -1584,8 +1690,10 @@ impl StudioApp {
         }
 
         let size = [pw as usize, ph as usize];
-        let ci = egui::ColorImage::from_rgba_unmultiplied(size, preview.as_flat_samples().as_slice());
-        self.sheet_import_tex = Some(ctx.load_texture("v3_import_sheet", ci, egui::TextureOptions::NEAREST));
+        let ci =
+            egui::ColorImage::from_rgba_unmultiplied(size, preview.as_flat_samples().as_slice());
+        self.sheet_import_tex =
+            Some(ctx.load_texture("v3_import_sheet", ci, egui::TextureOptions::NEAREST));
 
         let n_frames = ingested.frames.len() as u32;
         if n_frames > 0 && self.sheet_slice_mode != 2 {
@@ -1637,7 +1745,8 @@ impl StudioApp {
         let ing = ingest_sprite_sheet(raw, self.current_slice_mode(), 128);
         if ing.frames.is_empty() {
             self.status_msg = Some((
-                "No frames detected — switch to Manual Grid fallback and set Cols/Rows.".to_string(),
+                "No frames detected — switch to Manual Grid fallback and set Cols/Rows."
+                    .to_string(),
                 true,
             ));
             return;
@@ -1663,7 +1772,10 @@ impl StudioApp {
 
         use base64::{Engine as _, engine::general_purpose::STANDARD};
         let mut png_bytes = Vec::new();
-        if let Err(e) = atlas.write_to(&mut std::io::Cursor::new(&mut png_bytes), image::ImageFormat::Png) {
+        if let Err(e) = atlas.write_to(
+            &mut std::io::Cursor::new(&mut png_bytes),
+            image::ImageFormat::Png,
+        ) {
             self.status_msg = Some((format!("PNG encode error: {e}"), true));
             return;
         }
@@ -1673,7 +1785,10 @@ impl StudioApp {
             if indices.is_empty() {
                 "<Frame>0</Frame>".to_string()
             } else {
-                indices.iter().map(|f| format!("<Frame>{f}</Frame>")).collect()
+                indices
+                    .iter()
+                    .map(|f| format!("<Frame>{f}</Frame>"))
+                    .collect()
             }
         };
 
@@ -1698,18 +1813,36 @@ impl StudioApp {
             return;
         }
         let target = export_root_dir().join(&id);
-        if let Err(e) = std::fs::create_dir_all(&target) { diypets::logging::warn(&format!("creator: failed to create {}: {e}", target.display())); self.status_msg = Some((format!("Directory create error: {e}"), true)); return; }
+        if let Err(e) = std::fs::create_dir_all(&target) {
+            diypets::logging::warn(&format!(
+                "creator: failed to create {}: {e}",
+                target.display()
+            ));
+            self.status_msg = Some((format!("Directory create error: {e}"), true));
+            return;
+        }
         if let Err(e) = std::fs::write(target.join("deskpet.xml"), &xml) {
             self.status_msg = Some((format!("Write error: {e}"), true));
             return;
         }
-        let icon = image::imageops::resize(&ing.frames[0], 64, 64, image::imageops::FilterType::Nearest);
-        if let Err(e) = icon.save(target.join("icon.png")) { diypets::logging::warn(&format!("creator: failed to save icon.png: {e}")); self.toasts.warn(format!("Pack saved, but icon.png failed: {e}")); }
+        let icon =
+            image::imageops::resize(&ing.frames[0], 64, 64, image::imageops::FilterType::Nearest);
+        if let Err(e) = icon.save(target.join("icon.png")) {
+            diypets::logging::warn(&format!("creator: failed to save icon.png: {e}"));
+            self.toasts
+                .warn(format!("Pack saved, but icon.png failed: {e}"));
+        }
         if activate {
             let sp = Settings::default_path();
             let mut s = Settings::load_sanitized(&sp);
             s.pet_pack = id.clone();
-            if let Err(e) = s.save(&sp) { diypets::logging::warn(&format!("creator: failed to save settings {}: {e}", sp.display())); self.toasts.warn(format!("Could not save settings: {e}")); }
+            if let Err(e) = s.save(&sp) {
+                diypets::logging::warn(&format!(
+                    "creator: failed to save settings {}: {e}",
+                    sp.display()
+                ));
+                self.toasts.warn(format!("Could not save settings: {e}"));
+            }
             self.status_msg = Some((
                 format!("Imported {count} foot-locked frames & activated '{id}' on desktop!"),
                 false,
@@ -1727,14 +1860,21 @@ impl StudioApp {
             return;
         }
         self.rig_dirty = false;
-        let pm = self.project.render_pose(diypets::studio_model::PoseParams::default());
+        let pm = self
+            .project
+            .render_pose(diypets::studio_model::PoseParams::default());
         let side = pm.width() as usize;
         let off = (side - BOARD_SIZE) / 2;
         let mut pixels = Vec::with_capacity(BOARD_SIZE * BOARD_SIZE);
         for y in 0..BOARD_SIZE {
             for x in 0..BOARD_SIZE {
                 let p = pm.pixels()[(off + y) * side + (off + x)];
-                pixels.push(egui::Color32::from_rgba_premultiplied(p.red(), p.green(), p.blue(), p.alpha()));
+                pixels.push(egui::Color32::from_rgba_premultiplied(
+                    p.red(),
+                    p.green(),
+                    p.blue(),
+                    p.alpha(),
+                ));
             }
         }
         let img = egui::ColorImage {
@@ -1745,7 +1885,8 @@ impl StudioApp {
         if let Some(t) = &mut self.tex_rig_composite {
             t.set(img, egui::TextureOptions::NEAREST);
         } else {
-            self.tex_rig_composite = Some(ctx.load_texture("v3_rig_ghost", img, egui::TextureOptions::NEAREST));
+            self.tex_rig_composite =
+                Some(ctx.load_texture("v3_rig_ghost", img, egui::TextureOptions::NEAREST));
         }
     }
 
@@ -1761,7 +1902,11 @@ impl StudioApp {
         }
         self.kf_thumbs_dirty = false;
         self.kf_thumbs.clear();
-        let Some(anim) = self.project.custom_animations.get(self.selected_custom_anim) else {
+        let Some(anim) = self
+            .project
+            .custom_animations
+            .get(self.selected_custom_anim)
+        else {
             return;
         };
         for (i, kf) in anim.keyframes.iter().enumerate() {
@@ -1773,7 +1918,12 @@ impl StudioApp {
             for y in 0..BOARD_SIZE {
                 for x in 0..BOARD_SIZE {
                     let p = pm.pixels()[(off + y) * side + (off + x)];
-                    pixels.push(egui::Color32::from_rgba_premultiplied(p.red(), p.green(), p.blue(), p.alpha()));
+                    pixels.push(egui::Color32::from_rgba_premultiplied(
+                        p.red(),
+                        p.green(),
+                        p.blue(),
+                        p.alpha(),
+                    ));
                 }
             }
             let img = egui::ColorImage {
@@ -1811,11 +1961,22 @@ impl StudioApp {
         }
     }
 
-    fn draw_checkerboard(painter: &egui::Painter, rect: egui::Rect, tile_px: f32, light_mode: bool) {
+    fn draw_checkerboard(
+        painter: &egui::Painter,
+        rect: egui::Rect,
+        tile_px: f32,
+        light_mode: bool,
+    ) {
         let (light, dark) = if light_mode {
-            (egui::Color32::from_rgb(238, 238, 242), egui::Color32::from_rgb(214, 216, 224))
+            (
+                egui::Color32::from_rgb(238, 238, 242),
+                egui::Color32::from_rgb(214, 216, 224),
+            )
         } else {
-            (egui::Color32::from_rgb(54, 58, 68), egui::Color32::from_rgb(42, 46, 54))
+            (
+                egui::Color32::from_rgb(54, 58, 68),
+                egui::Color32::from_rgb(42, 46, 54),
+            )
         };
         painter.rect_filled(rect, 4.0, light);
         let cols = (rect.width() / tile_px).ceil() as i32;
@@ -1847,7 +2008,10 @@ impl StudioApp {
             && self.tab == StudioTab::Animate
             && matches!(self.preview_clip, PreviewClip::Custom(_))
         {
-            if let Some(anim) = self.project.custom_animations.get(self.selected_custom_anim)
+            if let Some(anim) = self
+                .project
+                .custom_animations
+                .get(self.selected_custom_anim)
                 && !anim.keyframes.is_empty()
             {
                 let kf_idx = self.selected_keyframe.min(anim.keyframes.len() - 1);
@@ -1864,7 +2028,9 @@ impl StudioApp {
         let pixels: Vec<egui::Color32> = pm
             .pixels()
             .iter()
-            .map(|p| egui::Color32::from_rgba_premultiplied(p.red(), p.green(), p.blue(), p.alpha()))
+            .map(|p| {
+                egui::Color32::from_rgba_premultiplied(p.red(), p.green(), p.blue(), p.alpha())
+            })
             .collect();
         let img = egui::ColorImage {
             size: [side, side],
@@ -1874,10 +2040,15 @@ impl StudioApp {
         if let Some(tex) = &mut self.tex_preview {
             tex.set(img, egui::TextureOptions::LINEAR);
         } else {
-            self.tex_preview = Some(ui.ctx().load_texture("v2_preview", img, egui::TextureOptions::LINEAR));
+            self.tex_preview = Some(ui.ctx().load_texture(
+                "v2_preview",
+                img,
+                egui::TextureOptions::LINEAR,
+            ));
         }
 
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(box_size, box_size), egui::Sense::hover());
+        let (rect, _) =
+            ui.allocate_exact_size(egui::vec2(box_size, box_size), egui::Sense::hover());
         let painter = ui.painter_at(rect);
 
         // Theme-matched background per archetype / clip
@@ -1890,7 +2061,10 @@ impl StudioApp {
                 painter.circle_stroke(
                     egui::pos2(bx, by),
                     3.5,
-                    egui::Stroke::new(1.0, egui::Color32::from_rgba_unmultiplied(150, 220, 255, 110)),
+                    egui::Stroke::new(
+                        1.0,
+                        egui::Color32::from_rgba_unmultiplied(150, 220, 255, 110),
+                    ),
                 );
             }
         } else {
@@ -1899,19 +2073,26 @@ impl StudioApp {
 
         if self.preview_clip == PreviewClip::Climb {
             let wall_w = 24.0;
-            let wall = egui::Rect::from_min_max(rect.min, egui::pos2(rect.min.x + wall_w, rect.max.y));
+            let wall =
+                egui::Rect::from_min_max(rect.min, egui::pos2(rect.min.x + wall_w, rect.max.y));
             painter.rect_filled(wall, 0.0, egui::Color32::from_rgb(34, 42, 56));
             let scroll = (t * 42.0) % 24.0;
             let mut y = rect.min.y + scroll;
             while y < rect.max.y {
                 painter.line_segment(
-                    [egui::pos2(rect.min.x + 4.0, y), egui::pos2(rect.min.x + wall_w - 4.0, y)],
+                    [
+                        egui::pos2(rect.min.x + 4.0, y),
+                        egui::pos2(rect.min.x + wall_w - 4.0, y),
+                    ],
                     egui::Stroke::new(1.5, egui::Color32::from_rgb(80, 96, 124)),
                 );
                 y += 24.0;
             }
         } else if self.preview_clip == PreviewClip::Fall {
-            let st = egui::Stroke::new(1.5, egui::Color32::from_rgba_unmultiplied(160, 195, 255, 120));
+            let st = egui::Stroke::new(
+                1.5,
+                egui::Color32::from_rgba_unmultiplied(160, 195, 255, 120),
+            );
             for i in 0..6 {
                 let x = rect.min.x + 20.0 + i as f32 * (box_size - 40.0) / 5.0;
                 let off = ((t * 220.0 + i as f32 * 53.0) % (box_size + 40.0)) - 20.0;
@@ -1919,7 +2100,8 @@ impl StudioApp {
                 painter.line_segment([egui::pos2(x, y), egui::pos2(x, y - 22.0)], st);
             }
         } else if show_stage {
-            let floor = egui::Rect::from_min_max(egui::pos2(rect.min.x, rect.max.y - 22.0), rect.max);
+            let floor =
+                egui::Rect::from_min_max(egui::pos2(rect.min.x, rect.max.y - 22.0), rect.max);
             painter.rect_filled(floor, 0.0, egui::Color32::from_rgb(26, 30, 40));
             painter.text(
                 egui::pos2(rect.min.x + 8.0, rect.max.y - 11.0),
@@ -1940,10 +2122,20 @@ impl StudioApp {
                 PreviewClip::Climb => (rect.min.x + 24.0 + draw_side * 0.28, rect.center().y),
                 PreviewClip::Walk if show_stage && self.preview_playing => {
                     let u = (t % 4.0) / 4.0;
-                    let ping = if u < 0.5 { 1.0 - u * 4.0 } else { (u - 0.5) * 4.0 - 1.0 };
-                    (rect.center().x + ping * ((box_size - draw_side) * 0.35).max(0.0), rect.center().y - 6.0)
+                    let ping = if u < 0.5 {
+                        1.0 - u * 4.0
+                    } else {
+                        (u - 0.5) * 4.0 - 1.0
+                    };
+                    (
+                        rect.center().x + ping * ((box_size - draw_side) * 0.35).max(0.0),
+                        rect.center().y - 6.0,
+                    )
                 }
-                _ => (rect.center().x, rect.center().y - if show_stage { 6.0 } else { 0.0 }),
+                _ => (
+                    rect.center().x,
+                    rect.center().y - if show_stage { 6.0 } else { 0.0 },
+                ),
             };
             let flip = show_stage
                 && self.preview_clip == PreviewClip::Walk
@@ -1954,7 +2146,8 @@ impl StudioApp {
             } else {
                 egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0))
             };
-            let dst = egui::Rect::from_center_size(egui::pos2(cx, cy), egui::vec2(draw_side, draw_side));
+            let dst =
+                egui::Rect::from_center_size(egui::pos2(cx, cy), egui::vec2(draw_side, draw_side));
             painter.image(tex.id(), dst, uv, egui::Color32::WHITE);
         }
 
@@ -1990,12 +2183,18 @@ impl StudioApp {
 
     fn render_contact_sheet(&mut self, ui: &mut egui::Ui) {
         if (self.sheet_dirty || self.tex_sheet.is_none())
-            && let Ok((sheet, _, _)) = self.project.build_export_artifacts() {
-                let size = [sheet.width() as usize, sheet.height() as usize];
-                let ci = egui::ColorImage::from_rgba_unmultiplied(size, sheet.as_flat_samples().as_slice());
-                self.tex_sheet = Some(ui.ctx().load_texture("v2_sheet", ci, egui::TextureOptions::LINEAR));
-                self.sheet_dirty = false;
-            }
+            && let Ok((sheet, _, _)) = self.project.build_export_artifacts()
+        {
+            let size = [sheet.width() as usize, sheet.height() as usize];
+            let ci =
+                egui::ColorImage::from_rgba_unmultiplied(size, sheet.as_flat_samples().as_slice());
+            self.tex_sheet = Some(ui.ctx().load_texture(
+                "v2_sheet",
+                ci,
+                egui::TextureOptions::LINEAR,
+            ));
+            self.sheet_dirty = false;
+        }
         if let Some(tex) = &self.tex_sheet {
             ui.label(
                 egui::RichText::new("Exported Sprite Sheet (Walk 0-7 | Idle 8-9 | Sit 10-11 | Sleep 12-13 | Drag 14-15 | Fall/Land 16-17 | Climb 18-19 | Custom 20+)")
@@ -2015,20 +2214,29 @@ impl StudioApp {
 impl eframe::App for StudioApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         if let Some((msg, is_err)) = &self.status_msg
-            && self.last_toasted_status.as_deref() != Some(msg.as_str()) {
-                let text = msg.clone();
-                if *is_err {
-                    self.toasts.warn(text.clone());
-                } else {
-                    self.toasts.success(text.clone());
-                }
-                self.last_toasted_status = Some(text);
+            && self.last_toasted_status.as_deref() != Some(msg.as_str())
+        {
+            let text = msg.clone();
+            if *is_err {
+                self.toasts.warn(text.clone());
+            } else {
+                self.toasts.success(text.clone());
             }
+            self.last_toasted_status = Some(text);
+        }
 
         let ctx = ui.ctx().clone();
         self.sync_canvas_textures(&ctx);
-        if self.tab == StudioTab::Rig { self.sync_rig_composite(&ctx); }
-        if self.tab == StudioTab::Animate { self.sync_keyframe_thumbs(&ctx); }
+        if self.tab == StudioTab::Rig
+            || (self.tab == StudioTab::Draw
+                && self.show_onion_skin
+                && self.edit_layer == EditLayer::Body)
+        {
+            self.sync_rig_composite(&ctx);
+        }
+        if self.tab == StudioTab::Animate {
+            self.sync_keyframe_thumbs(&ctx);
+        }
         if self.tab == StudioTab::Draw {
             if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::C)) {
                 self.copy_selection();
@@ -2043,7 +2251,10 @@ impl eframe::App for StudioApp {
                 self.sel_rect = None;
             }
         }
-        if ctx.input(|i| i.viewport().close_requested()) && self.unsaved_changes && !self.allow_close {
+        if ctx.input(|i| i.viewport().close_requested())
+            && self.unsaved_changes
+            && !self.allow_close
+        {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.confirm_close_modal = true;
         }
@@ -2114,7 +2325,7 @@ impl eframe::App for StudioApp {
         // TOP HEADER BAR
         egui::Panel::top("v2_top").show(ui, |ui| {
             ui.add_space(2.0);
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.label(
                     egui::RichText::new("DIYPets Studio V3")
                         .strong()
@@ -2129,28 +2340,39 @@ impl eframe::App for StudioApp {
                 ui.selectable_value(&mut self.tab, StudioTab::Export, "4. Export & Share");
                 ui.selectable_value(&mut self.tab, StudioTab::ImportSheet, "5. Sprite Sheet");
                 ui.selectable_value(&mut self.tab, StudioTab::Sandbox, "6. Sandbox");
-
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.add(egui::Button::new(egui::RichText::new("Run on Desktop").strong().color(egui::Color32::WHITE)).fill(egui::Color32::from_rgb(46, 134, 86))).clicked() { self.request_export(true); }
-                    if ui.button("Open Project").clicked() {
-                        self.open_project_dialog();
-                    }
-                    if ui.button("Save Project").clicked() {
-                        self.save_project_dialog();
-                    }
-                    if ui.button("Import 2D SVG").clicked() {
-                        self.import_svg_dialog();
-                    }
-                    ui.separator();
-                    if ui.button("Redo").clicked() {
-                        self.toasts.info("Redid stroke");
-                        self.redo();
-                    }
-                    if ui.button("Undo").clicked() {
-                        self.toasts.info("Undid stroke");
-                        self.undo();
-                    }
-                });
+            });
+            ui.horizontal_wrapped(|ui| {
+                if ui
+                    .add(
+                        egui::Button::new(
+                            egui::RichText::new("Run on Desktop")
+                                .strong()
+                                .color(egui::Color32::WHITE),
+                        )
+                        .fill(egui::Color32::from_rgb(46, 134, 86)),
+                    )
+                    .clicked()
+                {
+                    self.request_export(true);
+                }
+                if ui.button("Open Project").clicked() {
+                    self.open_project_dialog();
+                }
+                if ui.button("Save Project").clicked() {
+                    self.save_project_dialog();
+                }
+                if ui.button("Import 2D SVG").clicked() {
+                    self.import_svg_dialog();
+                }
+                ui.separator();
+                if ui.button("Redo").clicked() {
+                    self.toasts.info("Redid stroke");
+                    self.redo();
+                }
+                if ui.button("Undo").clicked() {
+                    self.toasts.info("Undid stroke");
+                    self.undo();
+                }
             });
 
             if let Some((msg, is_err)) = &self.status_msg {
@@ -2165,131 +2387,159 @@ impl eframe::App for StudioApp {
         });
 
         // RIGHT PANEL: Live Preview + Layer & Face Stack (always accessible in Draw/Rig/Animate)
-        if !matches!(self.tab, StudioTab::Export | StudioTab::ImportSheet | StudioTab::Sandbox | StudioTab::Costumes) {
-            egui::Panel::right("v2_right").show(ui, |ui| {
-                ui.set_width(268.0);
-                egui::ScrollArea::vertical().show(ui, |ui| {
-                    ui.label(egui::RichText::new("Live Preview").strong().size(14.0));
-                    self.render_clip_picker(ui);
-                    ui.add_space(4.0);
-                    self.render_preview_box(ui, 248.0, false);
-                    ui.horizontal(|ui| {
-                        ui.checkbox(&mut self.preview_playing, "Animate");
-                        ui.checkbox(&mut self.preview_desktop_scale, "128px");
-                    });
-
-                    ui.separator();
-                    ui.label(egui::RichText::new("Body & Extra Parts").strong());
-                    if ui
-                        .selectable_label(self.edit_layer == EditLayer::Body, "Body (Core) [Face LEFT]")
-                        .clicked()
-                    {
-                        self.edit_layer = EditLayer::Body;
-                        self.canvas_dirty = true;
-                    }
-
-                    let mut delete_idx: Option<usize> = None;
-                    let mut move_up: Option<usize> = None;
-                    let mut move_dn: Option<usize> = None;
-                    let part_count = self.project.parts.len();
-                    for i in 0..part_count {
-                        let sel = self.edit_layer == EditLayer::Part(i);
-                        let rgb = self.project.parts[i].role.pin_rgb();
-                        let tag = self.project.parts[i].role.short_tag();
-                        let label = format!("[{tag}] {}", self.project.parts[i].name);
+        if !matches!(
+            self.tab,
+            StudioTab::Export | StudioTab::ImportSheet | StudioTab::Sandbox | StudioTab::Costumes
+        ) {
+            egui::Panel::right("v2_right")
+                .default_size(268.0)
+                .size_range(230.0..=300.0)
+                .show(ui, |ui| {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        ui.label(egui::RichText::new("Live Preview").strong().size(14.0));
+                        self.render_clip_picker(ui);
+                        ui.add_space(4.0);
+                        self.render_preview_box(ui, ui.available_width().clamp(1.0, 248.0), false);
                         ui.horizontal(|ui| {
-                            if ui.checkbox(&mut self.project.parts[i].visible, "").changed() {
-                                self.sheet_dirty = true;
-                            }
-                            let (dot, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
-                            ui.painter().circle_filled(
-                                dot.center(),
-                                4.0,
-                                egui::Color32::from_rgb(rgb[0], rgb[1], rgb[2]),
-                            );
-                            if ui.selectable_label(sel, label).clicked() {
-                                self.edit_layer = EditLayer::Part(i);
-                                self.selected_part_idx = Some(i);
-                                self.canvas_dirty = true;
-                            }
-                            if i > 0 && ui.small_button("^").on_hover_text("Move part earlier").clicked() {
-                                move_up = Some(i);
-                            }
-                            if i + 1 < part_count && ui.small_button("v").on_hover_text("Move part later").clicked() {
-                                move_dn = Some(i);
-                            }
-                            if ui.small_button("x").clicked() {
-                                delete_idx = Some(i);
-                            }
+                            ui.checkbox(&mut self.preview_playing, "Animate");
+                            ui.checkbox(&mut self.preview_desktop_scale, "128px");
                         });
-                    }
-                    if let Some(u) = move_up {
-                        self.push_undo();
-                        self.project.parts.swap(u, u - 1);
-                        self.selected_part_idx = Some(u - 1);
-                        self.edit_layer = EditLayer::Part(u - 1);
-                        self.mark_dirty();
-                    } else if let Some(d) = move_dn {
-                        self.push_undo();
-                        self.project.parts.swap(d, d + 1);
-                        self.selected_part_idx = Some(d + 1);
-                        self.edit_layer = EditLayer::Part(d + 1);
-                        self.mark_dirty();
-                    } else if let Some(di) = delete_idx {
-                        self.push_undo();
-                        self.project.parts.remove(di);
-                        self.clamp_selections();
-                        self.mark_dirty();
-                    }
 
-                    ui.add_space(4.0);
-                    ui.horizontal(|ui| {
-                        ui.add(egui::TextEdit::singleline(&mut self.new_part_name).desired_width(110.0));
-                        if ui.small_button("+ Add Part").clicked() {
+                        ui.separator();
+                        ui.label(egui::RichText::new("Body & Extra Parts").strong());
+                        if ui
+                            .selectable_label(
+                                self.edit_layer == EditLayer::Body,
+                                "Body (Core) [Face LEFT]",
+                            )
+                            .clicked()
+                        {
+                            self.edit_layer = EditLayer::Body;
+                            self.canvas_dirty = true;
+                        }
+
+                        let mut delete_idx: Option<usize> = None;
+                        let mut move_up: Option<usize> = None;
+                        let mut move_dn: Option<usize> = None;
+                        let part_count = self.project.parts.len();
+                        for i in 0..part_count {
+                            let sel = self.edit_layer == EditLayer::Part(i);
+                            let rgb = self.project.parts[i].role.pin_rgb();
+                            let tag = self.project.parts[i].role.short_tag();
+                            let label = format!("[{tag}] {}", self.project.parts[i].name);
+                            ui.horizontal(|ui| {
+                                if ui
+                                    .checkbox(&mut self.project.parts[i].visible, "")
+                                    .changed()
+                                {
+                                    self.sheet_dirty = true;
+                                }
+                                let (dot, _) = ui.allocate_exact_size(
+                                    egui::vec2(8.0, 8.0),
+                                    egui::Sense::hover(),
+                                );
+                                ui.painter().circle_filled(
+                                    dot.center(),
+                                    4.0,
+                                    egui::Color32::from_rgb(rgb[0], rgb[1], rgb[2]),
+                                );
+                                if ui.selectable_label(sel, label).clicked() {
+                                    self.edit_layer = EditLayer::Part(i);
+                                    self.selected_part_idx = Some(i);
+                                    self.canvas_dirty = true;
+                                }
+                                if i > 0
+                                    && ui
+                                        .small_button("^")
+                                        .on_hover_text("Move part earlier")
+                                        .clicked()
+                                {
+                                    move_up = Some(i);
+                                }
+                                if i + 1 < part_count
+                                    && ui
+                                        .small_button("v")
+                                        .on_hover_text("Move part later")
+                                        .clicked()
+                                {
+                                    move_dn = Some(i);
+                                }
+                                if ui.small_button("x").clicked() {
+                                    delete_idx = Some(i);
+                                }
+                            });
+                        }
+                        if let Some(u) = move_up {
                             self.push_undo();
-                            let nm = if self.new_part_name.trim().is_empty() {
-                                self.new_part_role.label().to_string()
-                            } else {
-                                self.new_part_name.trim().to_string()
-                            };
-                            self.project.parts.push(RigPart::new(nm, self.new_part_role));
-                            let idx = self.project.parts.len() - 1;
-                            self.selected_part_idx = Some(idx);
-                            self.edit_layer = EditLayer::Part(idx);
+                            self.project.parts.swap(u, u - 1);
+                            self.selected_part_idx = Some(u - 1);
+                            self.edit_layer = EditLayer::Part(u - 1);
+                            self.mark_dirty();
+                        } else if let Some(d) = move_dn {
+                            self.push_undo();
+                            self.project.parts.swap(d, d + 1);
+                            self.selected_part_idx = Some(d + 1);
+                            self.edit_layer = EditLayer::Part(d + 1);
+                            self.mark_dirty();
+                        } else if let Some(di) = delete_idx {
+                            self.push_undo();
+                            self.project.parts.remove(di);
+                            self.clamp_selections();
                             self.mark_dirty();
                         }
-                    });
-                    ui.horizontal_wrapped(|ui| {
-                        for &role in PartRole::all() {
-                            if ui
-                                .selectable_label(self.new_part_role == role, role.short_tag())
-                                .on_hover_text(role.label())
-                                .clicked()
-                            {
-                                self.new_part_role = role;
-                                self.new_part_name = role.label().to_string();
-                            }
-                        }
-                    });
 
-                    ui.separator();
-                    ui.label(egui::RichText::new("Face Expressions (Auto-Swapped)").strong());
-                    ui.horizontal_wrapped(|ui| {
-                        for &slot in FaceSlot::all() {
-                            let active = self.edit_layer == EditLayer::Face(slot);
-                            if ui.selectable_label(active, slot.label()).clicked() {
-                                self.edit_layer = EditLayer::Face(slot);
-                                self.canvas_dirty = true;
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            ui.add(
+                                egui::TextEdit::singleline(&mut self.new_part_name)
+                                    .desired_width(110.0),
+                            );
+                            if ui.small_button("+ Add Part").clicked() {
+                                self.push_undo();
+                                let nm = if self.new_part_name.trim().is_empty() {
+                                    self.new_part_role.label().to_string()
+                                } else {
+                                    self.new_part_name.trim().to_string()
+                                };
+                                self.project
+                                    .parts
+                                    .push(RigPart::new(nm, self.new_part_role));
+                                let idx = self.project.parts.len() - 1;
+                                self.selected_part_idx = Some(idx);
+                                self.edit_layer = EditLayer::Part(idx);
+                                self.mark_dirty();
                             }
-                        }
+                        });
+                        ui.horizontal_wrapped(|ui| {
+                            for &role in PartRole::all() {
+                                if ui
+                                    .selectable_label(self.new_part_role == role, role.short_tag())
+                                    .on_hover_text(role.label())
+                                    .clicked()
+                                {
+                                    self.new_part_role = role;
+                                    self.new_part_name = role.label().to_string();
+                                }
+                            }
+                        });
+
+                        ui.separator();
+                        ui.label(egui::RichText::new("Face Expressions (Auto-Swapped)").strong());
+                        ui.horizontal_wrapped(|ui| {
+                            for &slot in FaceSlot::all() {
+                                let active = self.edit_layer == EditLayer::Face(slot);
+                                if ui.selectable_label(active, slot.label()).clicked() {
+                                    self.edit_layer = EditLayer::Face(slot);
+                                    self.canvas_dirty = true;
+                                }
+                            }
+                        });
                     });
                 });
-            });
         }
 
         // LEFT PANEL: Step-Specific Inspector
-        egui::Panel::left("v2_left").show(ui, |ui| {
-            ui.set_width(250.0);
+        egui::Panel::left("v2_left").default_size(250.0).size_range(210.0..=280.0).show(ui, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| match self.tab {
                 StudioTab::Draw => {
                     ui.label(egui::RichText::new("Creature Templates").strong());
@@ -2330,8 +2580,8 @@ impl eframe::App for StudioApp {
                             self.mark_dirty();
                         }
                     });
-                    ui.checkbox(&mut self.show_onion_skin, "Body Ghost on Parts & Faces");
-                    ui.checkbox(&mut self.mirror_draw_x, "Mirror X Symmetry (M)");
+                    ui.checkbox(&mut self.show_onion_skin, "Show character context");
+                    ui.checkbox(&mut self.mirror_draw_x, "Mirror X Symmetry");
                     ui.checkbox(&mut self.show_grid, "Pixel Grid");
                     ui.checkbox(&mut self.light_checker, "Light Checkerboard");
 
@@ -3061,7 +3311,7 @@ impl eframe::App for StudioApp {
 
             StudioTab::Costumes => self.render_costumes_canvas(ui),
             StudioTab::Draw | StudioTab::Rig => {
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label(egui::RichText::new(format!("Canvas: {}", self.active_layer_title())).strong());
                     ui.label(
                         egui::RichText::new("  <- Pet faces LEFT")
@@ -3077,7 +3327,7 @@ impl eframe::App for StudioApp {
                         ui.separator();
                         ui.colored_label(egui::Color32::from_rgb(130, 200, 255), hint);
                     }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.horizontal_wrapped(|ui| {
                         if ui.small_button("Reset View").clicked() {
                             self.zoom = 4.0;
                             self.pan_offset = egui::Vec2::ZERO;
@@ -3087,7 +3337,7 @@ impl eframe::App for StudioApp {
                 });
 
                 {
-                    let avail = ui.available_size().max(egui::vec2(300.0, 300.0));
+                    let avail = ui.available_size().max(egui::vec2(1.0, 1.0));
                     let (vp_rect, response) = ui.allocate_exact_size(avail, egui::Sense::click_and_drag());
                     let vp_painter = ui.painter_at(vp_rect);
                     vp_painter.rect_filled(vp_rect, 6.0, egui::Color32::from_rgb(15, 17, 23));
@@ -3124,7 +3374,7 @@ impl eframe::App for StudioApp {
                     Self::draw_checkerboard(&painter, rect, (self.zoom * 4.0).max(8.0), self.light_checker);
 
                     let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
-                    if self.tab == StudioTab::Rig && self.edit_layer == EditLayer::Body {
+                    if self.edit_layer == EditLayer::Body && (self.tab == StudioTab::Rig || (self.tab == StudioTab::Draw && self.show_onion_skin)) {
                         if let Some(rig_tex) = &self.tex_rig_composite {
                             painter.image(rig_tex.id(), rect, uv, egui::Color32::WHITE);
                         }
@@ -3390,7 +3640,7 @@ impl eframe::App for StudioApp {
                 }
             }
         });
-            self.toasts.show(ui.ctx());
+        self.toasts.show(ui.ctx());
     }
 }
 
