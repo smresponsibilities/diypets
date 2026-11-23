@@ -13,7 +13,7 @@
   - *Status:* Exported 9-frame strips `[idle, walk0..3, climb0..3]` + `climb_sheet.png` audit; uses real climb frames where authored and properly oriented 90-degree wall-grip walk otherwise.
 
 ## P1 — Scratch-Simple Studio, Auto-Animation & 8-Bit Ingestion (`v0.4.0` / Studio V5)
-- [ ] **T-004: Intelligent 8-Bit Sprite Sheet Importer (Auto-Detect + User-Guided Fallback)**
+- [x] **T-004: Intelligent 8-Bit Sprite Sheet Importer (Auto-Detect + User-Guided Fallback)**
   - *Reference:* Aseprite / TexturePacker / Piskel sprite-sheet slicing.
   - *Scope:* Ingest any PNG, GIF, JPG, Aseprite JSON, or packed RPG/SNES sheet -> corner chroma-key background removal -> native pixel-block scale detection (strips blurry AI mixels) -> 3 slicing modes (**Auto Grid Gutters**, **Connected-Components Auto-Box**, **Draggable Manual Grid/Box Fallback**) -> locked bottom-center foot anchor -> auto state bucketing (`Idle`, `Walk`, `Climb`, `Sleep`, `Fall`, `Drag`).
 - [ ] **T-005: Scratch-Style "Costumes" Flipbook & JuiceFX 1-Click Auto-Animator**
@@ -57,7 +57,7 @@
   - *Scope:* Optional UIA mode so pets walk on internal VS Code / terminal split dividers and fall naturally when panes resize.
 - [ ] **T-018: Multi-Monitor Per-Screen Herd Routing**
   - *Scope:* Pin specific pets to primary vs secondary monitors or let pets walk across multi-monitor seams.
-- [ ] **T-019: Publish Starter Issues Pack on GitHub (`good first issue` + `help wanted`)**
+- [x] **T-019: Publish Starter Issues Pack on GitHub (`good first issue` + `help wanted`)**
   - *Scope:* Create 5 scoped starter issues and 4 medium feature issues on GitHub linked to `CONTRIBUTING.md`.
 - [ ] **T-020: Shareable "My Desktop Herd" Snapshot Card**
   - *Scope:* 1-click PNG/GIF snapshot export showing your active herd for easy sharing on X, Reddit, and Discord.

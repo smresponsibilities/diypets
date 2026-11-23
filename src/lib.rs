@@ -1,3 +1,4 @@
+pub mod sprite_ingest;
 pub mod ui_toast;
 pub mod logging;
 pub mod agent_api;

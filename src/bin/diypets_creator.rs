@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use diypets::catalog::default_app_icon;
+use diypets::sprite_ingest::{IngestedSheet, SliceMode, ingest_sprite_sheet, strip_border_background};
 use diypets::ui_toast::ToastQueue;
 use diypets::settings::{Settings, local_project_root, user_packs_dir};
 use diypets::studio_model::{
@@ -287,6 +288,11 @@ struct StudioApp {
     sheet_rows: u32,
     sheet_walk_count: u32,
     sheet_fps_ms: u32,
+    sheet_slice_mode: u8,
+    sheet_pad_x: u32,
+    sheet_pad_y: u32,
+    sheet_merge_gap: u32,
+    sheet_ingested: Option<IngestedSheet>,
     sheet_name: String,
     unsaved_changes: bool,
     confirm_close_modal: bool,
@@ -364,6 +370,11 @@ impl Default for StudioApp {
             sheet_rows: 1,
             sheet_walk_count: 4,
             sheet_fps_ms: 140,
+            sheet_slice_mode: 0,
+            sheet_pad_x: 0,
+            sheet_pad_y: 0,
+            sheet_merge_gap: 2,
+            sheet_ingested: None,
             sheet_name: "sheet_pet".to_string(),
             unsaved_changes: false,
             confirm_close_modal: false,
@@ -895,84 +906,157 @@ impl StudioApp {
         self.pending_activate = false;
     }
 
+    fn current_slice_mode(&self) -> SliceMode {
+        match self.sheet_slice_mode {
+            1 => SliceMode::ConnectedComponents {
+                merge_gap: self.sheet_merge_gap,
+            },
+            2 => SliceMode::ManualGrid {
+                cols: self.sheet_cols.max(1),
+                rows: self.sheet_rows.max(1),
+                pad_x: self.sheet_pad_x,
+                pad_y: self.sheet_pad_y,
+            },
+            _ => SliceMode::AutoGrid,
+        }
+    }
+
+    fn refresh_sheet_ingest(&mut self, ctx: &egui::Context) {
+        let Some(raw) = self.sheet_import_img.clone() else {
+            self.sheet_ingested = None;
+            return;
+        };
+        let mode = self.current_slice_mode();
+        let ingested = ingest_sprite_sheet(&raw, mode, 128);
+
+        // Render live preview with cyan cut-boxes drawn around every detected frame
+        let (mut preview, _) = strip_border_background(&raw, 18);
+        let scale = ingested.detected_scale.max(1);
+        let (pw, ph) = preview.dimensions();
+        let box_col = image::Rgba([126, 232, 250, 255]);
+        for fb in &ingested.frame_boxes {
+            let x0 = (fb.x * scale).min(pw.saturating_sub(1));
+            let y0 = (fb.y * scale).min(ph.saturating_sub(1));
+            let x1 = ((fb.x + fb.w) * scale).saturating_sub(1).min(pw.saturating_sub(1));
+            let y1 = ((fb.y + fb.h) * scale).saturating_sub(1).min(ph.saturating_sub(1));
+            for x in x0..=x1 {
+                preview.put_pixel(x, y0, box_col);
+                preview.put_pixel(x, y1, box_col);
+            }
+            for y in y0..=y1 {
+                preview.put_pixel(x0, y, box_col);
+                preview.put_pixel(x1, y, box_col);
+            }
+        }
+
+        let size = [pw as usize, ph as usize];
+        let ci = egui::ColorImage::from_rgba_unmultiplied(size, preview.as_flat_samples().as_slice());
+        self.sheet_import_tex = Some(ctx.load_texture("v3_import_sheet", ci, egui::TextureOptions::NEAREST));
+
+        let n_frames = ingested.frames.len() as u32;
+        if n_frames > 0 && self.sheet_slice_mode != 2 {
+            self.sheet_walk_count = (ingested.walk_indices.len() as u32).clamp(1, n_frames);
+        }
+        self.sheet_ingested = Some(ingested);
+    }
+
     fn pick_sprite_sheet_dialog(&mut self, ctx: &egui::Context) {
         let Some(path) = rfd::FileDialog::new()
-            .add_filter("PNG Sprite Sheet", &["png"])
+            .add_filter("Sprite Sheet", &["png", "gif", "jpg", "jpeg", "webp"])
             .pick_file()
         else {
             return;
         };
         match image::open(&path) {
             Ok(img) => {
-                let mut rgba = img.to_rgba8();
-                diypets::catalog::strip_chroma_key_if_opaque(&mut rgba);
+                let rgba = img.to_rgba8();
                 let stem = path
                     .file_stem()
                     .and_then(|s| s.to_str())
                     .unwrap_or("sheet_pet");
                 self.sheet_name = sanitize_pack_id(stem);
-                let size = [rgba.width() as usize, rgba.height() as usize];
-                let ci = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_flat_samples().as_slice());
-                self.sheet_import_tex = Some(ctx.load_texture("v3_import_sheet", ci, egui::TextureOptions::NEAREST));
+                let (w, h) = rgba.dimensions();
                 self.sheet_import_img = Some(rgba);
-                self.status_msg = Some((format!("Loaded sprite sheet '{}' ({}x{})", self.sheet_name, size[0], size[1]), false));
+                self.refresh_sheet_ingest(ctx);
+                if let Some(ing) = &self.sheet_ingested {
+                    let bg_note = if ing.stripped_bg { ", bg stripped" } else { "" };
+                    self.status_msg = Some((
+                        format!(
+                            "Loaded '{}' ({w}x{h}): {} frames detected ({}x scale{bg_note})",
+                            self.sheet_name,
+                            ing.frames.len(),
+                            ing.detected_scale
+                        ),
+                        ing.frames.is_empty(),
+                    ));
+                }
             }
-            Err(e) => self.status_msg = Some((format!("Failed to open PNG: {e}"), true)),
+            Err(e) => self.status_msg = Some((format!("Failed to open sprite sheet: {e}"), true)),
         }
     }
 
     fn export_imported_sheet(&mut self, activate: bool) {
-        let Some(sheet) = &self.sheet_import_img else {
-            self.status_msg = Some(("Pick a PNG sprite sheet first.".to_string(), true));
+        let Some(raw) = &self.sheet_import_img else {
+            self.status_msg = Some(("Pick a sprite sheet first.".to_string(), true));
             return;
         };
-        let cols = self.sheet_cols.max(1);
-        let rows = self.sheet_rows.max(1);
-        let tw = sheet.width() / cols;
-        let th = sheet.height() / rows;
-        if tw == 0 || th == 0 {
-            self.status_msg = Some(("Grid Cols/Rows too large for image size.".to_string(), true));
+        let ing = ingest_sprite_sheet(raw, self.current_slice_mode(), 128);
+        if ing.frames.is_empty() {
+            self.status_msg = Some((
+                "No frames detected — switch to Manual Grid fallback and set Cols/Rows.".to_string(),
+                true,
+            ));
             return;
         }
-        let total = cols * rows;
-        let walk_n = self.sheet_walk_count.clamp(1, total);
 
-        // Compute GroundY from bottom-most opaque pixel across walk frames
-        let mut bottom_y = th.saturating_sub(1);
-        let mut found_px = false;
-        for idx in 0..walk_n {
-            let tx = (idx % cols) * tw;
-            let ty = (idx / cols) * th;
-            for y in (0..th).rev() {
-                if (0..tw).any(|x| sheet.get_pixel(tx + x, ty + y)[3] > 24) {
-                    if !found_px {
-                        bottom_y = y;
-                        found_px = true;
-                    } else {
-                        bottom_y = bottom_y.max(y);
-                    }
-                    break;
-                }
-            }
-        }
-        let ground_y = (bottom_y + 1).clamp(1, th);
-
-        use base64::{Engine as _, engine::general_purpose::STANDARD};
-        let mut png_bytes = Vec::new();
-        if let Err(e) = sheet.write_to(&mut std::io::Cursor::new(&mut png_bytes), image::ImageFormat::Png) {
-            self.status_msg = Some((format!("PNG encode error: {e}"), true));
-            return;
-        }
-        let b64 = STANDARD.encode(&png_bytes);
-        let walk_frames: String = (0..walk_n).map(|f| format!("<Frame>{f}</Frame>")).collect();
         let id = sanitize_pack_id(&self.sheet_name);
         if BUNDLED_PROTECTED.contains(&id.as_str()) {
             self.status_msg = Some((format!("'{id}' is reserved. Pick a unique pet name."), true));
             return;
         }
+
+        // Pack normalized, foot-locked 128x128 frames into a clean grid atlas
+        let count = ing.frames.len() as u32;
+        let cols = count.min(8);
+        let rows = count.div_ceil(cols);
+        let tile = 128u32;
+        let mut atlas = image::RgbaImage::new(cols * tile, rows * tile);
+        for (idx, fr) in ing.frames.iter().enumerate() {
+            let cx = (idx as u32 % cols) * tile;
+            let cy = (idx as u32 / cols) * tile;
+            image::imageops::replace(&mut atlas, fr, cx as i64, cy as i64);
+        }
+
+        use base64::{Engine as _, engine::general_purpose::STANDARD};
+        let mut png_bytes = Vec::new();
+        if let Err(e) = atlas.write_to(&mut std::io::Cursor::new(&mut png_bytes), image::ImageFormat::Png) {
+            self.status_msg = Some((format!("PNG encode error: {e}"), true));
+            return;
+        }
+        let b64 = STANDARD.encode(&png_bytes);
+
+        let frames_xml = |indices: &[usize]| -> String {
+            if indices.is_empty() {
+                "<Frame>0</Frame>".to_string()
+            } else {
+                indices.iter().map(|f| format!("<Frame>{f}</Frame>")).collect()
+            }
+        };
+
+        let walk_slice: Vec<usize> = if self.sheet_slice_mode == 2 {
+            (0..(self.sheet_walk_count.clamp(1, count) as usize)).collect()
+        } else {
+            ing.walk_indices.clone()
+        };
+        let idle_frames = frames_xml(&ing.idle_indices);
+        let walk_frames = frames_xml(&walk_slice);
+        let sleep_frames = frames_xml(&ing.sleep_indices);
+        let fall_frames = frames_xml(&ing.fall_indices);
+        let drag_frames = frames_xml(&ing.drag_indices);
+
         let iv = self.sheet_fps_ms.clamp(50, 500);
         let xml = format!(
-            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<AnimationXML>\n  <Header><Title>{id}</Title><Author>{}</Author></Header>\n  <Image><TilesX>{cols}</TilesX><TilesY>{rows}</TilesY><GroundY>{ground_y}</GroundY><Png>{b64}</Png></Image>\n  <Spawns><Spawn id=\"1\" probability=\"100\"><X>screenW/2</X><Y>0</Y><Next>5</Next></Spawn></Spawns>\n  <Animation id=\"1\"><Name>walk</Name><Start><X>-6</X><Y>0</Y><Interval>{iv}</Interval><Opacity>1</Opacity></Start><End><X>-6</X><Y>0</Y><Interval>{iv}</Interval><Opacity>1</Opacity></End><Sequence repeat=\"4\" repeatfrom=\"0\">{walk_frames}</Sequence><Border><Next probability=\"100\">2</Next></Border><Gravity><Next probability=\"100\">5</Next></Gravity><Next probability=\"75\">1</Next><Next probability=\"25\">12</Next></Animation>\n  <Animation id=\"2\"><Name>turn</Name><Action>flip</Action><Start><X>0</X><Y>0</Y><Interval>160</Interval><Opacity>1</Opacity></Start><End><X>0</X><Y>0</Y><Interval>160</Interval><Opacity>1</Opacity></End><Sequence repeat=\"0\" repeatfrom=\"0\"><Frame>0</Frame></Sequence><Next probability=\"100\">1</Next></Animation>\n  <Animation id=\"4\"><Name>drag</Name><Start><X>0</X><Y>0</Y><Interval>140</Interval><Opacity>1</Opacity></Start><End><X>0</X><Y>0</Y><Interval>140</Interval><Opacity>1</Opacity></End><Sequence repeat=\"2\" repeatfrom=\"0\"><Frame>0</Frame></Sequence><Next probability=\"100\">4</Next></Animation>\n  <Animation id=\"5\"><Name>fall</Name><Start><X>0</X><Y>12</Y><Interval>60</Interval><Opacity>1</Opacity></Start><End><X>0</X><Y>18</Y><Interval>60</Interval><Opacity>1</Opacity></End><Sequence repeat=\"1\" repeatfrom=\"0\"><Frame>0</Frame></Sequence><Border><Next probability=\"100\">9</Next></Border><Next probability=\"100\">5</Next></Animation>\n  <Animation id=\"9\"><Name>fall soft</Name><Start><X>0</X><Y>0</Y><Interval>140</Interval><Opacity>1</Opacity></Start><End><X>0</X><Y>0</Y><Interval>140</Interval><Opacity>1</Opacity></End><Sequence repeat=\"0\" repeatfrom=\"0\"><Frame>0</Frame></Sequence><Next probability=\"100\">1</Next></Animation>\n  <Animation id=\"12\"><Name>idle</Name><Start><X>0</X><Y>0</Y><Interval>350</Interval><Opacity>1</Opacity></Start><End><X>0</X><Y>0</Y><Interval>350</Interval><Opacity>1</Opacity></End><Sequence repeat=\"3\" repeatfrom=\"0\"><Frame>0</Frame></Sequence><Gravity><Next probability=\"100\">5</Next></Gravity><Next probability=\"100\">1</Next></Animation>\n</AnimationXML>\n",
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<AnimationXML>\n  <Header><Title>{id}</Title><Author>{}</Author></Header>\n  <Image><TilesX>{cols}</TilesX><TilesY>{rows}</TilesY><GroundY>{tile}</GroundY><Png>{b64}</Png></Image>\n  <Spawns><Spawn id=\"1\" probability=\"100\"><X>screenW/2</X><Y>0</Y><Next>5</Next></Spawn></Spawns>\n  <Animation id=\"1\"><Name>walk</Name><Start><X>-3</X><Y>0</Y><Interval>{iv}</Interval><Opacity>1</Opacity></Start><End><X>-3</X><Y>0</Y><Interval>{iv}</Interval><Opacity>1</Opacity></End><Sequence repeat=\"4\" repeatfrom=\"0\">{walk_frames}</Sequence><Border><Next probability=\"100\">7</Next></Border><Gravity><Next probability=\"100\">5</Next></Gravity><Next probability=\"70\">1</Next><Next probability=\"20\">2</Next><Next probability=\"10\">13</Next></Animation>\n  <Animation id=\"2\"><Name>idle</Name><Start><X>0</X><Y>0</Y><Interval>320</Interval><Opacity>1</Opacity></Start><End><X>0</X><Y>0</Y><Interval>320</Interval><Opacity>1</Opacity></End><Sequence repeat=\"3\" repeatfrom=\"0\">{idle_frames}</Sequence><Gravity><Next probability=\"100\">5</Next></Gravity><Next probability=\"85\">1</Next><Next probability=\"15\">13</Next></Animation>\n  <Animation id=\"4\"><Name>drag</Name><Start><X>0</X><Y>0</Y><Interval>140</Interval><Opacity>1</Opacity></Start><End><X>0</X><Y>0</Y><Interval>140</Interval><Opacity>1</Opacity></End><Sequence repeat=\"2\" repeatfrom=\"0\">{drag_frames}</Sequence><Next probability=\"100\">4</Next></Animation>\n  <Animation id=\"5\"><Name>fall</Name><Start><X>0</X><Y>12</Y><Interval>60</Interval><Opacity>1</Opacity></Start><End><X>0</X><Y>18</Y><Interval>60</Interval><Opacity>1</Opacity></End><Sequence repeat=\"1\" repeatfrom=\"0\">{fall_frames}</Sequence><Border><Next probability=\"100\">9</Next></Border><Next probability=\"100\">5</Next></Animation>\n  <Animation id=\"7\"><Name>turn</Name><Action>flip</Action><Start><X>0</X><Y>0</Y><Interval>150</Interval><Opacity>1</Opacity></Start><End><X>0</X><Y>0</Y><Interval>150</Interval><Opacity>1</Opacity></End><Sequence repeat=\"0\" repeatfrom=\"0\">{idle_frames}</Sequence><Next probability=\"100\">1</Next></Animation>\n  <Animation id=\"9\"><Name>fall soft</Name><Start><X>0</X><Y>0</Y><Interval>140</Interval><Opacity>1</Opacity></Start><End><X>0</X><Y>0</Y><Interval>140</Interval><Opacity>1</Opacity></End><Sequence repeat=\"0\" repeatfrom=\"0\">{idle_frames}</Sequence><Next probability=\"100\">1</Next></Animation>\n  <Animation id=\"12\"><Name>sit</Name><Start><X>0</X><Y>0</Y><Interval>350</Interval><Opacity>1</Opacity></Start><End><X>0</X><Y>0</Y><Interval>350</Interval><Opacity>1</Opacity></End><Sequence repeat=\"3\" repeatfrom=\"0\">{idle_frames}</Sequence><Gravity><Next probability=\"100\">5</Next></Gravity><Next probability=\"100\">1</Next></Animation>\n  <Animation id=\"13\"><Name>sleep</Name><Start><X>0</X><Y>0</Y><Interval>420</Interval><Opacity>1</Opacity></Start><End><X>0</X><Y>0</Y><Interval>420</Interval><Opacity>1</Opacity></End><Sequence repeat=\"6\" repeatfrom=\"0\">{sleep_frames}</Sequence><Gravity><Next probability=\"100\">5</Next></Gravity><Next probability=\"100\">2</Next></Animation>\n</AnimationXML>\n",
             self.project.author
         );
         if let Err(e) = diypets::deskpet_xml::DeskpetPack::parse(&xml) {
@@ -985,16 +1069,22 @@ impl StudioApp {
             self.status_msg = Some((format!("Write error: {e}"), true));
             return;
         }
-        let icon = image::imageops::crop_imm(sheet, 0, 0, tw, th).to_image();
+        let icon = image::imageops::resize(&ing.frames[0], 64, 64, image::imageops::FilterType::Nearest);
         let _ = icon.save(target.join("icon.png"));
         if activate {
             let sp = Settings::default_path();
             let mut s = Settings::load_sanitized(&sp);
             s.pet_pack = id.clone();
             let _ = s.save(&sp);
-            self.status_msg = Some((format!("Imported & activated sprite sheet '{id}' on your desktop!"), false));
+            self.status_msg = Some((
+                format!("Imported {count} foot-locked frames & activated '{id}' on desktop!"),
+                false,
+            ));
         } else {
-            self.status_msg = Some((format!("Saved sprite sheet pet '{id}' to library!"), false));
+            self.status_msg = Some((
+                format!("Saved '{id}' ({count} foot-locked frames) to local library!"),
+                false,
+            ));
         }
     }
 
@@ -1885,20 +1975,54 @@ impl eframe::App for StudioApp {
                     }
                 }
             StudioTab::ImportSheet => {
-                    ui.label(egui::RichText::new("PNG Sprite Sheet Importer").strong());
-                    ui.label(egui::RichText::new("Drop any Aseprite / itch.io / Piskel PNG grid and turn it into a desktop pet in 10 seconds.").size(11.0).color(egui::Color32::GRAY));
+                    ui.label(egui::RichText::new("Intelligent 8-Bit Sheet Importer").strong());
+                    ui.label(egui::RichText::new("Drop any PNG/GIF/JPG sprite sheet. Auto-strips solid BG, detects pixel scale, locks feet to 0px, and buckets states.").size(11.0).color(egui::Color32::GRAY));
                     ui.add_space(6.0);
-                    if ui.button("Choose PNG Sprite Sheet...").clicked() {
+                    if ui.button("Choose Sprite Sheet...").clicked() {
                         self.pick_sprite_sheet_dialog(ui.ctx());
                     }
                     ui.separator();
                     ui.label("Pet ID:");
                     ui.text_edit_singleline(&mut self.sheet_name);
-                    ui.add(egui::Slider::new(&mut self.sheet_cols, 1..=20).text("Grid Cols (X)"));
-                    ui.add(egui::Slider::new(&mut self.sheet_rows, 1..=20).text("Grid Rows (Y)"));
-                    let max_f = (self.sheet_cols * self.sheet_rows).max(1);
-                    self.sheet_walk_count = self.sheet_walk_count.clamp(1, max_f);
-                    ui.add(egui::Slider::new(&mut self.sheet_walk_count, 1..=max_f).text("Walk Frames"));
+                    ui.add_space(4.0);
+                    ui.label("Slicing Mode:");
+                    let mut mode_changed = false;
+                    ui.horizontal(|ui| {
+                        mode_changed |= ui.selectable_value(&mut self.sheet_slice_mode, 0, "Auto Grid").changed();
+                        mode_changed |= ui.selectable_value(&mut self.sheet_slice_mode, 1, "Auto Islands").changed();
+                        mode_changed |= ui.selectable_value(&mut self.sheet_slice_mode, 2, "Manual Grid").changed();
+                    });
+                    if self.sheet_slice_mode == 1 {
+                        mode_changed |= ui.add(egui::Slider::new(&mut self.sheet_merge_gap, 0..=10).text("Merge Gap px")).changed();
+                    } else if self.sheet_slice_mode == 2 {
+                        mode_changed |= ui.add(egui::Slider::new(&mut self.sheet_cols, 1..=20).text("Grid Cols (X)")).changed();
+                        mode_changed |= ui.add(egui::Slider::new(&mut self.sheet_rows, 1..=20).text("Grid Rows (Y)")).changed();
+                        mode_changed |= ui.add(egui::Slider::new(&mut self.sheet_pad_x, 0..=16).text("Pad X px")).changed();
+                        mode_changed |= ui.add(egui::Slider::new(&mut self.sheet_pad_y, 0..=16).text("Pad Y px")).changed();
+                        let max_f = (self.sheet_cols * self.sheet_rows).max(1);
+                        self.sheet_walk_count = self.sheet_walk_count.clamp(1, max_f);
+                        ui.add(egui::Slider::new(&mut self.sheet_walk_count, 1..=max_f).text("Walk Frames"));
+                    }
+                    if mode_changed {
+                        self.refresh_sheet_ingest(ui.ctx());
+                    }
+                    if let Some(ing) = &self.sheet_ingested {
+                        let summary = format!(
+                            "Detected: {} frames | {}x scale | BG: {} | Idle:{:?} Walk:{:?} Sleep:{:?}",
+                            ing.frames.len(),
+                            ing.detected_scale,
+                            if ing.stripped_bg { "stripped" } else { "alpha" },
+                            ing.idle_indices,
+                            ing.walk_indices,
+                            ing.sleep_indices
+                        );
+                        let col = if ing.frames.is_empty() {
+                            egui::Color32::from_rgb(255, 179, 71)
+                        } else {
+                            egui::Color32::from_rgb(126, 232, 250)
+                        };
+                        ui.label(egui::RichText::new(summary).size(11.0).color(col));
+                    }
                     ui.add(egui::Slider::new(&mut self.sheet_fps_ms, 60..=400).text("Frame ms"));
                     ui.add_space(8.0);
                     if ui.button("Export Sheet & Run on Desktop").clicked() {
