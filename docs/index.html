@@ -7,6 +7,7 @@
 <meta name="description" content="Pure Rust desktop mascot engine (~7.8 MB RAM) with Multi-Pet Herd Mode, Play Mode, 6-tool stdio & HTTP MCP server, RotSprite limb rotation, and built-in 2D/SVG Studio." />
 <meta name="author" content="Shivam Mahajan" />
 <link rel="canonical" href="https://shivammahajan.com/diypets/" />
+<link rel="icon" type="image/png" href="logo.png" />
 
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="Shivam Mahajan" />
@@ -147,7 +148,7 @@
     padding: 10px 16px 14px;
     flex-wrap: wrap;
   }
-  .printed-header img { width: 42px; height: 42px; image-rendering: pixelated; border-radius: 6px; }
+  .printed-header img { width: 44px; height: 44px; object-fit: contain; border-radius: 8px; background: #172c32; border: 1px solid #c5b29166; padding: 2px; }
   .printed-header h1 {
     letter-spacing: -0.025em;
     color: #eee8dc;
@@ -188,7 +189,7 @@
     padding: 16px 0 8px;
     border-bottom: 1px solid #c5b29144;
   }
-  .art-sprites canvas { image-rendering: pixelated; width: 58px; height: 58px; }
+  .art-sprites canvas { width: 76px; height: 76px; object-fit: contain; image-rendering: auto; }
   .vitals-mini {
     display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
   }
@@ -309,7 +310,7 @@
     border-radius: 4px;
     display: flex; align-items: flex-end; justify-content: center; padding-bottom: 4px;
   }
-  .entry-stage canvas { image-rendering: pixelated; width: 62px; height: 62px; }
+  .entry-stage canvas { width: 66px; height: 66px; object-fit: contain; image-rendering: auto; }
   .entry-name { font-size: 12px; color: var(--ink); }
   .entry-btns { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
   .pbtn {
@@ -416,7 +417,7 @@
   <!-- Authentic .printed-project Collector Card (Exact shivammahajan.com ProjectCard styling) -->
   <section class="printed-project">
     <div class="printed-header">
-      <img src="og-image.png" alt="DIYPets Highland Cow" />
+      <img src="logo.png" alt="DIYPets Highland Cow" />
       <h1>DIYPets</h1>
       <div class="printed-number">RELEASE<strong>v0.3.0</strong></div>
     </div>
@@ -716,14 +717,25 @@ PACKS.forEach((pk, idx) => {
   }
 
   img.onload = () => {
-    const pc = document.getElementById(`prev-${pk.id}`).getContext("2d");
-    pc.imageSmoothingEnabled = false;
-    pc.drawImage(img, 0, 0, img.width / 4, img.height, 0, 0, 62, 62);
+    const fw = Math.floor(img.width / 4);
+    const fh = img.height;
+    const pCanvas = document.getElementById(`prev-${pk.id}`);
+    if (pCanvas) {
+      pCanvas.width = fw;
+      pCanvas.height = fh;
+      const pc = pCanvas.getContext("2d");
+      pc.imageSmoothingEnabled = false;
+      pc.clearRect(0, 0, fw, fh);
+      pc.drawImage(img, 0, 0, fw, fh, 0, 0, fw, fh);
+    }
     const hc = document.getElementById(`hero-${pk.id}`);
     if (hc) {
+      hc.width = fw;
+      hc.height = fh;
       const hctx = hc.getContext("2d");
       hctx.imageSmoothingEnabled = false;
-      hctx.drawImage(img, 0, 0, img.width / 4, img.height, 0, 0, 58, 58);
+      hctx.clearRect(0, 0, fw, fh);
+      hctx.drawImage(img, 0, 0, fw, fh, 0, 0, fw, fh);
     }
   };
 });

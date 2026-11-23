@@ -55,8 +55,8 @@ pub fn is_fullscreen_app_active(own_hwnds: &[isize], monitors: &[(i32, i32, i32,
     use windows::Win32::Foundation::RECT;
     use windows::Win32::Graphics::Dwm::{DWMWA_CLOAKED, DwmGetWindowAttribute};
     use windows::Win32::UI::WindowsAndMessaging::{
-        GWL_STYLE, GetClassNameW, GetForegroundWindow, GetWindowLongW, GetWindowRect, IsIconic,
-        IsZoomed, WS_CAPTION, WS_THICKFRAME,
+        GWL_EXSTYLE, GWL_STYLE, GetClassNameW, GetForegroundWindow, GetWindowLongW, GetWindowRect, IsIconic,
+        IsZoomed, WS_CAPTION, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_THICKFRAME,
     };
 
     unsafe {
@@ -82,6 +82,10 @@ pub fn is_fullscreen_app_active(own_hwnds: &[isize], monitors: &[(i32, i32, i32,
             return false;
         }
 
+        let ex_style = GetWindowLongW(fg, GWL_EXSTYLE) as u32;
+        if (ex_style & (WS_EX_TOOLWINDOW.0 | WS_EX_NOACTIVATE.0)) != 0 {
+            return false;
+        }
         let style = GetWindowLongW(fg, GWL_STYLE) as u32;
         // Normal desktop apps have a caption bar or resizable frame; true fullscreen apps are borderless
         if (style & WS_CAPTION.0) != 0 || (style & WS_THICKFRAME.0) != 0 {

@@ -272,9 +272,32 @@ impl LayeredSurface {
                     }
                 }
                 Err(e) => {
-                    if ULW_ERR_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 10 {
+                    // Self-heal if WS_EX_LAYERED was cleared or conflicted with SetLayeredWindowAttributes
+                    use windows::Win32::UI::WindowsAndMessaging::{
+                        GWL_EXSTYLE, GetWindowLongW, SetWindowLongW, WS_EX_LAYERED,
+                    };
+                    let ex = GetWindowLongW(hwnd, GWL_EXSTYLE);
+                    SetWindowLongW(hwnd, GWL_EXSTYLE, ex & !(WS_EX_LAYERED.0 as i32));
+                    SetWindowLongW(hwnd, GWL_EXSTYLE, ex | (WS_EX_LAYERED.0 as i32));
+                    let retry = UpdateLayeredWindow(
+                        hwnd,
+                        None,
+                        Some(&pt_dst as *const _),
+                        Some(&size as *const _),
+                        self.hdc_mem,
+                        Some(&pt_src as *const _),
+                        COLORREF(0),
+                        Some(&blend as *const _),
+                        ULW_ALPHA,
+                    );
+                    if retry.is_ok() {
+                        logging::warn(&format!(
+                            "UpdateLayeredWindow recovered after resetting WS_EX_LAYERED on hwnd={:?}",
+                            hwnd.0
+                        ));
+                    } else if ULW_ERR_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed) < 10 {
                         logging::error(&format!(
-                            "UpdateLayeredWindow FAILED: hwnd={:?} pos=({x},{y}) size={}x{} err={e:?}",
+                            "UpdateLayeredWindow FAILED (after retry): hwnd={:?} pos=({x},{y}) size={}x{} err={e:?}",
                             hwnd.0, self.width, self.height
                         ));
                     }
@@ -297,31 +320,75 @@ impl Drop for LayeredSurface {
 }
 
 #[cfg(windows)]
-fn prevent_focus_stealing(window: &Window, topmost: bool) {
+fn enforce_layered_styles(hwnd: windows::Win32::Foundation::HWND, topmost: bool) {
     use windows::Win32::UI::WindowsAndMessaging::{
-        GWL_EXSTYLE, GetWindowLongW, SetWindowLongW, WS_EX_LAYERED, WS_EX_NOACTIVATE,
-        WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT,
+        GWL_EXSTYLE, GWL_STYLE, GetWindowLongW, SetWindowLongW, WS_BORDER, WS_CAPTION,
+        WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW,
+        WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUP, WS_SYSMENU,
+        WS_THICKFRAME,
     };
 
-    if let Some(hwnd) = hwnd_of(window) {
-        unsafe {
-            let style = GetWindowLongW(hwnd, GWL_EXSTYLE);
-            let mut new_style = (style
-                | WS_EX_NOACTIVATE.0 as i32
-                | WS_EX_TOOLWINDOW.0 as i32
-                | WS_EX_LAYERED.0 as i32)
-                & !(WS_EX_NOREDIRECTIONBITMAP.0 as i32)
-                & !(WS_EX_TRANSPARENT.0 as i32);
-            if topmost {
-                new_style |= WS_EX_TOPMOST.0 as i32;
-            } else {
-                new_style &= !(WS_EX_TOPMOST.0 as i32);
-            }
-            SetWindowLongW(hwnd, GWL_EXSTYLE, new_style);
+    unsafe {
+        // Strip all classic window chrome so [_][o][X] borders can never reappear
+        let style = GetWindowLongW(hwnd, GWL_STYLE) as u32;
+        let strip_mask = WS_CAPTION.0
+            | WS_THICKFRAME.0
+            | WS_BORDER.0
+            | WS_SYSMENU.0
+            | WS_MINIMIZEBOX.0
+            | WS_MAXIMIZEBOX.0;
+        let clean_style = (style & !strip_mask) | WS_POPUP.0;
+        if clean_style != style {
+            SetWindowLongW(hwnd, GWL_STYLE, clean_style as i32);
+        }
 
-            if let Some(mut prime) = LayeredSurface::new(1, 1) {
-                prime.present(window, &[0u32], 0, 0);
+        let ex = GetWindowLongW(hwnd, GWL_EXSTYLE);
+        let mut new_ex = (ex
+            | WS_EX_NOACTIVATE.0 as i32
+            | WS_EX_TOOLWINDOW.0 as i32
+            | WS_EX_LAYERED.0 as i32)
+            & !(WS_EX_NOREDIRECTIONBITMAP.0 as i32)
+            & !(WS_EX_TRANSPARENT.0 as i32);
+        if topmost {
+            new_ex |= WS_EX_TOPMOST.0 as i32;
+        } else {
+            new_ex &= !(WS_EX_TOPMOST.0 as i32);
+        }
+        if new_ex != ex {
+            SetWindowLongW(hwnd, GWL_EXSTYLE, new_ex);
+        }
+    }
+}
+
+#[cfg(windows)]
+fn set_window_visible_safe(window: &Window, visible: bool, topmost: bool) {
+    use windows::Win32::UI::WindowsAndMessaging::{SW_HIDE, SW_SHOWNOACTIVATE, ShowWindow};
+    if let Some(hwnd) = hwnd_of(window) {
+        if visible {
+            enforce_layered_styles(hwnd, topmost);
+            unsafe {
+                let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
             }
+            apply_topmost(window, topmost);
+        } else {
+            unsafe {
+                let _ = ShowWindow(hwnd, SW_HIDE);
+            }
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn set_window_visible_safe(window: &Window, visible: bool, _topmost: bool) {
+    window.set_visible(visible);
+}
+
+#[cfg(windows)]
+fn prevent_focus_stealing(window: &Window, topmost: bool) {
+    if let Some(hwnd) = hwnd_of(window) {
+        enforce_layered_styles(hwnd, topmost);
+        if let Some(mut prime) = LayeredSurface::new(1, 1) {
+            prime.present(window, &[0u32], 0, 0);
         }
         apply_topmost(window, topmost);
     }
@@ -727,6 +794,7 @@ struct DeskpetApp {
     auto_hide_fullscreen: bool,
     quiet_mode: bool,
     fullscreen_hidden: bool,
+    fullscreen_streak: u8,
     last_visible: bool,
     last_fullscreen_check: u64,
     settings_path: PathBuf,
@@ -1212,17 +1280,19 @@ impl DeskpetApp {
             self.last_visible, should_show, self.quiet_mode, self.fullscreen_hidden
         ));
         self.last_visible = should_show;
+        let topmost = self.is_topmost;
         for pet in &mut self.pets {
-            pet.window.set_visible(should_show);
+            set_window_visible_safe(&pet.window, should_show, topmost);
             if should_show {
                 pet.last_render = None;
+                pet.window.request_redraw();
             }
         }
         if let Some(b) = &self.bubble {
-            b.window.set_visible(should_show);
+            set_window_visible_safe(&b.window, should_show, true);
         }
         if let Some(ball) = &self.ball {
-            ball.window.set_visible(should_show);
+            set_window_visible_safe(&ball.window, should_show, true);
         }
     }
 
@@ -1268,7 +1338,16 @@ impl DeskpetApp {
         #[cfg(not(windows))]
         let own_hwnds: Vec<isize> = Vec::new();
 
-        self.fullscreen_hidden = platform::is_fullscreen_app_active(&own_hwnds, &monitors);
+        let detected = platform::is_fullscreen_app_active(&own_hwnds, &monitors);
+        if detected {
+            self.fullscreen_streak = self.fullscreen_streak.saturating_add(1);
+            if self.fullscreen_streak >= 2 {
+                self.fullscreen_hidden = true;
+            }
+        } else {
+            self.fullscreen_streak = 0;
+            self.fullscreen_hidden = false;
+        }
         self.sync_visibility();
     }
 
@@ -2230,6 +2309,7 @@ fn main() {
         auto_hide_fullscreen: settings.auto_hide_fullscreen,
         quiet_mode: false,
         fullscreen_hidden: false,
+        fullscreen_streak: 0,
         last_visible: true,
         last_fullscreen_check: 0,
         settings_path,
