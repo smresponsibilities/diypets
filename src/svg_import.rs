@@ -264,7 +264,7 @@ fn parse_points_list(pts: &str) -> Vec<(f32, f32)> {
         .filter(|t| !t.is_empty())
         .filter_map(|t| t.parse::<f32>().ok())
         .collect();
-    nums.chunks_exact(2).map(|c| (c[0], c[1])).collect()
+    nums.as_chunks::<2>().0.iter().map(|c| (c[0], c[1])).collect()
 }
 
 fn parse_svg_path_d(d: &str) -> Option<Path> {

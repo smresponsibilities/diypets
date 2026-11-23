@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use diypets::catalog::default_app_icon;
+use diypets::ui_toast::ToastQueue;
 use diypets::settings::{Settings, local_project_root, user_packs_dir};
 use diypets::studio_model::{
     Archetype, BOARD_SIZE, CustomAnimation, CustomKeyframe, FaceSlot, PartRole,
@@ -183,11 +184,10 @@ fn try_run_cli(args: &[String]) -> Option<Result<(), String>> {
             Ok(p) => p,
             Err(e) => return Some(Err(e)),
         }
-    } else if let Some(tpl) = flag_val("--template") {
+    } else {
+        let tpl = flag_val("--template")?;
         let arch = Archetype::from_str_loose(&tpl).unwrap_or(Archetype::Quadruped);
         StudioProject::template_by_archetype(arch)
-    } else {
-        return None;
     };
 
     if let Some(name) = flag_val("--name") {
@@ -272,6 +272,8 @@ struct StudioApp {
     confirm_overwrite_path: Option<PathBuf>,
     pending_activate: bool,
     status_msg: Option<(String, bool)>,
+    last_toasted_status: Option<String>,
+    toasts: ToastQueue,
 
     canvas_dirty: bool,
     sheet_dirty: bool,
@@ -348,6 +350,8 @@ impl Default for StudioApp {
                 "Welcome to DIYPets Studio V2 — pick a template, draw, or click Import 2D SVG!".to_string(),
                 false,
             )),
+            last_toasted_status: None,
+            toasts: ToastQueue::new(),
             canvas_dirty: true,
             sheet_dirty: true,
             tex_active: None,
@@ -1261,14 +1265,13 @@ impl StudioApp {
     }
 
     fn render_contact_sheet(&mut self, ui: &mut egui::Ui) {
-        if self.sheet_dirty || self.tex_sheet.is_none() {
-            if let Ok((sheet, _, _)) = self.project.build_export_artifacts() {
+        if (self.sheet_dirty || self.tex_sheet.is_none())
+            && let Ok((sheet, _, _)) = self.project.build_export_artifacts() {
                 let size = [sheet.width() as usize, sheet.height() as usize];
                 let ci = egui::ColorImage::from_rgba_unmultiplied(size, sheet.as_flat_samples().as_slice());
                 self.tex_sheet = Some(ui.ctx().load_texture("v2_sheet", ci, egui::TextureOptions::LINEAR));
                 self.sheet_dirty = false;
             }
-        }
         if let Some(tex) = &self.tex_sheet {
             ui.label(
                 egui::RichText::new("Exported Sprite Sheet (Walk 0-7 | Idle 8-9 | Sit 10-11 | Sleep 12-13 | Drag 14-15 | Fall/Land 16-17 | Climb 18-19 | Custom 20+)")
@@ -1287,6 +1290,17 @@ impl StudioApp {
 
 impl eframe::App for StudioApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        if let Some((msg, is_err)) = &self.status_msg
+            && self.last_toasted_status.as_deref() != Some(msg.as_str()) {
+                let text = msg.clone();
+                if *is_err {
+                    self.toasts.warn(text.clone());
+                } else {
+                    self.toasts.success(text.clone());
+                }
+                self.last_toasted_status = Some(text);
+            }
+
         let ctx = ui.ctx().clone();
         self.sync_canvas_textures(&ctx);
         if self.tab == StudioTab::Rig { self.sync_rig_composite(&ctx); }
@@ -1404,9 +1418,11 @@ impl eframe::App for StudioApp {
                     }
                     ui.separator();
                     if ui.button("Redo").clicked() {
+                        self.toasts.info("Redid stroke");
                         self.redo();
                     }
                     if ui.button("Undo").clicked() {
+                        self.toasts.info("Undid stroke");
                         self.undo();
                     }
                 });
@@ -1583,6 +1599,7 @@ impl eframe::App for StudioApp {
                             self.import_png_layer_dialog();
                         }
                         if ui.button("Clear Layer").clicked() {
+                            self.toasts.info("Cleared active layer");
                             self.push_undo();
                             self.active_buf_mut().fill([0, 0, 0, 0]);
                             self.mark_dirty();
@@ -1657,6 +1674,7 @@ impl eframe::App for StudioApp {
                     }
                     ui.horizontal(|ui| {
                         if ui.small_button("Flip H").clicked() {
+                                self.toasts.info("Flipped layer horizontally");
                             self.flip_selection_h();
                         }
                             if ui.small_button("Copy").clicked() {
@@ -1731,6 +1749,7 @@ impl eframe::App for StudioApp {
                     ui.add(egui::Slider::new(&mut self.project.wave_amplitude, 0.0..=10.0).text("Wave Slither"));
 
                     if ui.button("Auto-Align All Joints").clicked() {
+                            self.toasts.success("Auto-aligned all limb joints");
                         self.project.auto_fit_anchors();
                         self.sheet_dirty = true;
                     }
@@ -1843,13 +1862,16 @@ impl eframe::App for StudioApp {
                     ui.label(egui::RichText::new("Grab and toss your rigged pet onto the mini window ledge or drop a bouncy ball before exporting.").size(11.0).color(egui::Color32::GRAY));
                     ui.add_space(8.0);
                     if ui.button("Drop Bouncy Ball").clicked() {
+                        self.toasts.info("Dropped bouncy ball in Sandbox");
                         self.sb_ball = Some((260.0, 48.0, -140.0, -40.0));
                     }
                     if ui.button("Toss Pet Up").clicked() {
+                        self.toasts.info("Tossed pet in Sandbox");
                         self.sb_vy = -340.0;
                         self.sb_vx = if self.sb_facing_right { 130.0 } else { -130.0 };
                     }
                     if ui.button("Reset Position").clicked() {
+                        self.toasts.info("Reset pet position");
                         self.sb_x = 180.0;
                         self.sb_y = 80.0;
                         self.sb_vx = 85.0;
@@ -1989,8 +2011,8 @@ impl eframe::App for StudioApp {
                 self.sb_t += dt;
 
                 // Drag & toss interaction
-                if resp.drag_started() {
-                    if let Some(p) = resp.interact_pointer_pos() {
+                if resp.drag_started()
+                    && let Some(p) = resp.interact_pointer_pos() {
                         let local = p - rect.min;
                         if (local.x - (self.sb_x + pet_sz * 0.5)).abs() < 64.0
                             && (local.y - (self.sb_y + pet_sz * 0.5)).abs() < 64.0
@@ -1998,7 +2020,6 @@ impl eframe::App for StudioApp {
                             self.sb_dragging = true;
                         }
                     }
-                }
                 if self.sb_dragging {
                     if let Some(p) = resp.interact_pointer_pos() {
                         let local = p - rect.min;
@@ -2170,6 +2191,7 @@ impl eframe::App for StudioApp {
                     let kf_len = anim.keyframes.len();
                     ui.horizontal_wrapped(|ui| {
                         if ui.button("+ Duplicate Frame").clicked() {
+                        self.toasts.success("Duplicated costume frame");
                             let clone_kf = anim
                                 .keyframes
                                 .get(self.selected_keyframe)
@@ -2194,6 +2216,7 @@ impl eframe::App for StudioApp {
                             self.kf_thumbs_dirty = true;
                         }
                         if kf_len > 1 && ui.button("- Delete Frame").clicked() {
+                        self.toasts.info("Deleted frame");
                             let idx = self.selected_keyframe.min(kf_len - 1);
                             anim.keyframes.remove(idx);
                             self.selected_keyframe = idx.saturating_sub(1);
@@ -2248,7 +2271,7 @@ impl eframe::App for StudioApp {
                         kf_changed |= ui.add(egui::Slider::new(&mut kf.body_dy, -22.0..=16.0).text("Body Bounce Y")).changed();
                         kf_changed |= ui.add(egui::Slider::new(&mut kf.body_tilt_deg, -25.0..=25.0).text("Body Tilt deg")).changed();
                         kf_changed |= ui.add(egui::Slider::new(&mut kf.torso_scale_y, 0.75..=1.25).text("Squash / Stretch")).changed();
-                        kf_changed |= ui.add(egui::Slider::new(&mut kf.wave_phase, 0.0..=6.28).text("Slither / Swim Wave")).changed();
+                        kf_changed |= ui.add(egui::Slider::new(&mut kf.wave_phase, 0.0..=std::f32::consts::TAU).text("Slither / Swim Wave")).changed();
                         ui.horizontal_wrapped(|ui| {
                             ui.label("Face:");
                             for &slot in FaceSlot::all() {
@@ -2336,17 +2359,16 @@ impl eframe::App for StudioApp {
                     } else {
                         if self.tab == StudioTab::Animate && self.anim_onion_skin {
                             let uv_full = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
-                            if self.selected_keyframe > 0 {
-                                if let Some(prev_tex) = self.kf_thumbs.get(self.selected_keyframe - 1) {
+                            if self.selected_keyframe > 0
+                                && let Some(prev_tex) = self.kf_thumbs.get(self.selected_keyframe - 1) {
                                     painter.image(prev_tex.id(), rect, uv_full, egui::Color32::from_rgba_unmultiplied(255, 90, 90, 72));
                                 }
-                            }
                             if let Some(next_tex) = self.kf_thumbs.get(self.selected_keyframe + 1) {
                                 painter.image(next_tex.id(), rect, uv_full, egui::Color32::from_rgba_unmultiplied(90, 165, 255, 72));
                             }
                         }
-                        if self.show_onion_skin && self.edit_layer != EditLayer::Body {
-                            if let Some(ghost) = &self.tex_body_ghost {
+                        if self.show_onion_skin && self.edit_layer != EditLayer::Body
+                            && let Some(ghost) = &self.tex_body_ghost {
                                 painter.image(
                                     ghost.id(),
                                     rect,
@@ -2354,7 +2376,6 @@ impl eframe::App for StudioApp {
                                     egui::Color32::from_rgba_unmultiplied(255, 255, 255, 90),
                                 );
                             }
-                        }
                         if let Some(active) = &self.tex_active {
                             painter.image(active.id(), rect, uv, egui::Color32::WHITE);
                         }
@@ -2388,12 +2409,11 @@ impl eframe::App for StudioApp {
                                 painter.rect_stroke(egui::Rect::from_two_pos(p0, p1), 0.0, egui::Stroke::new(1.5, self.current_color), egui::StrokeKind::Middle);
                             }
                         }
-                        if let Some(hover) = response.hover_pos() {
-                            if matches!(self.tool, Tool::Brush | Tool::Eraser | Tool::Shade) {
+                        if let Some(hover) = response.hover_pos()
+                            && matches!(self.tool, Tool::Brush | Tool::Eraser | Tool::Shade) {
                                 let rad = (self.brush_size as f32 * 0.5 * scale).max(2.0);
                                 painter.circle_stroke(hover, rad, egui::Stroke::new(1.0, egui::Color32::WHITE));
                             }
-                        }
                     }
 
                     // Rigging pins overlay
@@ -2554,11 +2574,10 @@ impl eframe::App for StudioApp {
                                         self.sel_drag_start = Some((lx, ly));
                                         self.sel_rect = Some((lx, ly, lx, ly));
                                     }
-                                    if response.dragged() {
-                                        if let Some((sx, sy)) = self.sel_drag_start {
+                                    if response.dragged()
+                                        && let Some((sx, sy)) = self.sel_drag_start {
                                             self.sel_rect = Some((sx.min(lx), sy.min(ly), sx.max(lx), sy.max(ly)));
                                         }
-                                    }
                                     if response.drag_stopped() {
                                         self.sel_drag_start = None;
                                     }
@@ -2591,6 +2610,7 @@ impl eframe::App for StudioApp {
                 }
             }
         });
+            self.toasts.show(ui.ctx());
     }
 }
 

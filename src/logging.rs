@@ -73,7 +73,7 @@ pub fn cleanup_logs_in(dir: &Path, max_age: Duration, max_files: usize) -> usize
     }
 
     // Sort newest-first and prune anything beyond `max_files`
-    kept.sort_by(|a, b| b.0.cmp(&a.0));
+    kept.sort_by_key(|a| std::cmp::Reverse(a.0));
     if kept.len() > max_files {
         for (_, old_path) in kept.into_iter().skip(max_files) {
             if fs::remove_file(&old_path).is_ok() {
@@ -134,8 +134,9 @@ fn write_line(level: &str, msg: &str) {
     #[cfg(debug_assertions)]
     eprint!("{line}");
 
-    if let Some(lock) = LOGGER.get() {
-        if let Ok(mut state) = lock.lock() {
+    if let Some(lock) = LOGGER.get()
+        && let Ok(mut state) = lock.lock()
+    {
             if state.bytes_written > MAX_LOG_BYTES {
                 // Rotate in place by truncating once size cap is hit
                 if let Ok(f) = OpenOptions::new()
@@ -155,7 +156,6 @@ fn write_line(level: &str, msg: &str) {
                 let _ = state.file.flush();
                 state.bytes_written += line.len() as u64;
             }
-        }
     }
 }
 

@@ -22,8 +22,8 @@ fn stress_eight_simultaneous_pets_40000_physics_ticks() {
     }
     for arch in [Archetype::Bird, Archetype::Crawler, Archetype::Swimmer] {
         let proj = StudioProject::template_by_archetype(arch);
-        let (_, _, xml) = proj.build_export_artifacts().expect(arch.label());
-        let pack = DeskpetPack::parse(&xml).expect(arch.label());
+        let (_, _, xml) = proj.build_export_artifacts().unwrap_or_else(|_| panic!("{}", arch.label()));
+        let pack = DeskpetPack::parse(&xml).unwrap_or_else(|_| panic!("{}", arch.label()));
         states.push(DeskpetState::new(pack));
     }
     assert_eq!(states.len(), MAX_ACTIVE_PETS);
@@ -115,10 +115,12 @@ fn stress_settings_concurrent_atomic_read_write() {
         let p = Arc::clone(&path);
         handles.push(std::thread::spawn(move || {
             for i in 0..40u32 {
-                let mut s = Settings::default();
-                s.pet_size = 48 + ((t * 32 + i) % 180);
-                s.walk_speed = 1 + ((t + i) % 20) as i32;
-                s.extra_pets = vec!["dog".to_string(); (i % 4) as usize];
+                let s = Settings {
+                    pet_size: 48 + ((t * 32 + i) % 180),
+                    walk_speed: 1 + ((t + i) % 20) as i32,
+                    extra_pets: vec!["dog".to_string(); (i % 4) as usize],
+                    ..Default::default()
+                };
                 let _ = s.save(&p);
             }
         }));

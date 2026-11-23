@@ -115,8 +115,8 @@ mod tests {
             }
         }
         let rot = rotsprite_rgba(&src, 16, 16, 8.0, 8.0, 0.35);
-        let opaque_count = rot.chunks_exact(4).filter(|p| p[3] == 255).count();
-        let semi_count = rot.chunks_exact(4).filter(|p| p[3] > 0 && p[3] < 255).count();
+        let opaque_count = rot.as_chunks::<4>().0.iter().filter(|p| p[3] == 255).count();
+        let semi_count = rot.as_chunks::<4>().0.iter().filter(|p| p[3] > 0 && p[3] < 255).count();
         assert!(opaque_count >= 24, "rotated square should retain solid area");
         assert_eq!(semi_count, 0, "RotSprite must produce 0 blurred semi-alpha pixels");
     }

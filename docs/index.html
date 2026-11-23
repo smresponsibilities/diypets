@@ -554,11 +554,11 @@ function copyCode() {
 }
 
 const PACKS = [
-  { no: "001", id: "highland_cow", name: "Highland Cow", type: "FIRE", color: "#ee8130" },
-  { no: "002", id: "dog",          name: "Dog",          type: "GROUND", color: "#e2bf65" },
-  { no: "003", id: "polar_bear",   name: "Polar Bear",   type: "ICE", color: "#96d9d6" },
-  { no: "004", id: "goat",         name: "Goat",         type: "NORMAL", color: "#a8a77a" },
-  { no: "005", id: "stegosaurus",  name: "Stegosaurus",  type: "GRASS", color: "#7ac74c" }
+  { no: "001", id: "highland_cow", name: "Highland Cow", type: "FIRE", color: "#ee8130" , vertClimb: true },
+  { no: "002", id: "dog",          name: "Dog",          type: "GROUND", color: "#e2bf65" , vertClimb: true },
+  { no: "003", id: "polar_bear",   name: "Polar Bear",   type: "ICE", color: "#96d9d6" , vertClimb: true },
+  { no: "004", id: "goat",         name: "Goat",         type: "NORMAL", color: "#a8a77a" , vertClimb: false },
+  { no: "005", id: "stegosaurus",  name: "Stegosaurus",  type: "GRASS", color: "#7ac74c" , vertClimb: false }
 ];
 
 const sprites = {};
@@ -760,7 +760,7 @@ PACKS.forEach((pk, idx) => {
   }
 
   img.onload = () => {
-    const fw = Math.floor(img.width / 5);
+    const fw = Math.floor(img.width / 9);
     const fh = img.height;
     const pCanvas = document.getElementById(`prev-${pk.id}`);
     if (pCanvas) {
@@ -990,10 +990,18 @@ function loop(now) {
       }
     }
 
+    const meta = PACKS.find(pk => pk.id === p.id);
     const isMoving = p.climbing !== 0 || Math.abs(p.vx) > 4;
     if (isMoving) {
-      p.frameT += dt * (p.climbing !== 0 ? 5.5 : (petSpeed * 1.8));
-      if (p.frameT >= 1) { p.frame = (p.frame < 1 || p.frame >= 4) ? 1 : (p.frame + 1); p.frameT = 0; }
+      p.frameT += dt * (p.climbing !== 0 ? 6.0 : (petSpeed * 1.8));
+      if (p.frameT >= 1) {
+        if (p.climbing !== 0 && meta && meta.vertClimb) {
+          p.frame = (p.frame < 5 || p.frame >= 8) ? 5 : (p.frame + 1);
+        } else {
+          p.frame = (p.frame < 1 || p.frame >= 4) ? 1 : (p.frame + 1);
+        }
+        p.frameT = 0;
+      }
     } else {
       p.frame = 0;
       p.frameT = 0;
@@ -1001,7 +1009,7 @@ function loop(now) {
 
     const img = sprites[p.id];
     if (img && img.complete && img.width > 0) {
-      const fw = img.width / 5, fh = img.height;
+      const fw = img.width / 9, fh = img.height;
       const breath = (!p.airborne && Math.abs(p.vx) < 5) ? Math.sin(now * 0.004) * 0.02 : 0;
       const dw = petSize * (p.sqX - breath * 0.5);
       const dh = petSize * (p.sqY + breath);
@@ -1010,13 +1018,24 @@ function loop(now) {
 
       ctx.save();
       if (p.climbing !== 0) {
-        // Rotate 90 deg so feet actually grip the left/right screen wall while climbing!
+        const useVert = meta && meta.vertClimb;
+        const fDraw = useVert ? (p.frame >= 5 && p.frame <= 8 ? p.frame : 5) : (p.frame >= 1 && p.frame <= 4 ? p.frame : 1);
         const cx = drawX + dw * 0.5;
         const cy = drawY + dh * 0.5;
         ctx.translate(cx, cy);
-        ctx.rotate(p.climbing < 0 ? Math.PI * 0.5 : -Math.PI * 0.5);
-        if (p.climbing > 0) ctx.scale(-1, 1);
-        ctx.drawImage(img, p.frame * fw, 0, fw, fh, -dw * 0.5, -dh * 0.5, dw, dh);
+        if (useVert) {
+          // Dedicated vertical climb animation: keep upright, mirror horizontally to grip left vs right wall
+          if (p.climbing > 0) ctx.scale(-1, 1);
+        } else {
+          // Walk-based climb fallback: rotate 90 deg so feet press into wall & head points UP
+          if (p.climbing < 0) {
+            ctx.rotate(Math.PI * 0.5);
+          } else {
+            ctx.rotate(-Math.PI * 0.5);
+            ctx.scale(-1, 1);
+          }
+        }
+        ctx.drawImage(img, fDraw * fw, 0, fw, fh, -dw * 0.5, -dh * 0.5, dw, dh);
       } else if (p.dir > 0) {
         ctx.translate(drawX + dw, drawY);
         ctx.scale(-1, 1);

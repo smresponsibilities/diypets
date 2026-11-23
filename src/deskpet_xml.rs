@@ -284,10 +284,10 @@ impl DeskpetPack {
                     .children()
                     .filter(|n| n.tag_name().name().eq_ignore_ascii_case("Frame"))
                 {
-                    if let Some(text) = frame_node.text() {
-                        if let Ok(f) = text.trim().parse::<u32>() {
-                            sequence.push(f);
-                        }
+                    if let Some(text) = frame_node.text()
+                        && let Ok(f) = text.trim().parse::<u32>()
+                    {
+                        sequence.push(f);
                     }
                 }
 

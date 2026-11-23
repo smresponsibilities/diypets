@@ -1981,8 +1981,8 @@ mod tests {
         for &arch in Archetype::all() {
             let mut proj = StudioProject::template_by_archetype(arch);
             proj.custom_animations.push(CustomAnimation::dance_preset());
-            let (_sheet, _icon, xml) = proj.build_export_artifacts().expect(arch.label());
-            let pack = DeskpetPack::parse(&xml).expect(arch.label());
+            let (_sheet, _icon, xml) = proj.build_export_artifacts().unwrap_or_else(|e| panic!("{}: {e:?}", arch.label()));
+            let pack = DeskpetPack::parse(&xml).unwrap_or_else(|e| panic!("{}: {e:?}", arch.label()));
             assert!(pack.frames.len() >= 24);
             assert!(pack.animations.contains_key("1"));
             assert!(pack.animations.contains_key("19"));

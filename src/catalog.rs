@@ -107,10 +107,10 @@ pub fn download_pack(entry: &CatalogEntry) -> Result<PathBuf, String> {
 pub fn download_and_cache_icon(entry: &CatalogEntry) -> Option<image::RgbaImage> {
     let cache_dir = thumb_cache_dir();
     let cached = cache_dir.join(format!("{}_v2.png", entry.id));
-    if cached.is_file() {
-        if let Ok(img) = image::open(&cached) {
-            return Some(img.to_rgba8());
-        }
+    if cached.is_file()
+        && let Ok(img) = image::open(&cached)
+    {
+        return Some(img.to_rgba8());
     }
 
     let agent = http_agent();

@@ -8,6 +8,7 @@ use diypets::catalog::{
     open_folder_in_os, strip_chroma_key_if_opaque,
 };
 use diypets::deskpet_xml::DeskpetPack;
+use diypets::ui_toast::ToastQueue;
 use diypets::settings::{
     MAX_ACTIVE_PETS, PET_SIZE_MAX, PET_SIZE_MIN, Settings, WALK_SPEED_MAX, WALK_SPEED_MIN,
     catalog_icons_dir, find_pack_icon, find_pack_xml, pack_search_dirs, resolve_project_root,
@@ -215,21 +216,19 @@ fn load_best_thumbnail(
 
     if let Some(icons_dir) = catalog_icons_dir() {
         let bundled_icon = icons_dir.join(format!("{id}.png"));
-        if bundled_icon.is_file() {
-            if let Some(img) = load_square_thumbnail(&bundled_icon) {
+        if bundled_icon.is_file()
+            && let Some(img) = load_square_thumbnail(&bundled_icon) {
                 return Some(img);
             }
-        }
     }
 
     let cached_path = cache_dir.join(format!("{id}_v2.png"));
     if let Some(dir) = pack_dir {
         let xml_path = dir.join("deskpet.xml");
-        if cached_path.is_file() && cache_is_fresh(&cached_path, &xml_path) {
-            if let Some(img) = load_square_thumbnail(&cached_path) {
+        if cached_path.is_file() && cache_is_fresh(&cached_path, &xml_path)
+            && let Some(img) = load_square_thumbnail(&cached_path) {
                 return Some(img);
             }
-        }
         if let Some(thumb) = extract_xml_tile0_thumbnail(&xml_path)
             .or_else(|| load_square_thumbnail(&dir.join("strip.png")))
         {
@@ -237,11 +236,10 @@ fn load_best_thumbnail(
             let _ = thumb.save(&cached_path);
             return Some(thumb);
         }
-    } else if cached_path.is_file() {
-        if let Some(img) = load_square_thumbnail(&cached_path) {
+    } else if cached_path.is_file()
+        && let Some(img) = load_square_thumbnail(&cached_path) {
             return Some(img);
         }
-    }
 
     if let Some(entry) = catalog_entry {
         return download_and_cache_icon(entry);
@@ -250,11 +248,10 @@ fn load_best_thumbnail(
 }
 
 fn load_startup_icon(active_pack: &str) -> Option<Arc<egui::IconData>> {
-    if let Some(icon_path) = find_pack_icon(active_pack) {
-        if let Ok(img) = image::open(&icon_path) {
+    if let Some(icon_path) = find_pack_icon(active_pack)
+        && let Ok(img) = image::open(&icon_path) {
             return Some(rgba_to_egui_icon(&img.to_rgba8()));
         }
-    }
     default_app_icon(64).map(|sq| {
         Arc::new(egui::IconData {
             rgba: sq.into_raw(),
@@ -379,7 +376,7 @@ fn load_gallery(mut add: impl FnMut(PetPreview) + Send) {
                     let (n, a) = read_xml_metadata_fast(&xml_path, &id);
                     let cat = classify_local_pack(&id, dir, &a);
                     let kb = std::fs::metadata(&xml_path)
-                        .map(|m| (m.len() + 1023) / 1024)
+                        .map(|m| m.len().div_ceil(1024))
                         .ok();
                     (n, a, cat, kb)
                 } else {
@@ -459,6 +456,7 @@ fn apply_settings_theme(ctx: &egui::Context) {
 }
 
 struct MyApp {
+    toasts: ToastQueue,
     tab: SettingsTab,
     settings: Settings,
     path: PathBuf,
@@ -528,6 +526,7 @@ impl MyApp {
         .to_string();
 
         Self {
+            toasts: ToastQueue::new(),
             tab: SettingsTab::Gallery,
             icon_pack: settings.pet_pack.clone(),
             settings,
@@ -659,11 +658,10 @@ impl MyApp {
     }
 
     fn launch_sibling(slot: &mut Option<std::process::Child>, stem: &str) {
-        if let Some(child) = slot.as_mut() {
-            if matches!(child.try_wait(), Ok(None)) {
+        if let Some(child) = slot.as_mut()
+            && matches!(child.try_wait(), Ok(None)) {
                 return;
             }
-        }
         if let Some(exe) = sibling_binary(stem) {
             let mut cmd = std::process::Command::new(exe);
             cmd.current_dir(resolve_project_root());
@@ -723,7 +721,7 @@ impl MyApp {
                         let (name, author) = read_xml_metadata_fast(&xml_path, &id);
                         let category = classify_local_pack(&id, &path, &author);
                         let size_kb = std::fs::metadata(&xml_path)
-                            .map(|m| (m.len() + 1023) / 1024)
+                            .map(|m| m.len().div_ceil(1024))
                             .ok();
                         let rgba_preview = load_best_thumbnail(&id, Some(&path), None, &cache_dir);
                         self.pets.push(PetPreview {
@@ -926,11 +924,10 @@ impl eframe::App for MyApp {
                         changed = true;
                     }
                 }
-                Some("svg") => {
-                    if self.import_svg_path(&path) {
+                Some("svg")
+                    if self.import_svg_path(&path) => {
                         changed = true;
                     }
-                }
                 _ => {}
             }
         }
@@ -972,8 +969,8 @@ impl eframe::App for MyApp {
         self.scan_for_new_local_pets();
 
         for pet in &mut self.pets {
-            if pet.texture.is_none() {
-                if let Some(rgba) = &pet.rgba_preview {
+            if pet.texture.is_none()
+                && let Some(rgba) = &pet.rgba_preview {
                     let img = rgba_to_color_image(rgba);
                     let tex_opts = if img.size[0].max(img.size[1]) >= 80 {
                         egui::TextureOptions::LINEAR
@@ -982,7 +979,6 @@ impl eframe::App for MyApp {
                     };
                     pet.texture = Some(ui.ctx().load_texture(&pet.id, img, tex_opts));
                 }
-            }
         }
 
         let mut open_creator = false;
@@ -1032,11 +1028,13 @@ impl eframe::App for MyApp {
                         open_creator = true;
                     }
                     if ui.button("Import .xml / .svg").clicked() {
+                    self.toasts.info("Select a .xml pack or .svg file to import");
                         if self.import_xml_dialog() {
                             changed = true;
                         }
                     }
                     if ui.button("Launch Pet").on_hover_text("Start the desktop pet runner").clicked() {
+                    self.toasts.success("Launching DIYPets on desktop");
                         launch_runner = true;
                     }
                 });
@@ -1211,6 +1209,7 @@ impl eframe::App for MyApp {
                                 if !self.settings.extra_pets.is_empty()
                                     && ui.button("Clear All Extras").clicked()
                                 {
+                            self.toasts.info("Cleared extra herd pets");
                                     self.settings.extra_pets.clear();
                                     changed = true;
                                 }
@@ -1245,6 +1244,7 @@ impl eframe::App for MyApp {
                                                 "Main Pet",
                                             );
                                         } else if ui.small_button("Dismiss").clicked() {
+                                self.toasts.info("Dismissed pet from herd");
                                             remove_extra_idx = Some(slot - 1);
                                         }
                                     });
@@ -1335,9 +1335,11 @@ impl eframe::App for MyApp {
                             ui.add_space(6.0);
                             ui.horizontal(|ui| {
                                 if ui.button("Open Packs Folder").clicked() {
+                    self.toasts.info("Opened local packs folder");
                                     open_folder_in_os(&user_packs_dir());
                                 }
                                 if ui.button("Open Project GitHub").clicked() {
+                    self.toasts.info("Opening GitHub repository");
                                     ui.ctx().open_url(egui::OpenUrl::new_tab(
                                         "https://github.com/smresponsibilities/diypets",
                                     ));
@@ -1409,8 +1411,8 @@ impl eframe::App for MyApp {
         if launch_runner {
             Self::launch_sibling(&mut self.runner_process, "diypets");
         }
-        if let Some(add_id) = to_add_extra {
-            if self.settings.add_extra_pet(&add_id) {
+        if let Some(add_id) = to_add_extra
+            && self.settings.add_extra_pet(&add_id) {
                 changed = true;
                 self.status_banner = Some((
                     format!(
@@ -1420,7 +1422,6 @@ impl eframe::App for MyApp {
                     false,
                 ));
             }
-        }
         if let Some(entry) = to_download {
             self.start_download(entry, ui.ctx().clone());
         }
@@ -1444,20 +1445,17 @@ impl eframe::App for MyApp {
             }
         }
 
-        if self.icon_pack != self.settings.pet_pack {
-            if let Some(pet) = self.pets.iter().find(|p| p.id == self.settings.pet_pack) {
-                if let Some(icon) = pet.window_icon() {
+        if self.icon_pack != self.settings.pet_pack
+            && let Some(pet) = self.pets.iter().find(|p| p.id == self.settings.pet_pack)
+                && let Some(icon) = pet.window_icon() {
                     ui.ctx()
                         .send_viewport_cmd(egui::ViewportCommand::Icon(Some(icon)));
                     self.icon_pack = pet.id.clone();
                 }
-            }
-        }
-        if changed {
-            if let Err(e) = self.settings.save(&self.path) {
+        if changed
+            && let Err(e) = self.settings.save(&self.path) {
                 eprintln!("Failed to save settings: {}", e);
             }
-        }
 
         ui.ctx().request_repaint_after(REFRESH_INTERVAL);
     }
@@ -1500,7 +1498,7 @@ mod tests {
         for pet in pets {
             let icon = pet.window_icon().expect(&pet.id);
             assert_eq!((icon.width, icon.height), (64, 64));
-            assert!(icon.rgba.chunks_exact(4).any(|p| p[3] != 0), "{}", pet.id);
+            assert!(icon.rgba.as_chunks::<4>().0.iter().any(|p| p[3] != 0), "{}", pet.id);
         }
     }
 

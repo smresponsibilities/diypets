@@ -289,8 +289,8 @@ mod tests {
     #[test]
     fn speech_bubble_renders_opaque_box_and_handles_long_or_empty_text() {
         let (w, h, px) = render_speech_bubble_argb("Tests passed! 86/86");
-        assert!(w >= 64 && w <= 340);
-        assert!(h >= 40 && h <= 104);
+        assert!((64..=340).contains(&w));
+        assert!((40..=104).contains(&h));
         assert_eq!(px.len(), (w * h) as usize);
         assert!(px.iter().any(|&p| (p >> 24) == 255));
         assert_eq!(px[0], 0, "rounded corner should remain transparent");

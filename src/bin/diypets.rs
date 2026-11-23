@@ -104,22 +104,19 @@ mod scaling_tests {
 }
 
 fn load_pack(pack_id: &str) -> DeskpetPack {
-    if let Some(xml_path) = find_pack_xml(pack_id) {
-        if let Ok(xml_data) = std::fs::read_to_string(&xml_path) {
-            if let Ok(pack) = DeskpetPack::parse(&xml_data) {
+    if let Some(xml_path) = find_pack_xml(pack_id)
+        && let Ok(xml_data) = std::fs::read_to_string(&xml_path)
+            && let Ok(pack) = DeskpetPack::parse(&xml_data) {
                 return pack;
             }
-        }
-    }
     DeskpetPack::parse(DEFAULT_XML_DATA).unwrap()
 }
 
 fn pet_icon(id: &str, pack: &DeskpetPack) -> Option<image::RgbaImage> {
-    if let Some(icon_path) = find_pack_icon(id) {
-        if let Ok(img) = image::open(&icon_path) {
+    if let Some(icon_path) = find_pack_icon(id)
+        && let Ok(img) = image::open(&icon_path) {
             return Some(make_square_app_icon(&img.to_rgba8(), 64));
         }
-    }
     if let Some(first) = pack.frames.first() {
         let rgba: Vec<u8> = first
             .iter()
@@ -669,7 +666,7 @@ impl ToyBallOverlay {
             Some(surf)
         };
 
-        let vx = if (now_ms % 2) == 0 { 6.0 } else { -6.0 };
+        let vx = if now_ms.is_multiple_of(2) { 6.0 } else { -6.0 };
         Some(Self {
             window,
             #[cfg(windows)]
@@ -829,11 +826,10 @@ struct DeskpetApp {
 
 impl DeskpetApp {
     fn spawn_sibling(slot: &mut Option<std::process::Child>, binary_stem: &str) {
-        if let Some(child) = slot.as_mut() {
-            if matches!(child.try_wait(), Ok(None)) {
+        if let Some(child) = slot.as_mut()
+            && matches!(child.try_wait(), Ok(None)) {
                 return;
             }
-        }
         if let Some(exe) = sibling_binary(binary_stem) {
             let mut cmd = std::process::Command::new(exe);
             cmd.current_dir(resolve_project_root());
@@ -894,7 +890,7 @@ impl DeskpetApp {
         if slot_index > 0 {
             state.x = 180.0 + ((slot_index as f32 * 190.0) % 980.0);
             state.y = 40.0 + ((slot_index as f32 * 45.0) % 180.0);
-            state.is_moving_left = slot_index % 2 == 0;
+            state.is_moving_left = slot_index.is_multiple_of(2);
         }
 
         let scaled_w = state.pet_size;
@@ -1009,14 +1005,13 @@ impl DeskpetApp {
             if self.pets[i].pack_id != wanted {
                 let pack = load_pack(&wanted);
                 if let Some(img) = pet_icon(&wanted, &pack) {
-                    if i == 0 {
-                        if let Some(tray) = &self.tray {
+                    if i == 0
+                        && let Some(tray) = &self.tray {
                             let icon =
                                 TrayIconImage::from_rgba(img.to_vec(), img.width(), img.height())
                                     .ok();
                             let _ = tray.set_icon(icon);
                         }
-                    }
                     self.pets[i].window.set_window_icon(
                         winit::window::Icon::from_rgba(img.to_vec(), img.width(), img.height())
                             .ok(),
@@ -1193,8 +1188,8 @@ impl DeskpetApp {
                         pet.state.set_state(DeskpetStateId::Custom("1".to_string()));
                     }
                 }
-                "spawn" => {
-                    if self.desired_herd.len() < MAX_ACTIVE_PETS {
+                "spawn"
+                    if self.desired_herd.len() < MAX_ACTIVE_PETS => {
                         let id = cmd.pack_id.unwrap_or_else(|| {
                             self.desired_herd
                                 .first()
@@ -1207,7 +1202,6 @@ impl DeskpetApp {
                         self.sync_herd(event_loop, now_ms);
                         self.persist_current_settings();
                     }
-                }
                 _ => {}
             }
         }
@@ -1479,8 +1473,8 @@ impl DeskpetApp {
                     }
                 }
             }
-        } else if self.follow_cursor {
-            if let Some((cx, _cy)) = platform::global_cursor_pos() {
+        } else if self.follow_cursor
+            && let Some((cx, _cy)) = platform::global_cursor_pos() {
                 for pet in &mut self.pets {
                     if pet.is_dragging || pet.state.current_anim_id == "13" {
                         continue;
@@ -1497,7 +1491,6 @@ impl DeskpetApp {
                     }
                 }
             }
-        }
     }
 }
 
@@ -1593,12 +1586,11 @@ impl ApplicationHandler for DeskpetApp {
             let mut builder = TrayIconBuilder::new()
                 .with_tooltip("DIYPets")
                 .with_menu(Box::new(menu));
-            if let Some(img) = &image {
-                if let Ok(icon) = TrayIconImage::from_rgba(img.to_vec(), img.width(), img.height())
+            if let Some(img) = &image
+                && let Ok(icon) = TrayIconImage::from_rgba(img.to_vec(), img.width(), img.height())
                 {
                     builder = builder.with_icon(icon);
                 }
-            }
             self.tray = builder.build().map_err(|e| eprintln!("Tray icon: {e}")).ok();
         }
 
@@ -1936,8 +1928,7 @@ impl ApplicationHandler for DeskpetApp {
                                                     let hid = hwnd.0 as isize;
                                                     if let Some((old_h, ox, oy)) =
                                                         pet.standing_window
-                                                    {
-                                                        if old_h == hid {
+                                                        && old_h == hid {
                                                             let dx = rect.left - ox;
                                                             let dy = rect.top - oy;
                                                             if dx.abs() < 300 && dy.abs() < 300 {
@@ -1945,7 +1936,6 @@ impl ApplicationHandler for DeskpetApp {
                                                                 pet.state.y += dy as f32;
                                                             }
                                                         }
-                                                    }
                                                     pet.standing_window =
                                                         Some((hid, rect.left, rect.top));
                                                 }
@@ -2181,12 +2171,11 @@ impl ApplicationHandler for DeskpetApp {
 
                     let show_hearts = now < pet.heart_until_ms;
                     let present_buf = if show_hearts {
-                        if use_cache {
-                            if let Some(cached) = pet.frame_cache.get(&cache_key) {
+                        if use_cache
+                            && let Some(cached) = pet.frame_cache.get(&cache_key) {
                                 pet.scaled_buf.clear();
                                 pet.scaled_buf.extend_from_slice(cached);
                             }
-                        }
                         let rem = pet.heart_until_ms.saturating_sub(now) as f32;
                         let prog = (1.0 - (rem / 2200.0)).clamp(0.0, 1.0);
                         stamp_hearts_argb(&mut pet.scaled_buf, scaled_w, scaled_h, prog);

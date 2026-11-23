@@ -124,7 +124,7 @@ pub fn detect_herd_encounter(
     if !approaching {
         return None;
     }
-    if seed % 2 == 0 {
+    if seed.is_multiple_of(2) {
         Some(HerdEncounter::Greet)
     } else {
         Some(HerdEncounter::BumpTurn)
@@ -156,6 +156,7 @@ impl DeskpetStateId {
         }
     }
 
+    #[allow(clippy::inherent_to_string)]
     pub fn to_string(&self) -> String {
         match self {
             Self::Drag => "drag".to_string(),
@@ -301,6 +302,7 @@ impl DeskpetState {
         state
     }
 
+    #[allow(clippy::result_unit_err)]
     pub fn eval_math(&self, expr: &str) -> Result<f64, ()> {
         let mut rng = rand::thread_rng();
         let random = rng.gen_range(0..100);
@@ -559,10 +561,11 @@ impl DeskpetState {
         }
         self.elapsed_in_frame -= interval_u;
 
-        if !self.is_tossing {
-            if anim.action == "flip" && self.sequence_index + 1 >= self.current_total_steps {
-                self.is_moving_left = !self.is_moving_left;
-            }
+        if !self.is_tossing
+            && anim.action == "flip"
+            && self.sequence_index + 1 >= self.current_total_steps
+        {
+            self.is_moving_left = !self.is_moving_left;
         }
 
         self.sequence_index += 1;

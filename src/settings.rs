@@ -418,8 +418,8 @@ mod tests {
 
     #[test]
     fn herd_clamps_to_max_and_strips_unsafe_paths() {
-        let mut s = Settings::default();
-        s.extra_pets = vec![
+        let s = Settings {
+            extra_pets: vec![
             "../bad".to_string(),
             "dog".to_string(),
             "goat".to_string(),
@@ -430,7 +430,9 @@ mod tests {
             "neko".to_string(),
             "extra_overflow".to_string(),
             "extra_overflow_2".to_string(),
-        ];
+        ],
+            ..Default::default()
+        };
         let clean = s.sanitized();
         assert_eq!(clean.active_herd().len(), MAX_ACTIVE_PETS);
         assert!(!clean.extra_pets.iter().any(|p| p.contains("..")));

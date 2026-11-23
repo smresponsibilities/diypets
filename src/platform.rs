@@ -51,6 +51,7 @@ pub fn global_cursor_pos() -> Option<(f32, f32)> {
 
 /// Detect whether another non-desktop foreground window covers an entire monitor (fullscreen game/video).
 /// Pure decision logic for fullscreen auto-hide (unit-tested against maximized & popup false positives).
+#[allow(clippy::too_many_arguments)]
 pub fn should_auto_hide_fullscreen(
     is_own: bool,
     is_iconic: bool,
@@ -163,7 +164,7 @@ pub fn is_fullscreen_app_active(own_hwnds: &[isize], monitors: &[(i32, i32, i32,
             return false;
         }
 
-        return should_auto_hide_fullscreen(
+        should_auto_hide_fullscreen(
             false,
             false,
             false,
@@ -173,7 +174,7 @@ pub fn is_fullscreen_app_active(own_hwnds: &[isize], monitors: &[(i32, i32, i32,
             &class_name,
             (rect.left, rect.top, rect.right, rect.bottom),
             monitors,
-        );
+        )
     }
 }
 
