@@ -1,30 +1,49 @@
-# DIYPets Engineering Tickets
+# DIYPets Engineering Roadmap & Tickets
 
-## P0 — Immediate Quality & Stability
-- [x] **T-001: Redraw Goat Mascot Properly (`assets/goat/deskpet.xml`)**
-  - Stop patching bad raster art with pixel heuristics. Build a clean native 32x32 pixel-art Goat rig matching Highland Cow & Dog (symmetric round dark eyes with 2x2 catchlights, clean 1px `#181216` outline, curved horns, hooves) and export all animation states + `catalog_icons/goat.png` + `docs/sprites/goat.png` + `docs/og-image.png`.
-- [x] **T-002: Calibrate True Snappy Default Speed & Size (`src/settings.rs` + `src/deskpet_state.rs`)**
-  - Fix slow-motion walk cadence and velocity curve (`walk_speed` range & frame-interval scaling), align `DEFAULT_PET_SIZE` / `DEFAULT_WALK_SPEED`, and update unit tests (`defaults_are_inside_supported_ranges`, `saved_file_is_plain_toml_with_comment`).
-- [x] **T-003: Win32 Layered Visibility & Fullscreen Auto-Hide Regression Suite**
-  - Unit tests for `should_auto_hide_fullscreen` and `sanitize_layered_window_styles` + rotating 7-day file logger (`src/logging.rs`).
+## P0 — Immediate Quality, UX Feedback & Polish
+- [x] **T-001: Goat Eye & Horn-Gap Cleanup + Automated GIF Visual Validation**
+  - Compact 4x6 dark pupils + 2x2 catchlights on original 56-frame Goat; automated `scripts/validate_sprites.py` + CI artifact workflow.
+- [ ] **T-002: Action Feedback Toasts & Scratch-Style Beginner Tips (`src/ui_toast.rs` -> `diypets-settings` & `diypets-creator`)** *(IN PROGRESS: shared `ToastQueue` + `tip_banner` landed; wiring all GUI buttons next)*
+  - Every button click (`Save`, `Apply`, `Export`, `Auto-Outline`, `Duplicate Frame`, `Reset`, `Install Pack`) triggers an immediate corner confirmation toast + contextual beginner tips so users never feel overwhelmed.
+- [x] **T-003: Win32 Layered Visibility Regression Suite, Rotating Logger & `diypets doctor`**
+  - Unit tests for `should_auto_hide_fullscreen` and `sanitize_layered_window_styles`, 7-day rotating logger (`src/logging.rs`), `build.rs` fingerprint metadata, and `diypets doctor`.
 
-## P1 — Pro 8-Bit Editor & Intelligent Sprite Ingestion (`v0.4.0` / Studio V5)
+## P1 — Scratch-Simple Studio, JuiceFX Auto-Animator & 8-Bit Ingestion (`v0.4.0` / Studio V5)
 - [ ] **T-004: Intelligent 8-Bit Sprite Sheet Importer (Auto-Detect + User-Guided Fallback)**
-  - Ingest any PNG, GIF, JPG, Aseprite/TexturePacker JSON, or packed RPG/SNES sprite sheet.
-  - Auto-pipeline: chroma-key solid background removal -> native pixel-grid scale detection (removes blurry AI mixels/anti-aliasing) -> 3 slicing modes (**Auto Grid Gutters**, **Connected-Components Auto-Box**, and **User-Guided Draggable Grid/Box Fallback**) -> bottom-center foot-baseline alignment -> automatic state bucketing (`Walk`, `Idle`, `Sleep`, `Fall`, `Drag`) with manual click-to-reassign timeline.
-- [ ] **T-005: True 8-Bit Pixel Editor Core (`diypets-creator`)**
-  - **Native Grid Canvas Selector:** Draw at authentic 16x16 / 24x24 / 32x32 / 48x48 / 64x64 grids (integer-upscaled cleanly on export) with a floating **1:1 Taskbar-Size Live Preview** window.
-  - **Indexed Palette Mode & Lospec Presets:** 16/32-color indexed swatches (PICO-8, Endesga-32, Game Boy, NES) where editing a swatch live-recolors every frame + 5-step hue-shifted ramp generator.
-  - **Pixel-Perfect Brush & Ordered Dithering:** Aseprite-style L-double removal on 1px curves + 2x2 / 4x4 Bayer dithering brush.
-- [ ] **T-006: Dope Sheet Timing, Pose-to-Pose Inbetweening & 1-Click GIF / `.aseprite` Support**
-  - Per-frame `ms` durations + easing curves (`Linear`, `Ease-In-Out`, `Bounce`), keyframe auto-inbetweening, direct `.ase`/`.aseprite` file import, and 1-click transparent GIF export.
-- [ ] **T-007: Real Photo -> Desktop Pet ("Snap Your Real Pet")**
-  - Lazy-download `u2netp.onnx` (4.6 MB) on first use via `ort` for offline foreground cutout -> k-means 12–16 color 8-bit pixelizer + Auto-Outline -> geometric auto-rigging into `deskpet.xml`.
+  - Ingest any PNG, GIF, JPG, Aseprite/TexturePacker JSON, or packed RPG/SNES sheet: corner chroma-key -> native pixel-block scale detection -> 3 slicing modes (**Auto Grid Gutters**, **Connected-Components Auto-Box**, **Draggable Manual Grid/Box Fallback**) -> locked bottom-center foot anchor -> auto state bucketing (`Idle`, `Walk`, `Sleep`, `Fall`, `Drag`).
+- [ ] **T-005: Scratch-Style "Costumes" Flipbook & JuiceFX 1-Click Auto-Animator**
+  - Visual numbered **Costumes** strip with visible **Foot Crosshair**, 1-click **Duplicate & Tweak**, plus JuiceFX/PixelOver-style procedural presets (**Auto-Walk Bounce**, **Idle Breathing**, **Tail/Ear Wave**, **Squash Hop**, **Smear**) so a single static sprite animates in 30 seconds.
+- [ ] **T-006: True 8-Bit Pixel Editor Core (`diypets-creator`)**
+  - Native low-res grid selector (`16x16`, `24x24`, `32x32`, `48x48`, `64x64`) + floating **1:1 Taskbar Live Preview**, **Indexed Palette Mode** (PICO-8, Endesga-32, Game Boy, NES live recoloring), **Pixel-Perfect Brush** (L-double removal), and **2x2 / 4x4 Ordered Bayer Dithering**.
+- [ ] **T-007: 1-Click Shareable GIF Exporter & Direct `.aseprite` Importer**
+  - Export any animation loop directly to a transparent or themed `.gif` inside Studio for instant posting on X/Reddit/Discord; import `.ase`/`.aseprite` files with automatic tag mapping.
+- [ ] **T-008: Real Photo -> Desktop Pet ("Snap Your Real Pet")**
+  - Lazy-download `u2netp.onnx` (4.6 MB) via `ort` for local foreground cutout -> 12-16 color 8-bit pixelizer + Auto-Outline -> geometric auto-rigging into `deskpet.xml`.
 
-## P2 — Desktop Delight & Ecosystem (`v0.5.0`)
-- [ ] **T-008: Audio-Reactive Beat Bounce Mode**
+## P2 — Coding-Agent Ecosystem, IDE Awareness & Viral Reactivity (`v0.5.0`)
+- [ ] **T-009: 1-Click Coding-Agent Hooks (`diypets hooks install claude-code / cursor / codex`)**
+  - Zero-config hooks so pets automatically show *Thinking*, *Build Passed!*, *Tests Failed*, or *Token Burst* reactions during Claude Code, Cursor, and Codex runs (beating Electron rivals at ~7.8 MB RAM).
+- [ ] **T-010: Keystroke & Click Reflex Mode (BongoCat-Inspired)**
+  - Privacy-safe global input-cadence counter (never logs keys) so pets tap paws or cheer during fast coding bursts.
+- [ ] **T-011: CPU & Build Activity Sprint Mode (RunCat-Inspired)**
+  - Optional CPU load binding where pets jog/sprint during heavy compiles and curl up to nap when idle.
+- [ ] **T-012: Audio-Reactive Beat Bounce Mode**
   - Optional WASAPI / CoreAudio / PulseAudio level tap so pets bob to music with floating pixel music notes.
-- [ ] **T-009: Pomodoro / Focus Companion Mode**
+- [ ] **T-013: Pomodoro / Focus Companion Mode**
   - Built-in tray timer: pets nap/read quietly during 25m focus blocks and hop with a break reminder at 0:00.
-- [ ] **T-010: Community Pet Registry CLI (`diypets install <pet>`) & Equipable Hats**
-  - Curated GitHub registry index for 1-command community pet installs + decoupled runtime eye-tracking/blinking and equipable hats (party hat, headphones, scarf).
+- [ ] **T-014: Collectible Hats, Accessories & Decoupled Eye-Tracking/Blinking**
+  - Independent `face_blink` timer, subtle cursor pupil tracking, and equipable pixel hats (party hat, headphones, wizard hat, scarf).
+
+## P3 — State-of-the-Art Platform, Release Engineering & Community (`v0.6.0`)
+- [ ] **T-015: `cargo-dist` Prebuilt Installers & Custom Build Craftsmanship**
+  - Automated MSI/DMG/AppImage installers, release notes, Homebrew tap sync, and polished CLI progress/diagnostics.
+- [ ] **T-016: Community Pet Registry CLI (`diypets install <pet>`)**
+  - Curated GitHub registry index for 1-command install and sharing of community-created pets.
+- [ ] **T-017: Windows UIA Internal IDE Panel Walking (Socrates-The-Cat-Inspired)**
+  - Optional Windows UI Automation support so pets can perch on internal VS Code / terminal split panels and fall naturally when panes resize.
+- [ ] **T-018: Multi-Monitor Per-Screen Herd Routing**
+  - Pin specific pets to primary vs secondary monitors or allow seamless walking across multi-monitor seams.
+- [ ] **T-019: Good First Issue Starter Pack (GitHub Issues Sync)**
+  - Publish 5 curated `good first issue` and 4 `help wanted` medium issues on GitHub linked to `CONTRIBUTING.md`.
+- [ ] **T-020: Shareable "My Desktop Herd" Snapshot Card**
+  - 1-click export of a crisp PNG/GIF card showing your current herd + stats for sharing on social feeds.

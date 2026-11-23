@@ -2239,6 +2239,28 @@ fn main() {
     if args.get(1).map(String::as_str) != Some("mcp") {
         let _ = logging::init("diypets");
     }
+    if matches!(args.get(1).map(String::as_str), Some("--version" | "-V" | "version")) {
+        println!(
+            "diypets v{} ({}, {}, {})",
+            env!("CARGO_PKG_VERSION"),
+            env!("DIYPETS_GIT_HASH"),
+            env!("DIYPETS_TARGET"),
+            env!("DIYPETS_PROFILE")
+        );
+        return;
+    }
+    if args.get(1).map(String::as_str) == Some("doctor") {
+        let cfg_path = Settings::default_path();
+        let settings = Settings::load_sanitized(&cfg_path);
+        println!("DIYPets Doctor v{} ({})", env!("CARGO_PKG_VERSION"), env!("DIYPETS_GIT_HASH"));
+        println!("  Target / Profile : {} / {}", env!("DIYPETS_TARGET"), env!("DIYPETS_PROFILE"));
+        println!("  Config Path      : {} (exists={})", cfg_path.display(), cfg_path.is_file());
+        println!("  Log Directory    : {}", logging::log_dir().display());
+        println!("  Active Herd      : {:?} (extra={:?})", settings.pet_pack, settings.extra_pets);
+        println!("  Size / Speed     : {}px / {}", settings.pet_size, settings.walk_speed);
+        println!("  Click-Through    : {} | Auto-Hide Fullscreen: {}", settings.click_through, settings.auto_hide_fullscreen);
+        return;
+    }
     if args.get(1).map(String::as_str) == Some("mcp") {
         agent_api::run_stdio_mcp_bridge();
         return;

@@ -392,11 +392,22 @@
     position: fixed; left: 0; top: 0; width: 100vw; height: 100vh;
     pointer-events: none; z-index: 9999;
   }
+  .toast-bar {
+    position: fixed; right: 18px; bottom: 18px; z-index: 10000;
+    background: var(--time-deep, #0d1117); color: var(--time-accent, #7ee8fa);
+    border: 2px solid var(--time-accent, #7ee8fa); border-radius: 6px;
+    padding: 8px 14px; font-size: 12px; box-shadow: 4px 4px #05070b;
+    opacity: 0; transform: translateY(10px); transition: opacity .18s, transform .18s;
+    pointer-events: none;
+  }
+  .toast-bar.show { opacity: 1; transform: translateY(0); }
+  .hint-strip { margin-top: 10px; font-size: 11px; color: var(--dim); opacity: 0.78; }
 </style>
 </head>
 <body>
 <canvas id="pet-stage"></canvas>
 <div class="floor-line"></div>
+<div class="toast-bar" id="toast-bar"></div>
 
 <header class="topbar">
   <div class="topbar-inner">
@@ -481,6 +492,7 @@
         <label class="slider-chip">SPEED <input type="range" min="1" max="10" value="6" oninput="petSpeed=Number(this.value)" /></label>
         <button class="ctrl-btn" onclick="resetHerd()">RESET</button>
       </div>
+      <div class="hint-strip">TIP: Grab &amp; toss any pet at the bottom of your screen, click a herd pill to hop, or toggle Follow Cursor to line them up.</div>
     </div>
   </section>
 
@@ -566,6 +578,15 @@ function resize() { canvas.width = window.innerWidth; canvas.height = window.inn
 window.addEventListener("resize", resize);
 resize();
 
+let toastTimer = null;
+function showToast(msg) {
+  const el = document.getElementById("toast-bar");
+  if (!el) return;
+  el.textContent = "OK: " + msg;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 1800);
+}
 function syncUI() {
   document.getElementById("herd-count").textContent = `ACTIVE: ${pets.length} / 8`;
   const bar = document.getElementById("herd-bar");
@@ -600,6 +621,7 @@ function addPet(id, px = null) {
     bubble: null, bubbleUntil: 0, airborne: true, climbing: 0, climbUntil: 0, climbCooldown: 0, idleUntil: 0, hopAt: performance.now() + 2200 + Math.random() * 3500
   });
   syncUI();
+  showToast(`Spawned ${id.replace("_", " ")}`);
 }
 
 function removeSlot(idx) {
@@ -612,12 +634,14 @@ function removePet(id) {
   if (idx !== -1) removeSlot(idx);
 }
 function resetHerd() {
+  showToast("Herd reset");
   pets = [];
   addPet("highland_cow", 140);
   addPet("dog", Math.min(canvas.width - 220, 400));
   addPet("stegosaurus", Math.min(canvas.width - 140, 660));
 }
 function dropBall() {
+  showToast("Dropped bouncy ball");
   ball = {
     x: canvas.width * 0.5, y: 76,
     vx: (Math.random() < 0.5 ? -1 : 1) * 250, vy: -40,
@@ -641,6 +665,7 @@ function toggleClimb() {
   const b = document.getElementById("climb-btn");
   b.textContent = `CLIMB CARDS: ${climbCards ? "ON" : "OFF"}`;
   b.classList.toggle("on", climbCards);
+  showToast(`Card Climbing: ${climbCards ? "ON" : "OFF"}`);
   if (climbCards && pets.length > 0) {
     const ledges = getCardLedges();
     if (ledges.length > 0) leapOntoCard(pets[0], ledges[ledges.length - 1]);
@@ -662,8 +687,10 @@ function toggleFollow() {
   const b = document.getElementById("follow-btn");
   b.textContent = `FOLLOW CURSOR: ${followCursor ? "ON" : "OFF"}`;
   b.classList.toggle("on", followCursor);
+  showToast(`Follow Cursor: ${followCursor ? "ON" : "OFF"}`);
 }
-function headpatAll() { pets.forEach((_, i) => hopPet(i)); }
+function headpatAll() {
+  showToast("Headpat sent to herd!"); pets.forEach((_, i) => hopPet(i)); }
 function sayBubble() {
   const txt = (document.getElementById("bubble-input").value || "Build passed!").trim();
   if (!txt || pets.length === 0) return;

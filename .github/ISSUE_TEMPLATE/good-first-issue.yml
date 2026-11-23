@@ -1,0 +1,25 @@
+name: Good First Issue
+description: Self-contained starter task ideal for first-time Rust or pixel-art contributors
+title: "[Good First Issue]: "
+labels: ["good first issue", "help wanted"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: What needs to be done?
+    validations:
+      required: true
+  - type: textarea
+    id: files
+    attributes:
+      label: Files to touch
+      placeholder: e.g. src/bin/diypets_settings.rs, docs/index.html
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Verification Checklist
+      value: |
+        - [ ] `cargo test --all-targets` passes
+        - [ ] `cargo clippy --all-targets -- -D warnings` passes

@@ -1,0 +1,24 @@
+name: Sprite & GIF Visual Validation
+
+on:
+  pull_request:
+    paths: ['assets/**', 'docs/sprites/**', 'scripts/validate_sprites.py']
+  push:
+    branches: [main]
+    paths: ['assets/**', 'docs/sprites/**', 'scripts/validate_sprites.py']
+  workflow_dispatch:
+
+jobs:
+  visual-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pillow
+      - run: python scripts/validate_sprites.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sprite-visual-audit
+          path: target/visual-audit/

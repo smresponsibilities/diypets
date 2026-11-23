@@ -1,0 +1,22 @@
+name: Medium Feature / Enhancement
+description: Bounded feature or editor improvement from TICKETS.md
+title: "[Feature]: "
+labels: ["enhancement", "help wanted"]
+body:
+  - type: input
+    id: ticket
+    attributes:
+      label: Related Ticket ID (from TICKETS.md)
+      placeholder: e.g. T-004
+  - type: textarea
+    id: problem
+    attributes:
+      label: User Problem & Motivation
+    validations:
+      required: true
+  - type: textarea
+    id: design
+    attributes:
+      label: Proposed Implementation
+    validations:
+      required: true
