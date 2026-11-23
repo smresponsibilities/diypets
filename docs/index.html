@@ -540,11 +540,11 @@
             </label>
             <label class="slider-chip">JUICE FX
               <select id="gif-fx-select" class="ctrl-input" style="width:124px;padding:3px 6px;">
-                <option value="walk">Walk Loop</option>
-                <option value="bounce">Auto-Bounce</option>
-                <option value="breathe">Idle Breathe</option>
+                <option value="walk">Walk Cycle (Auto-Rig)</option>
+                <option value="run">Run / Sprint</option>
+                <option value="breathe">Idle Breathe (1px)</option>
                 <option value="hop">Squash Hop</option>
-                <option value="wave">Tail Wave</option>
+                <option value="wave">Tail / Ear Wave</option>
               </select>
             </label>
             <label class="slider-chip">BG
@@ -564,7 +564,16 @@
           </div>
           <div class="gif-controls">
             <input id="gif-caption" class="ctrl-input" type="text" value="Highland Cow" maxlength="18" placeholder="Card label" style="width:124px;" />
-            <label class="slider-chip"><input id="gif-clean-bg" type="checkbox" checked onchange="refreshCleanedCustomImg()" /> CLEAN BG/FRINGE</label>
+            <label class="slider-chip">RIG
+              <select id="gif-body-select" class="ctrl-input" style="width:106px;padding:3px 6px;" onchange="refreshCleanedCustomImg()">
+                <option value="auto">Auto</option>
+                <option value="quadruped">4-Leg</option>
+                <option value="biped">2-Leg</option>
+                <option value="blob">Blob</option>
+              </select>
+            </label>
+            <label class="slider-chip"><input id="gif-clean-bg" type="checkbox" checked onchange="refreshCleanedCustomImg()" /> CLEAN FRINGE</label>
+            <label class="slider-chip"><input id="gif-show-rig" type="checkbox" /> SHOW RIG</label>
             <label class="ctrl-btn" style="display:inline-flex;align-items:center;gap:6px;">
               UPLOAD PNG / SVG
               <input id="gif-upload" type="file" accept="image/png,image/svg+xml,image/webp,image/jpeg" style="display:none;" onchange="handleGifUpload(event)" />
@@ -1247,6 +1256,6 @@ function loop(now) {
 requestAnimationFrame(loop);
 
 </script>
-<script src="gif_maker.js"></script>
+<script src="gif_maker.js?v=2"></script>
 </body>
 </html>
