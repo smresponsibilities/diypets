@@ -19,7 +19,7 @@
 - [x] **T-005: Scratch-Style "Costumes" Flipbook & JuiceFX 1-Click Auto-Animator**
   - *Reference:* **Scratch Costume Editor** (numbered flipbook, visible foot/center crosshair, Duplicate & Tweak) + **JuiceFX / PixelOver** (procedural secondary motion from a single static frame).
   - *Scope:* Add a beginner **Costumes** view with visible foot crosshair + 1-click procedural generators (**Auto-Walk Bounce**, **Idle Breathing**, **Tail/Ear Wave**, **Squash Hop**, **Motion Smear**).
-- [ ] **T-006: True 8-Bit Pixel Editor Core (`diypets-creator`)**
+- [x] **T-006: True 8-Bit Pixel Editor Core (`diypets-creator`)**
   - *Reference:* **Aseprite** & **Pixelorama**.
   - *Scope:* Native low-res grid selector (`16x16`, `24x24`, `32x32`, `48x48`, `64x64`) with floating **1:1 Taskbar Live Preview**, **Indexed Palette Mode** (PICO-8, Endesga-32, Game Boy, NES live swatch recoloring), **Pixel-Perfect Brush** (L-double removal), and **2x2 / 4x4 Ordered Bayer Dithering**.
 - [x] **T-007: 1-Click Shareable Lossless Pixel-Art GIF Exporter (`src/gif_export.rs` + Studio + CLI)**

@@ -5,6 +5,10 @@ use diypets::juice_fx::{
     JuiceEffect, build_costumes_pack_xml, detect_foot_y, flip_horizontal, generate_juice_frames,
     snap_feet_to_baseline,
 };
+use diypets::pixel_core::{
+    BayerMatrixSize, IndexedPalette, PixelGridSize, apply_bayer_dither,
+    cleanup_pixel_perfect_l_doubles, quantize_to_palette, snap_to_native_grid_and_back,
+};
 use diypets::settings::{Settings, local_project_root, user_packs_dir};
 use diypets::sprite_ingest::{
     IngestedSheet, SliceMode, ingest_sprite_sheet, strip_border_background,
@@ -314,6 +318,10 @@ struct StudioApp {
     costume_dirty: bool,
     costume_undo: Vec<Vec<image::RgbaImage>>,
     costume_stroke_active: bool,
+    costume_grid_size: PixelGridSize,
+    costume_palette: IndexedPalette,
+    costume_bayer: BayerMatrixSize,
+    costume_confirm_delete: Option<usize>,
     sheet_name: String,
     unsaved_changes: bool,
     confirm_close_modal: bool,
@@ -411,6 +419,10 @@ impl Default for StudioApp {
             costume_dirty: true,
             costume_undo: Vec::new(),
             costume_stroke_active: false,
+            costume_grid_size: PixelGridSize::G32,
+            costume_palette: IndexedPalette::Pico8,
+            costume_bayer: BayerMatrixSize::B4x4,
+            costume_confirm_delete: None,
             sheet_name: "sheet_pet".to_string(),
             unsaved_changes: false,
             confirm_close_modal: false,
@@ -1243,154 +1255,257 @@ impl StudioApp {
         self.ensure_costume_init();
         self.sync_costume_textures(ui.ctx());
 
-        ui.label(egui::RichText::new("Scratch-Style Costumes").strong());
-        ui.label(
-            egui::RichText::new(
-                "Duplicate & tweak frames or generate instant 8-bit motion with JuiceFX.",
-            )
-            .size(11.0)
-            .color(egui::Color32::GRAY),
-        );
-        ui.add_space(4.0);
-
-        ui.horizontal(|ui| {
-            if ui
-                .button("Capture Draw")
-                .on_hover_text("Snap your current Draw/SVG pet into Costume #1")
-                .clicked()
-            {
-                self.capture_costume_from_project(true);
-            }
-            if ui
-                .button("+ Duplicate")
-                .on_hover_text("Duplicate selected costume to tweak the next frame")
-                .clicked()
-                && let Some(cur) = self.costume_frames.get(self.costume_selected).cloned()
-            {
-                self.push_costume_undo();
-                let insert_idx = self.costume_selected + 1;
-                self.costume_frames.insert(insert_idx, cur);
-                self.costume_selected = insert_idx;
-                self.costume_dirty = true;
-            }
-        });
-
-        ui.horizontal(|ui| {
-            if ui.button("Flip H").clicked()
-                && let Some(cur) = self.costume_frames.get(self.costume_selected).cloned()
-            {
-                self.push_costume_undo();
-                self.costume_frames[self.costume_selected] = flip_horizontal(&cur);
-                self.costume_dirty = true;
-            }
-            if ui
-                .button("Snap Feet")
-                .on_hover_text("Align selected costume feet flush to the amber baseline")
-                .clicked()
-                && let Some(cur) = self.costume_frames.get(self.costume_selected).cloned()
-            {
-                self.push_costume_undo();
-                self.costume_frames[self.costume_selected] =
-                    snap_feet_to_baseline(&cur, self.costume_foot_y);
-                self.costume_dirty = true;
-            }
-            if ui.button("Undo").clicked()
-                && let Some(prev) = self.costume_undo.pop()
-            {
-                self.costume_frames = prev;
-                self.costume_selected = self
-                    .costume_selected
-                    .min(self.costume_frames.len().saturating_sub(1));
-                self.costume_dirty = true;
-            }
-        });
-
-        ui.separator();
-        ui.label(egui::RichText::new("JuiceFX 1-Click Auto-Animator").strong());
-        ui.add(egui::Slider::new(&mut self.costume_juice_strength, 0.5..=1.8).text("Juice Power"));
-        for &effect in JuiceEffect::all() {
-            if ui
-                .button(effect.label())
-                .on_hover_text(
-                    "Generate a crisp looping animation from the currently selected costume",
-                )
-                .clicked()
-            {
-                self.apply_juice_fx(effect);
-            }
-        }
-
-        ui.separator();
-        ui.label(
-            egui::RichText::new(format!("Costumes Flipbook ({})", self.costume_frames.len()))
-                .strong(),
-        );
-        let mut delete_idx: Option<usize> = None;
-        let mut swap_pair: Option<(usize, usize)> = None;
-        let frame_count = self.costume_frames.len();
-        egui::ScrollArea::vertical()
-            .max_height(210.0)
-            .show(ui, |ui| {
-                for idx in 0..frame_count {
-                    let selected = self.costume_selected == idx;
-                    ui.horizontal(|ui| {
-                        if let Some(tex) = self.costume_thumbs.get(idx) {
-                            ui.image((tex.id(), egui::vec2(32.0, 32.0)));
-                        }
-                        if ui
-                            .selectable_label(selected, format!("Costume #{}", idx + 1))
-                            .clicked()
-                        {
-                            self.costume_selected = idx;
-                            self.costume_playing = false;
-                            self.costume_dirty = true;
-                        }
-                        if idx > 0 && ui.small_button("^").clicked() {
-                            swap_pair = Some((idx, idx - 1));
-                        }
-                        if idx + 1 < frame_count && ui.small_button("v").clicked() {
-                            swap_pair = Some((idx, idx + 1));
-                        }
-                        if frame_count > 1 && ui.small_button("X").clicked() {
-                            delete_idx = Some(idx);
-                        }
-                    });
+        // Law of Common Region + NN/g #1 Visibility of System Status
+        diypets::ui_theme::section_card(ui, "Scratch-Style Costumes", |ui| {
+            diypets::ui_theme::muted_hint(
+                ui,
+                &format!(
+                    "Frame {}/{}  |  {}ms  |  Undo: {}",
+                    self.costume_selected + 1,
+                    self.costume_frames.len(),
+                    self.costume_fps_ms,
+                    self.costume_undo.len()
+                ),
+            );
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                if ui
+                    .button("Capture Draw")
+                    .on_hover_text("Snap your current Draw/SVG pet into Costume #1")
+                    .clicked()
+                {
+                    self.capture_costume_from_project(true);
+                }
+                if ui
+                    .button("+ Duplicate")
+                    .on_hover_text("Duplicate selected costume to tweak the next frame")
+                    .clicked()
+                    && let Some(cur) = self.costume_frames.get(self.costume_selected).cloned()
+                {
+                    self.push_costume_undo();
+                    let insert_idx = self.costume_selected + 1;
+                    self.costume_frames.insert(insert_idx, cur);
+                    self.costume_selected = insert_idx;
+                    self.costume_dirty = true;
                 }
             });
-        if let Some((a, b)) = swap_pair {
-            self.push_costume_undo();
-            self.costume_frames.swap(a, b);
-            self.costume_selected = b;
-            self.costume_dirty = true;
-        }
-        if let Some(rm) = delete_idx {
-            self.push_costume_undo();
-            self.costume_frames.remove(rm);
-            self.costume_selected = self
-                .costume_selected
-                .min(self.costume_frames.len().saturating_sub(1));
-            self.costume_dirty = true;
-        }
 
-        ui.separator();
-        ui.label(egui::RichText::new("Export Costumes").strong());
-        ui.horizontal(|ui| {
-            ui.label("Pack ID:");
-            ui.text_edit_singleline(&mut self.project.pack_id);
+            ui.horizontal(|ui| {
+                if ui.button("Flip H").clicked()
+                    && let Some(cur) = self.costume_frames.get(self.costume_selected).cloned()
+                {
+                    self.push_costume_undo();
+                    self.costume_frames[self.costume_selected] = flip_horizontal(&cur);
+                    self.costume_dirty = true;
+                }
+                if ui
+                    .button("Snap Feet")
+                    .on_hover_text("Align selected costume feet flush to the amber baseline")
+                    .clicked()
+                    && let Some(cur) = self.costume_frames.get(self.costume_selected).cloned()
+                {
+                    self.push_costume_undo();
+                    self.costume_frames[self.costume_selected] =
+                        snap_feet_to_baseline(&cur, self.costume_foot_y);
+                    self.costume_dirty = true;
+                }
+                if ui
+                    .add_enabled(!self.costume_undo.is_empty(), egui::Button::new("Undo"))
+                    .clicked()
+                    && let Some(prev) = self.costume_undo.pop()
+                {
+                    self.costume_frames = prev;
+                    self.costume_selected = self
+                        .costume_selected
+                        .min(self.costume_frames.len().saturating_sub(1));
+                    self.costume_dirty = true;
+                }
+            });
         });
-        if ui.button("Export Costumes & Run on Desktop").clicked() {
-            self.export_costumes_pack(true);
-        }
-        ui.horizontal(|ui| {
-            if ui.button("Save Pack").clicked() {
-                self.export_costumes_pack(false);
+
+        // Progressive Disclosure (NN/g + Hick's Law): JuiceFX collapsed/grouped cleanly
+        egui::CollapsingHeader::new(egui::RichText::new("JuiceFX 1-Click Auto-Animator").strong())
+            .default_open(true)
+            .show(ui, |ui| {
+                ui.add(
+                    egui::Slider::new(&mut self.costume_juice_strength, 0.5..=1.8).text("Power"),
+                );
+                for &effect in JuiceEffect::all() {
+                    if ui
+                        .button(effect.label())
+                        .on_hover_text(
+                            "Generate a crisp looping animation from the selected costume",
+                        )
+                        .clicked()
+                    {
+                        self.apply_juice_fx(effect);
+                    }
+                }
+            });
+        ui.add_space(4.0);
+
+        // Progressive Disclosure: T-006 True 8-Bit Pixel Core tools
+        egui::CollapsingHeader::new(egui::RichText::new("8-Bit Pixel Core (T-006)").strong())
+            .default_open(false)
+            .show(ui, |ui| {
+                diypets::ui_theme::muted_hint(
+                    ui,
+                    "Snap to low-res retro grids, recolor to indexed palettes, or apply Bayer dithering.",
+                );
+                ui.horizontal_wrapped(|ui| {
+                    for &g in PixelGridSize::all() {
+                        ui.selectable_value(&mut self.costume_grid_size, g, g.label());
+                    }
+                });
+                if ui
+                    .button(format!("Snap Frame to {}", self.costume_grid_size.label()))
+                    .clicked()
+                    && let Some(cur) = self.costume_frames.get(self.costume_selected).cloned()
+                {
+                    self.push_costume_undo();
+                    self.costume_frames[self.costume_selected] =
+                        snap_to_native_grid_and_back(&cur, self.costume_grid_size);
+                    self.costume_dirty = true;
+                    self.toasts
+                        .info(format!("Snapped frame to {} grid", self.costume_grid_size.label()));
+                }
+
+                ui.add_space(4.0);
+                ui.horizontal_wrapped(|ui| {
+                    for &pal in IndexedPalette::all() {
+                        ui.selectable_value(&mut self.costume_palette, pal, pal.label());
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.selectable_value(&mut self.costume_bayer, BayerMatrixSize::B2x2, "Bayer 2x2");
+                    ui.selectable_value(&mut self.costume_bayer, BayerMatrixSize::B4x4, "Bayer 4x4");
+                });
+                ui.horizontal(|ui| {
+                    if ui.button("Quantize Palette").clicked()
+                        && let Some(cur) = self.costume_frames.get(self.costume_selected).cloned()
+                    {
+                        self.push_costume_undo();
+                        self.costume_frames[self.costume_selected] =
+                            quantize_to_palette(&cur, self.costume_palette);
+                        self.costume_dirty = true;
+                        self.toasts.info(format!("Applied {}", self.costume_palette.label()));
+                    }
+                    if ui.button("Bayer Dither").clicked()
+                        && let Some(cur) = self.costume_frames.get(self.costume_selected).cloned()
+                    {
+                        self.push_costume_undo();
+                        self.costume_frames[self.costume_selected] =
+                            apply_bayer_dither(&cur, self.costume_palette, self.costume_bayer, 36.0);
+                        self.costume_dirty = true;
+                        self.toasts.info("Applied ordered Bayer dithering");
+                    }
+                });
+                if ui
+                    .button("Pixel-Perfect L-Cleanup")
+                    .on_hover_text("Remove redundant L-corner double pixels along 1px strokes")
+                    .clicked()
+                    && let Some(cur) = self.costume_frames.get(self.costume_selected).cloned()
+                {
+                    self.push_costume_undo();
+                    self.costume_frames[self.costume_selected] =
+                        cleanup_pixel_perfect_l_doubles(&cur);
+                    self.costume_dirty = true;
+                    self.toasts.info("Cleaned L-corner pixel doubles");
+                }
+            });
+        ui.add_space(4.0);
+
+        // Flipbook List with Error Prevention (2-click confirm on delete)
+        diypets::ui_theme::section_card(
+            ui,
+            &format!("Flipbook ({} Costumes)", self.costume_frames.len()),
+            |ui| {
+                let mut delete_idx: Option<usize> = None;
+                let mut swap_pair: Option<(usize, usize)> = None;
+                let frame_count = self.costume_frames.len();
+                egui::ScrollArea::vertical()
+                    .max_height(175.0)
+                    .show(ui, |ui| {
+                        for idx in 0..frame_count {
+                            let selected = self.costume_selected == idx;
+                            ui.horizontal(|ui| {
+                                if let Some(tex) = self.costume_thumbs.get(idx) {
+                                    ui.image((tex.id(), egui::vec2(32.0, 32.0)));
+                                }
+                                if ui
+                                    .selectable_label(selected, format!("Costume #{}", idx + 1))
+                                    .clicked()
+                                {
+                                    self.costume_selected = idx;
+                                    self.costume_playing = false;
+                                    self.costume_confirm_delete = None;
+                                    self.costume_dirty = true;
+                                }
+                                if idx > 0 && ui.small_button("^").clicked() {
+                                    swap_pair = Some((idx, idx - 1));
+                                }
+                                if idx + 1 < frame_count && ui.small_button("v").clicked() {
+                                    swap_pair = Some((idx, idx + 1));
+                                }
+                                if frame_count > 1 {
+                                    if self.costume_confirm_delete == Some(idx) {
+                                        if diypets::ui_theme::danger_small_button(ui, "Confirm?")
+                                            .clicked()
+                                        {
+                                            delete_idx = Some(idx);
+                                            self.costume_confirm_delete = None;
+                                        }
+                                    } else if ui
+                                        .small_button("X")
+                                        .on_hover_text("Click twice to delete frame safely")
+                                        .clicked()
+                                    {
+                                        self.costume_confirm_delete = Some(idx);
+                                    }
+                                }
+                            });
+                        }
+                    });
+                if let Some((a, b)) = swap_pair {
+                    self.push_costume_undo();
+                    self.costume_frames.swap(a, b);
+                    self.costume_selected = b;
+                    self.costume_confirm_delete = None;
+                    self.costume_dirty = true;
+                }
+                if let Some(rm) = delete_idx {
+                    self.push_costume_undo();
+                    self.costume_frames.remove(rm);
+                    self.costume_selected = self
+                        .costume_selected
+                        .min(self.costume_frames.len().saturating_sub(1));
+                    self.costume_dirty = true;
+                }
+            },
+        );
+
+        // Von Restorff + Fitts's Law: isolated high-contrast Primary CTA
+        diypets::ui_theme::section_card(ui, "Export & Share", |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Pack ID:");
+                ui.text_edit_singleline(&mut self.project.pack_id);
+            });
+            ui.add_space(4.0);
+            if diypets::ui_theme::primary_button(ui, "Export Costumes & Run on Desktop").clicked() {
+                self.export_costumes_pack(true);
             }
-            if ui.button("Transparent GIF").clicked() {
-                self.export_costumes_gif(false);
-            }
-            if ui.button("Card GIF").clicked() {
-                self.export_costumes_gif(true);
-            }
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                if ui.button("Save Pack").clicked() {
+                    self.export_costumes_pack(false);
+                }
+                if ui.button("Transparent GIF").clicked() {
+                    self.export_costumes_gif(false);
+                }
+                if ui.button("Card GIF").clicked() {
+                    self.export_costumes_gif(true);
+                }
+            });
         });
     }
 
@@ -1486,6 +1601,35 @@ impl StudioApp {
 
         if let Some(tex) = &self.costume_canvas_tex {
             painter.image(tex.id(), rect, uv, egui::Color32::WHITE);
+        }
+        if let Some(tex) = &self.costume_canvas_tex {
+            let badge = egui::Rect::from_min_size(
+                egui::pos2(rect.right() - 78.0, rect.top() + 8.0),
+                egui::vec2(70.0, 84.0),
+            );
+            painter.rect_filled(
+                badge,
+                6.0,
+                egui::Color32::from_rgba_unmultiplied(20, 23, 31, 225),
+            );
+            painter.rect_stroke(
+                badge,
+                6.0,
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(100, 110, 130)),
+                egui::StrokeKind::Inside,
+            );
+            let sprite_box = egui::Rect::from_min_size(
+                egui::pos2(badge.left() + 11.0, badge.top() + 4.0),
+                egui::vec2(48.0, 48.0),
+            );
+            painter.image(tex.id(), sprite_box, uv, egui::Color32::WHITE);
+            painter.text(
+                egui::pos2(badge.center().x, badge.bottom() - 14.0),
+                egui::Align2::CENTER_CENTER,
+                "1:1 Taskbar",
+                egui::FontId::proportional(10.5),
+                egui::Color32::from_rgb(226, 230, 238),
+            );
         }
 
         // Scratch-style Foot-Anchor Crosshair Guide (amber baseline + center X)
