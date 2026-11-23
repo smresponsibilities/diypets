@@ -2059,8 +2059,7 @@ impl ApplicationHandler for DeskpetApp {
                                                 && pet.state.y < win_y + win_h
                                                 && pet.state.x < win_x
                                             {
-                                                wall_right =
-                                                    wall_right.min(win_x - (scaled_w as f32));
+                                                wall_right = wall_right.min(win_x);
                                             }
                                         }
                                     }
@@ -2114,7 +2113,7 @@ impl ApplicationHandler for DeskpetApp {
                                 && pet.state.y < win_y + win_h
                                 && pet.state.x < win_x
                             {
-                                wall_right = wall_right.min(win_x - (scaled_w as f32));
+                                wall_right = wall_right.min(win_x);
                             }
                         }
                     }

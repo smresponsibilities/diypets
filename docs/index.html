@@ -618,7 +618,7 @@ function addPet(id, px = null) {
     vy: 0, dir: pets.length % 2 === 0 ? 1 : -1,
     frame: 1 + (pets.length % 4), frameT: 0,
     sqX: 1, sqY: 1, heartsUntil: 0, cooldown: 0,
-    bubble: null, bubbleUntil: 0, airborne: true, climbing: 0, climbUntil: 0, climbCooldown: 0, idleUntil: 0, hopAt: performance.now() + 2200 + Math.random() * 3500
+    bubble: null, bubbleUntil: 0, airborne: true, climbing: 0, climbWallX: null, climbTargetCard: null, climbUntil: 0, climbCooldown: 0, idleUntil: 0, hopAt: performance.now() + 2200 + Math.random() * 3500
   });
   syncUI();
   showToast(`Spawned ${id.replace("_", " ")}`);
@@ -848,33 +848,71 @@ function loop(now) {
 
     if (p !== dragPet) {
       if (p.climbing !== 0) {
-        // Climbing up left (-1) or right (+1) screen border
+        // Climbing up a card's side wall or viewport border (feet flush to wall, head UP)
         p.vx = 0;
-        p.vy = -petSpeed * 20;
+        p.vy = -petSpeed * 22;
         p.y += p.vy * dt;
-        p.x = p.climbing < 0 ? 2 : (canvas.width - petSize - 2);
+        if (p.climbWallX !== null) {
+          p.x = p.climbing < 0 ? p.climbWallX : (p.climbWallX - petSize);
+        } else {
+          p.x = p.climbing < 0 ? 2 : (canvas.width - petSize - 2);
+        }
         p.dir = p.climbing < 0 ? -1 : 1;
 
-        // If aligned with a card ledge height, leap horizontally straight onto that card!
         const footY = p.y + petSize;
-        const alignedCard = ledges.find(lg => Math.abs(footY - lg.top) < 18);
-        if (alignedCard && !followCursor && !ball) {
-          const landX = p.climbing < 0 ? (alignedCard.left + 26) : (alignedCard.right - 26 - petSize);
-          p.vy = -210;
-          const airT = 0.43;
-          p.vx = (landX - p.x) / airT;
-          p.dir = p.climbing < 0 ? 1 : -1;
-          p.climbing = 0;
-          p.climbCooldown = now + 11000;
-          p.airborne = true;
-          p.sqX = 0.86; p.sqY = 1.15;
-        } else if (p.y < 76 || now > p.climbUntil || followCursor || ball) {
-          p.vx = p.climbing < 0 ? 150 : -150;
-          p.vy = -140;
-          p.dir = p.climbing < 0 ? 1 : -1;
-          p.climbing = 0;
-          p.climbCooldown = now + 11000;
-          p.airborne = true;
+        const target = p.climbTargetCard;
+        if (target && !followCursor && !ball) {
+          // Mantle cleanly onto the top edge of the card being climbed!
+          if (footY <= target.top + 6) {
+            p.y = target.top - petSize;
+            p.x = p.climbing > 0 ? (target.left + 14) : (target.right - petSize - 14);
+            p.dir = p.climbing > 0 ? 1 : -1;
+            p.vx = p.dir * petSpeed * 12;
+            p.vy = 0;
+            p.climbing = 0;
+            p.climbWallX = null;
+            p.climbTargetCard = null;
+            p.climbCooldown = now + 9000;
+            p.airborne = false;
+            p.sqX = 1.15; p.sqY = 0.86;
+          } else if (now > p.climbUntil) {
+            p.vx = p.climbing > 0 ? -120 : 120;
+            p.vy = -110;
+            p.dir = p.climbing > 0 ? -1 : 1;
+            p.climbing = 0;
+            p.climbWallX = null;
+            p.climbTargetCard = null;
+            p.climbCooldown = now + 9000;
+            p.airborne = true;
+          }
+        } else {
+          // Viewport border climb: step onto nearby card only if within 160px, else hop gracefully inward
+          const nearbyCard = ledges.find(lg => {
+            if (Math.abs(footY - lg.top) >= 18) return false;
+            const dist = p.climbing < 0 ? Math.abs(lg.left - p.x) : Math.abs(lg.right - (p.x + petSize));
+            return dist <= 160;
+          });
+          if (nearbyCard && !followCursor && !ball) {
+            const landX = p.climbing < 0 ? (nearbyCard.left + 20) : (nearbyCard.right - 20 - petSize);
+            p.vy = -195;
+            p.vx = (landX - p.x) / 0.42;
+            p.dir = p.climbing < 0 ? 1 : -1;
+            p.climbing = 0;
+            p.climbWallX = null;
+            p.climbTargetCard = null;
+            p.climbCooldown = now + 10000;
+            p.airborne = true;
+            p.sqX = 0.86; p.sqY = 1.15;
+          } else if (p.y < 76 || now > p.climbUntil || followCursor || ball) {
+            p.vx = p.climbing < 0 ? 145 : -145;
+            p.vy = -135;
+            p.dir = p.climbing < 0 ? 1 : -1;
+            p.climbing = 0;
+            p.climbWallX = null;
+            p.climbTargetCard = null;
+            p.climbCooldown = now + 10000;
+            p.airborne = true;
+          }
         }
       } else {
         const prevFoot = p.y + petSize;
@@ -882,22 +920,50 @@ function loop(now) {
         p.x += p.vx * dt;
         p.y += p.vy * dt;
 
-        // Wall collision: only grab wall on bounce if cooldown expired (prevents infinite wall-climb loop!)
-        if (p.x < 4) {
+        // Card side-wall climbing: grab left or right side of a card and climb straight onto its top ledge!
+        if (climbCards && !followCursor && !ball && !p.airborne && now > p.climbCooldown && ledges.length > 0) {
+          const footY = p.y + petSize;
+          for (const lg of ledges) {
+            if (footY <= lg.top + 28 || footY > lg.bottom + 24) continue;
+            // Walking right into a card's left wall -> grip right side of pet onto card left wall (+1)
+            if (p.vx > 0 && Math.abs((p.x + petSize) - lg.left) < 10 && Math.random() < 0.35) {
+              p.climbing = 1;
+              p.climbWallX = lg.left;
+              p.climbTargetCard = lg;
+              p.climbUntil = now + 4200;
+              break;
+            }
+            // Walking left into a card's right wall -> grip left side of pet onto card right wall (-1)
+            if (p.vx < 0 && Math.abs(p.x - lg.right) < 10 && Math.random() < 0.35) {
+              p.climbing = -1;
+              p.climbWallX = lg.right;
+              p.climbTargetCard = lg;
+              p.climbUntil = now + 4200;
+              break;
+            }
+          }
+        }
+
+        // Viewport edge bounce (with optional border climb only when cooldown expired)
+        if (p.climbing === 0 && p.x < 4) {
           p.x = 4;
-          if (climbCards && !followCursor && !ball && !p.airborne && now > p.climbCooldown && ledges.length > 0 && Math.random() < 0.25) {
+          if (climbCards && !followCursor && !ball && !p.airborne && now > p.climbCooldown && ledges.length > 0 && Math.random() < 0.22) {
             p.climbing = -1;
-            p.climbUntil = now + 3800;
+            p.climbWallX = null;
+            p.climbTargetCard = null;
+            p.climbUntil = now + 3600;
           } else {
             p.dir = 1;
             p.vx = Math.abs(p.vx);
           }
         }
-        if (p.x > canvas.width - petSize - 4) {
+        if (p.climbing === 0 && p.x > canvas.width - petSize - 4) {
           p.x = canvas.width - petSize - 4;
-          if (climbCards && !followCursor && !ball && !p.airborne && now > p.climbCooldown && ledges.length > 0 && Math.random() < 0.25) {
+          if (climbCards && !followCursor && !ball && !p.airborne && now > p.climbCooldown && ledges.length > 0 && Math.random() < 0.22) {
             p.climbing = 1;
-            p.climbUntil = now + 3800;
+            p.climbWallX = null;
+            p.climbTargetCard = null;
+            p.climbUntil = now + 3600;
           } else {
             p.dir = -1;
             p.vx = -Math.abs(p.vx);

@@ -20,6 +20,8 @@
   - *Reference:* **Scratch Costume Editor** (numbered flipbook, visible foot/center crosshair, Duplicate & Tweak) + **JuiceFX / PixelOver** (procedural secondary motion from a single static frame).
   - *Scope:* Add a beginner **Costumes** view with visible foot crosshair + 1-click procedural generators (**Auto-Walk Bounce**, **Idle Breathing**, **Tail/Ear Wave**, **Squash Hop**, **Motion Smear**).
 - [x] **T-006: True 8-Bit Pixel Editor Core (`diypets-creator`)**
+- [x] **T-006b: Goat-Tier 32x32 Pixel-Art Studio Templates & Anti-Deadlock State Machine**
+  - *Scope:* Rebuilt Emerald Snake, Ginger Cat, Chibi Buddy, Sky Bird, and Koi Fish on crisp 32x32->128x128 pixel grids with nearest-neighbor export + edge/ceiling anti-deadlock guard tested for 4,000+ ticks per template.
   - *Reference:* **Aseprite** & **Pixelorama**.
   - *Scope:* Native low-res grid selector (`16x16`, `24x24`, `32x32`, `48x48`, `64x64`) with floating **1:1 Taskbar Live Preview**, **Indexed Palette Mode** (PICO-8, Endesga-32, Game Boy, NES live swatch recoloring), **Pixel-Perfect Brush** (L-double removal), and **2x2 / 4x4 Ordered Bayer Dithering**.
 - [x] **T-007: 1-Click Shareable Lossless Pixel-Art GIF Exporter (`src/gif_export.rs` + Studio + CLI)**
@@ -34,10 +36,10 @@
 - [x] **T-009: 1-Click Coding-Agent Hooks (`diypets hooks install claude-code / cursor / all`)**
   - *Reference:* **clawd-on-desk** & **OpenPets** (real-time desktop status for coding agents, delivered at ~7.8 MB RAM instead of Electron).
   - *Scope:* Auto-wire agent lifecycle hooks so pets show *Thinking*, *Build Passed*, *Tests Failed*, and *Token Burst* states without manual CLI calls.
-- [ ] **T-010: Keystroke & Click Reflex Mode**
+- [x] **T-010: Keystroke & Click Reflex Mode (Bongo Bounce)**
   - *Reference:* **BongoCat** (Rust/Tauri).
   - *Scope:* Privacy-safe global input-cadence counter (counts tap rate only, never logs keys) so pets tap paws or cheer during coding bursts.
-- [ ] **T-011: CPU & Build Activity Sprint Mode**
+- [x] **T-011: CPU & Build Activity Sprint Mode (RunCat Speed)**
   - *Reference:* **RunCat 365**.
   - *Scope:* Optional CPU load binding where pets sprint faster during heavy compiles and nap when idle.
 - [ ] **T-012: Audio-Reactive Beat Bounce Mode**

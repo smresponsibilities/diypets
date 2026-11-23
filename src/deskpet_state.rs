@@ -251,6 +251,7 @@ pub struct DeskpetState {
     pub on_window: bool,
     pub climb_enabled: bool,
     current_total_steps: usize,
+    edge_lock_count: u8,
 }
 
 impl DeskpetState {
@@ -296,6 +297,7 @@ impl DeskpetState {
             on_window: false,
             climb_enabled: true,
             current_total_steps: 1,
+            edge_lock_count: 0,
         };
 
         let mut start_anim = "1".to_string();
@@ -439,6 +441,9 @@ impl DeskpetState {
         if !self.y.is_finite() || self.y > floor_y {
             self.y = floor_y;
         }
+        if self.x > min_x + 6.0 && self.x < max_x - 6.0 {
+            self.edge_lock_count = 0;
+        }
 
         let anim = match self.pack.animations.get(&self.current_anim_id) {
             Some(a) => a.clone(),
@@ -538,19 +543,41 @@ impl DeskpetState {
             let mut apply = true;
             if move_x < 0.0 && self.x + move_x < min_x {
                 let prev = self.current_anim_id.clone();
+                self.edge_lock_count = self.edge_lock_count.saturating_add(1);
                 self.pick_next_animation(&anim, Trigger::Border, true);
                 self.x = min_x;
                 apply = false;
-                if self.current_anim_id == prev {
-                    self.is_moving_left = false;
+                let next_flips = self
+                    .pack
+                    .animations
+                    .get(&self.current_anim_id)
+                    .is_some_and(|a| a.action == "flip");
+                let now_climbing = self.is_climbing_anim();
+                if self.current_anim_id == prev
+                    || (self.edge_lock_count >= 2 && !next_flips && !now_climbing)
+                {
+                    self.detach_from_wall(min_x, max_x, 4.0);
+                    let walk_id = self.first_walk_anim_id();
+                    self.set_state(DeskpetStateId::Custom(walk_id));
                 }
             } else if move_x > 0.0 && self.x + move_x + self.pet_size as f32 > screen_width {
                 let prev = self.current_anim_id.clone();
+                self.edge_lock_count = self.edge_lock_count.saturating_add(1);
                 self.pick_next_animation(&anim, Trigger::Border, true);
                 self.x = max_x;
                 apply = false;
-                if self.current_anim_id == prev {
-                    self.is_moving_left = true;
+                let next_flips = self
+                    .pack
+                    .animations
+                    .get(&self.current_anim_id)
+                    .is_some_and(|a| a.action == "flip");
+                let now_climbing = self.is_climbing_anim();
+                if self.current_anim_id == prev
+                    || (self.edge_lock_count >= 2 && !next_flips && !now_climbing)
+                {
+                    self.detach_from_wall(min_x, max_x, 4.0);
+                    let walk_id = self.first_walk_anim_id();
+                    self.set_state(DeskpetStateId::Custom(walk_id));
                 }
             } else if move_y > 0.0 && self.y + move_y >= floor_y {
                 let prev = self.current_anim_id.clone();
@@ -561,7 +588,14 @@ impl DeskpetState {
                 }
                 apply = false;
             } else if move_y < 0.0 && self.y + move_y < 0.0 {
+                // Reached top of screen while climbing: push gently off the wall and flip away
+                self.y = 0.0;
+                self.detach_from_wall(min_x, max_x, 12.0);
+                let prev = self.current_anim_id.clone();
                 self.pick_next_animation(&anim, Trigger::Border, false);
+                if self.current_anim_id == prev || self.is_climbing_anim() {
+                    self.set_state(DeskpetStateId::Fall);
+                }
                 apply = false;
             }
 
@@ -596,9 +630,44 @@ impl DeskpetState {
             if self.is_tossing {
                 self.sequence_index = 0;
             } else {
+                let was_climbing = self.is_climbing_anim();
                 self.pick_next_animation(&anim, Trigger::Next, false);
+                if was_climbing && !self.is_climbing_anim() {
+                    self.detach_from_wall(min_x, max_x, 10.0);
+                }
             }
         }
+    }
+
+    fn first_walk_anim_id(&self) -> String {
+        if self.pack.animations.contains_key("1") {
+            return "1".to_string();
+        }
+        self.pack
+            .animations
+            .iter()
+            .find(|(_, a)| {
+                self.eval_math(&a.start_x).unwrap_or(0.0).abs() > 0.1
+                    && self.eval_math(&a.start_y).unwrap_or(0.0).abs() < 0.1
+            })
+            .or_else(|| self.pack.animations.iter().next())
+            .map(|(id, _)| id.clone())
+            .unwrap_or_else(|| "1".to_string())
+    }
+
+    fn is_climbing_anim(&self) -> bool {
+        self.current_anim_id == "19" || self.anim_start_y < -0.5 || self.anim_end_y < -0.5
+    }
+
+    fn detach_from_wall(&mut self, min_x: f32, max_x: f32, nudge_px: f32) {
+        if self.x <= min_x + 6.0 {
+            self.is_moving_left = false;
+            self.x = (min_x + nudge_px).min(max_x);
+        } else if self.x >= max_x - 6.0 {
+            self.is_moving_left = true;
+            self.x = (max_x - nudge_px).max(min_x);
+        }
+        self.edge_lock_count = 0;
     }
 
     fn pick_next_animation(
@@ -638,6 +707,12 @@ impl DeskpetState {
             .collect();
 
         let pool: Vec<&crate::deskpet_xml::DeskpetNext> = if filtered.is_empty() {
+            if !self.climb_enabled && matches!(trigger, Trigger::Border) {
+                self.is_moving_left = !self.is_moving_left;
+                let walk_id = self.first_walk_anim_id();
+                self.set_state(DeskpetStateId::Custom(walk_id));
+                return;
+            }
             raw_pool.iter().collect()
         } else {
             filtered
@@ -890,5 +965,87 @@ mod window_floor_tests {
         pet.tick(1000, 520.0, 1920.0);
         assert_eq!(pet.current_anim_id, "5");
         assert!(pet.is_tossing);
+    }
+
+    #[test]
+    fn all_five_studio_templates_never_deadlock_on_walls() {
+        for &arch in crate::studio_model::Archetype::all() {
+            let proj = crate::studio_model::StudioProject::template_by_archetype(arch);
+            let (_sheet, _icon, xml) = proj
+                .build_export_artifacts()
+                .expect("template should export cleanly");
+            let pack = DeskpetPack::parse(&xml).expect("exported template XML must parse");
+            let mut st = DeskpetState::new(pack);
+            st.x = 240.0;
+            st.y = 400.0;
+
+            let mut min_seen = st.x;
+            let mut max_seen = st.x;
+            let mut stuck_ticks = 0u32;
+            let mut last_x = st.x;
+
+            for _ in 0..4000 {
+                st.tick_in_bounds(33, 500.0, 0.0, 600.0);
+                min_seen = min_seen.min(st.x);
+                max_seen = max_seen.max(st.x);
+                if (st.x - last_x).abs() < 0.01 && (st.x <= 2.0 || st.x >= 490.0) {
+                    stuck_ticks += 1;
+                } else {
+                    stuck_ticks = 0;
+                }
+                assert!(
+                    stuck_ticks < 600,
+                    "Template {:?} ({}) deadlocked against screen edge at x={}",
+                    arch,
+                    proj.pack_id,
+                    st.x
+                );
+                last_x = st.x;
+            }
+            assert!(
+                max_seen - min_seen > 80.0,
+                "Template {:?} ({}) barely moved (range {:.1}px)",
+                arch,
+                proj.pack_id,
+                max_seen - min_seen
+            );
+        }
+    }
+
+    #[test]
+    fn climbing_ceiling_detaches_away_from_wall_and_respects_climb_disabled() {
+        let proj = crate::studio_model::StudioProject::template_snake();
+        let (_sheet, _icon, xml) = proj.build_export_artifacts().unwrap();
+        let pack = DeskpetPack::parse(&xml).unwrap();
+        let mut st = DeskpetState::new(pack);
+        st.pet_size = 96;
+        st.x = 0.0;
+        st.y = 2.0;
+        st.is_moving_left = true;
+        st.set_state(DeskpetStateId::Custom("19".to_string()));
+        st.tick_in_bounds(50, 500.0, 0.0, 600.0);
+        assert!(
+            st.x > 0.0,
+            "ceiling detach should nudge pet inward off left wall"
+        );
+        assert!(
+            !st.is_moving_left,
+            "ceiling detach should face away from left wall"
+        );
+        assert_ne!(
+            st.current_anim_id, "19",
+            "ceiling detach should leave climb state"
+        );
+
+        // Now verify climb_enabled = false never enters climb id 19 on border hit
+        st.climb_enabled = false;
+        st.y = 500.0;
+        for _ in 0..800 {
+            st.tick_in_bounds(33, 500.0, 0.0, 600.0);
+            assert_ne!(
+                st.current_anim_id, "19",
+                "must never climb when climb_enabled is false"
+            );
+        }
     }
 }

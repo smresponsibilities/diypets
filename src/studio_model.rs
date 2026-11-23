@@ -415,6 +415,33 @@ impl Default for StudioProject {
     }
 }
 
+/// Paint a crisp 32x32 pixel-art grid scaled 4x onto the 128x128 Studio board
+/// (matching the bold outlines, 3-tone shading, and zero-blur silhouette of the bundled Goat).
+fn paint_pixel_grid_4x(buf: &mut [RgbaPixel], rows: &[&str], palette: &[(u8, RgbaPixel)]) {
+    for (gy, row) in rows.iter().enumerate() {
+        if gy >= 32 {
+            break;
+        }
+        for (gx, ch) in row.bytes().enumerate() {
+            if gx >= 32 || ch == b'.' || ch == b' ' {
+                continue;
+            }
+            let Some(&(_, col)) = palette.iter().find(|&&(k, _)| k == ch) else {
+                continue;
+            };
+            for dy in 0..4 {
+                let y = gy * 4 + dy;
+                for dx in 0..4 {
+                    let x = gx * 4 + dx;
+                    if x < BOARD_SIZE && y < BOARD_SIZE {
+                        buf[y * BOARD_SIZE + x] = col;
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub fn sanitize_pack_id(input: &str) -> String {
     let mut out = String::new();
     let mut prev_u = false;
@@ -769,278 +796,630 @@ impl StudioProject {
         }
     }
 
-    /// Polished chibi Ginger Cat with clipped fur stripes, soft shading, & seamless limb joints!
+    /// Crisp 32x32->128x128 pixel-art Ginger Cat matching the bundled Goat mascot aesthetic.
     pub fn template_cat() -> Self {
         let mut p = Self::blank(Archetype::Quadruped);
         p.display_name = "Ginger Cat".to_string();
         p.pack_id = "ginger_cat".to_string();
-        p.outline_color = [52, 32, 24];
+        p.outline_color = [46, 26, 20];
+        p.body_bob = 1.4;
 
-        let ink = [52, 32, 24, 255];
-        let fur = [238, 166, 90, 255];
-        let fur_light = [248, 194, 124, 255];
-        let belly = [254, 240, 216, 255];
-        let stripe = [194, 110, 48, 255];
-        let blush = [248, 162, 174, 255];
-        let nose = [232, 114, 126, 255];
+        let ink = [46, 26, 20, 255];
+        let fur = [238, 156, 74, 255];
+        let fur_hi = [252, 198, 126, 255];
+        let fur_sh = [194, 106, 44, 255];
+        let cream = [254, 240, 214, 255];
+        let pink = [242, 134, 148, 255];
+        let pal: &[(u8, RgbaPixel)] = &[
+            (b'K', ink),
+            (b'O', fur),
+            (b'H', fur_hi),
+            (b'S', fur_sh),
+            (b'C', cream),
+            (b'P', pink),
+        ];
 
-        // Plump torso + chest fluff
-        paint_ellipse(&mut p.body, 69.0, 72.0, 25.0, 15.5, fur);
-        paint_ellipse(&mut p.body, 48.0, 72.0, 12.0, 13.0, fur);
-        // Clipped belly & tabby stripes (100% INSIDE torso — never pokes out!)
-        paint_ellipse_clipped(&mut p.body, 67.0, 81.0, 20.0, 9.5, belly);
-        paint_ellipse_clipped(&mut p.body, 58.0, 58.0, 3.5, 7.5, stripe);
-        paint_ellipse_clipped(&mut p.body, 69.0, 57.0, 3.5, 8.0, stripe);
-        paint_ellipse_clipped(&mut p.body, 80.0, 58.0, 3.2, 7.0, stripe);
-        paint_ellipse_clipped(&mut p.body, 67.0, 64.0, 16.0, 5.0, fur_light);
+        #[rustfmt::skip]
+        let body_grid: &[&str] = &[
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            ".......KK.....KK................",
+            "......KOK....KOK................",
+            "......KPKK..KKPK................",
+            ".....KOPOOKKOPOK................",
+            ".....KOOOSOOOSOK................",
+            "....KOOOHHSOHHOOK...............",
+            "....KOOOOOOOOOOOK...............",
+            "....KCCOOOOOOOOOK...............",
+            "...KCPCCOOOOOOOOK...............",
+            "...KCCCCCOOOOOOOKKKKKKKK........",
+            "....KCCCCOOOOOOHHOSSOHHOK.......",
+            ".....KKKKOOOCOOHOOSSOOOOKK......",
+            "........KOOCCCOOOOOOOOOOOK......",
+            "........KOOCCCOOOOOOOOOOSK......",
+            "........KOOCCCCCOOOOOOOSSK......",
+            ".........KSOCCCCCSSSSSSSK.......",
+            "..........KKKKKKKKKKKKKK........",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+        ];
+        paint_pixel_grid_4x(&mut p.body, body_grid, pal);
+        paint_standard_faces(&mut p.faces, 36.0, 52.0, ink, pink);
 
-        // Tabby stripes stay inside the torso silhouette.
-        paint_ellipse_clipped(&mut p.body, 78.0, 69.0, 2.0, 6.0, stripe);
-        paint_ellipse_clipped(&mut p.body, 86.0, 70.0, 1.8, 5.0, stripe);
-
-        // Chibi head facing LEFT with pointed ears
-        paint_triangle(&mut p.body, (29.0, 48.0), (31.0, 31.0), (41.0, 43.0), fur);
-        paint_triangle(&mut p.body, (44.0, 43.0), (52.0, 31.0), (56.0, 48.0), fur);
-        paint_triangle(&mut p.body, (31.5, 45.0), (32.5, 35.5), (38.5, 43.0), blush);
-        paint_triangle(&mut p.body, (46.5, 43.0), (51.5, 35.5), (53.5, 45.0), blush);
-        paint_ellipse(&mut p.body, 42.0, 54.0, 18.5, 16.0, fur);
-        paint_ellipse_clipped(&mut p.body, 43.0, 40.0, 3.0, 5.5, stripe);
-        paint_ellipse_clipped(&mut p.body, 49.0, 41.0, 2.6, 4.5, stripe);
-        // Cute cream muzzle + pink nose
-        paint_ellipse_clipped(&mut p.body, 31.0, 59.5, 9.0, 6.2, belly);
-        paint_ellipse(&mut p.body, 25.5, 57.5, 2.2, 1.6, nose);
-        paint_ellipse_clipped(&mut p.body, 29.0, 63.0, 2.6, 0.8, ink);
-        paint_soft_underside_shade(&mut p.body, 5, 0.90);
-
-        paint_standard_faces(&mut p.faces, 35.5, 52.5, ink, blush);
-
-        // Seamless Front Leg (no top outline seam!)
         let mut fl = RigPart::new("Front Leg", PartRole::FrontLimb);
-        paint_ellipse(&mut fl.pixels, 51.0, 88.0, 6.2, 11.5, fur);
-        paint_ellipse(&mut fl.pixels, 48.5, 98.5, 6.5, 4.2, belly);
-        paint_soft_underside_shade(&mut fl.pixels, 3, 0.90);
-        paint_ellipse_clipped(&mut fl.pixels, 46.0, 100.0, 0.7, 1.0, ink);
-        paint_ellipse_clipped(&mut fl.pixels, 50.0, 100.0, 0.7, 1.0, ink);
-        fl.socket_near = (51, 80);
-        fl.socket_far = (45, 79);
-        fl.pivot = (51, 80);
-        fl.swing_deg = 19.0;
+        #[rustfmt::skip]
+        let fl_grid: &[&str] = &[
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "...........KOOOK................",
+            "...........KOOSK................",
+            "...........KOOSK................",
+            "..........KCCCCK................",
+            "..........KCCCCK................",
+            "..........KKKKKK................",
+        ];
+        paint_pixel_grid_4x(&mut fl.pixels, fl_grid, pal);
+        fl.socket_near = (52, 82);
+        fl.socket_far = (46, 81);
+        fl.pivot = (52, 82);
+        fl.swing_deg = 17.0;
 
-        // Seamless Back Leg
         let mut bl = RigPart::new("Back Leg", PartRole::BackLimb);
-        paint_ellipse(&mut bl.pixels, 82.0, 88.0, 7.2, 11.5, fur);
-        paint_ellipse(&mut bl.pixels, 79.5, 98.5, 6.8, 4.2, belly);
-        paint_soft_underside_shade(&mut bl.pixels, 3, 0.90);
-        bl.socket_near = (82, 80);
-        bl.socket_far = (76, 79);
-        bl.pivot = (82, 80);
-        bl.swing_deg = 18.0;
+        #[rustfmt::skip]
+        let bl_grid: &[&str] = &[
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "...................KOOOK........",
+            "...................KOOSK........",
+            "...................KOOSK........",
+            "..................KCCCCK........",
+            "..................KCCCCK........",
+            "..................KKKKKK........",
+        ];
+        paint_pixel_grid_4x(&mut bl.pixels, bl_grid, pal);
+        bl.socket_near = (84, 82);
+        bl.socket_far = (78, 81);
+        bl.pivot = (84, 82);
+        bl.swing_deg = 16.0;
 
-        // Expressive Curved Tail
         let mut tail = RigPart::new("Tail", PartRole::Tail);
-        paint_ellipse(&mut tail.pixels, 95.0, 66.0, 8.5, 5.0, fur);
-        paint_ellipse(&mut tail.pixels, 102.0, 56.0, 5.5, 9.5, fur);
-        paint_ellipse(&mut tail.pixels, 101.0, 46.0, 5.2, 5.2, belly);
-        paint_ellipse_clipped(&mut tail.pixels, 101.0, 56.0, 5.0, 2.5, stripe);
-        tail.socket_near = (90, 67);
-        tail.pivot = (90, 67);
+        #[rustfmt::skip]
+        let tail_grid: &[&str] = &[
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            ".........................KKK....",
+            "........................KCCCK...",
+            "........................KCCOK...",
+            ".........................KSSK...",
+            ".........................KOOK...",
+            "........................KSSK....",
+            ".......................KOOK.....",
+            "......................KOOOK.....",
+            ".......................KKK......",
+        ];
+        paint_pixel_grid_4x(&mut tail.pixels, tail_grid, pal);
+        tail.socket_near = (92, 68);
+        tail.pivot = (92, 68);
         tail.swing_deg = 14.0;
 
         p.parts = vec![fl, bl, tail];
         p
     }
 
+    /// Crisp 32x32->128x128 pixel-art Chibi Hoodie Buddy.
     pub fn template_buddy() -> Self {
         let mut p = Self::blank(Archetype::Biped);
         p.display_name = "Chibi Buddy".to_string();
         p.pack_id = "chibi_buddy".to_string();
-        p.outline_color = [32, 36, 54];
+        p.outline_color = [28, 32, 48];
+        p.body_bob = 1.5;
 
-        let ink = [32, 36, 54, 255];
-        let hoodie = [92, 152, 234, 255];
-        let hoodie_hi = [126, 178, 246, 255];
-        let skin = [252, 224, 198, 255];
-        let hair = [44, 50, 74, 255];
-        let shoe = [236, 94, 100, 255];
-        let blush = [250, 166, 178, 255];
+        let ink = [28, 32, 48, 255];
+        let hoodie = [78, 146, 232, 255];
+        let hoodie_hi = [132, 188, 250, 255];
+        let hoodie_sh = [46, 98, 174, 255];
+        let skin = [252, 222, 194, 255];
+        let hair = [54, 42, 64, 255];
+        let hair_hi = [88, 72, 104, 255];
+        let shoe = [232, 76, 86, 255];
+        let sole = [248, 246, 244, 255];
+        let blush = [248, 154, 168, 255];
+        let pal: &[(u8, RgbaPixel)] = &[
+            (b'K', ink),
+            (b'B', hoodie),
+            (b'L', hoodie_hi),
+            (b'D', hoodie_sh),
+            (b'F', skin),
+            (b'H', hair),
+            (b'T', hair_hi),
+            (b'R', shoe),
+            (b'W', sole),
+        ];
 
-        paint_ellipse(&mut p.body, 64.0, 74.0, 15.5, 16.0, hoodie);
-        paint_ellipse_clipped(&mut p.body, 62.0, 66.0, 12.0, 6.0, hoodie_hi);
-        paint_ellipse(&mut p.body, 62.0, 45.0, 18.5, 17.5, skin);
-        paint_ellipse(&mut p.body, 65.0, 34.0, 19.0, 10.0, hair);
-        paint_ellipse(&mut p.body, 46.0, 39.0, 8.5, 3.8, hoodie);
-        paint_triangle(&mut p.body, (48.0, 36.0), (55.0, 30.0), (60.0, 41.0), hair);
-        paint_ellipse_clipped(&mut p.body, 70.0, 75.0, 1.0, 6.0, [52, 105, 176, 255]);
-        paint_ellipse_clipped(&mut p.body, 63.0, 82.0, 5.0, 2.0, [69, 126, 196, 255]);
-        paint_soft_underside_shade(&mut p.body, 4, 0.90);
-
-        paint_standard_faces(&mut p.faces, 52.0, 47.0, ink, blush);
+        #[rustfmt::skip]
+        let body_grid: &[&str] = &[
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "............KKKKKKKK............",
+            "..........KKHHTTTTHHKK..........",
+            ".........KHHTTHHHHHHHHK.........",
+            "........KHHHHHHHHHHHHHHK........",
+            "........KHHFFHHHHHHHHHHK........",
+            ".......KHFFFFFHHFFHHHHHK........",
+            ".......KFFFFFFFFFHHHHHHK........",
+            ".......KFFFFFFFFFHHHHHHK........",
+            ".......KFFFFFFFFFFFHHHHK........",
+            "........KFFFFFFFFFHHHHK.........",
+            ".........KKFFFFFFFKKKK..........",
+            ".........KLLLLBBBBDDKK..........",
+            "........KLLBBBBBBBBDDK..........",
+            "........KLBBBBBBBBBBDDK.........",
+            "........KBBBBBBBBBBBDDK.........",
+            "........KBBDDDDDDBBBDDK.........",
+            "........KBDDDDDDDBBBDDK.........",
+            ".........KDDDDDDDDDDDK..........",
+            "..........KKKKKKKKKKK...........",
+        ];
+        paint_pixel_grid_4x(&mut p.body, body_grid, pal);
+        paint_standard_faces(&mut p.faces, 48.0, 46.0, ink, blush);
 
         let mut arm = RigPart::new("Arm", PartRole::FrontLimb);
-        paint_ellipse(&mut arm.pixels, 54.0, 74.0, 5.5, 11.0, hoodie);
-        paint_ellipse(&mut arm.pixels, 52.0, 84.0, 4.8, 4.5, skin);
-        arm.socket_near = (57, 66);
+        #[rustfmt::skip]
+        let arm_grid: &[&str] = &[
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            ".............KLLK...............",
+            ".............KBBK...............",
+            ".............KBBK...............",
+            ".............KFFK...............",
+            ".............KKKK...............",
+        ];
+        paint_pixel_grid_4x(&mut arm.pixels, arm_grid, pal);
+        arm.socket_near = (56, 66);
         arm.socket_far = (64, 66);
-        arm.pivot = (57, 65);
-        arm.swing_deg = 24.0;
+        arm.pivot = (56, 66);
+        arm.swing_deg = 22.0;
 
         let mut leg = RigPart::new("Leg", PartRole::BackLimb);
-        paint_ellipse(&mut leg.pixels, 64.0, 94.0, 5.8, 10.5, hair);
-        paint_ellipse(&mut leg.pixels, 60.0, 103.5, 7.6, 4.2, shoe);
-        leg.socket_near = (66, 86);
-        leg.socket_far = (59, 86);
+        #[rustfmt::skip]
+        let leg_grid: &[&str] = &[
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "..............KHHK..............",
+            "..............KHHK..............",
+            ".............KRRRK..............",
+            "............KRRRRK..............",
+            "............KWWWWK..............",
+            "............KKKKKK..............",
+        ];
+        paint_pixel_grid_4x(&mut leg.pixels, leg_grid, pal);
+        leg.socket_near = (64, 86);
+        leg.socket_far = (56, 86);
         leg.pivot = (64, 86);
-        leg.swing_deg = 22.0;
+        leg.swing_deg = 20.0;
 
         p.parts = vec![arm, leg];
         p
     }
 
+    /// Crisp 32x32->128x128 pixel-art Sky Bird with tuft crest, golden beak, and layered wing.
     pub fn template_bird() -> Self {
         let mut p = Self::blank(Archetype::Bird);
         p.display_name = "Sky Bird".to_string();
         p.pack_id = "sky_bird".to_string();
-        p.outline_color = [28, 46, 72];
-        p.body_bob = 3.0;
+        p.outline_color = [26, 44, 70];
+        p.body_bob = 2.4;
 
-        let ink = [28, 46, 72, 255];
-        let sky = [92, 188, 246, 255];
-        let belly = [244, 250, 255, 255];
-        let wing_c = [58, 144, 218, 255];
-        let beak = [248, 180, 58, 255];
-        let blush = [252, 166, 178, 255];
+        let ink = [26, 44, 70, 255];
+        let sky = [86, 184, 246, 255];
+        let sky_hi = [152, 218, 255, 255];
+        let sky_sh = [46, 126, 198, 255];
+        let belly = [248, 252, 255, 255];
+        let beak = [248, 176, 52, 255];
+        let beak_sh = [208, 124, 30, 255];
+        let blush = [252, 160, 174, 255];
+        let pal: &[(u8, RgbaPixel)] = &[
+            (b'K', ink),
+            (b'S', sky),
+            (b'H', sky_hi),
+            (b'D', sky_sh),
+            (b'W', belly),
+            (b'Y', beak),
+            (b'O', beak_sh),
+        ];
 
-        paint_ellipse(&mut p.body, 65.0, 70.0, 22.5, 17.0, sky);
-        paint_ellipse_clipped(&mut p.body, 56.0, 78.0, 17.0, 11.0, belly);
-        paint_ellipse(&mut p.body, 48.0, 52.0, 15.5, 14.5, sky);
-        paint_ellipse(&mut p.body, 53.0, 38.0, 5.2, 4.2, wing_c);
-        paint_triangle(&mut p.body, (35.0, 51.0), (24.0, 55.5), (35.0, 59.0), beak);
-        paint_soft_underside_shade(&mut p.body, 4, 0.91);
-
-        paint_standard_faces(&mut p.faces, 43.0, 50.5, ink, blush);
+        #[rustfmt::skip]
+        let body_grid: &[&str] = &[
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "............KKK.................",
+            "...........KDDK.................",
+            ".........KKHHSSKK...............",
+            "........KHHSSSSSSK..............",
+            ".......KHSSSSSSSSSK.............",
+            "......KKSSSSSSSSSSK.............",
+            "....KKYYSSSSSSSSSSK.............",
+            "...KYYYOSSSSSSSSSSSK............",
+            "....KKOOSSSSSSSSSSSSKK..........",
+            ".......KSSWWSSSSSSSSSSKK........",
+            ".......KWWWWSSSSSSSSSSSDK.......",
+            ".......KWWWWWSSSSSSSSSSDK.......",
+            "........KWWWWWWSSSSSSSDDK.......",
+            "........KWWWWWWWSSSSSDDK........",
+            ".........KKWWWWWWSDDDDK.........",
+            "...........KKKKKKKKKKK..........",
+        ];
+        paint_pixel_grid_4x(&mut p.body, body_grid, pal);
+        paint_standard_faces(&mut p.faces, 42.0, 49.0, ink, blush);
 
         let mut wing = RigPart::new("Wing", PartRole::Wing);
-        paint_ellipse(&mut wing.pixels, 70.0, 68.0, 15.5, 9.0, wing_c);
-        paint_ellipse_clipped(&mut wing.pixels, 74.0, 71.0, 10.0, 5.5, sky);
-        paint_ellipse_clipped(&mut wing.pixels, 75.0, 74.0, 7.0, 1.0, wing_c);
-        paint_ellipse_clipped(&mut wing.pixels, 78.0, 71.0, 5.0, 0.8, wing_c);
+        #[rustfmt::skip]
+        let wing_grid: &[&str] = &[
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "...............KKKKKK...........",
+            "..............KDDSSSSKK.........",
+            "..............KDDDSSSSDK........",
+            "...............KDDDDDDK.........",
+            "................KKKKKK..........",
+        ];
+        paint_pixel_grid_4x(&mut wing.pixels, wing_grid, pal);
         wing.socket_near = (60, 66);
         wing.socket_far = (56, 62);
         wing.pivot = (58, 66);
-        wing.swing_deg = 32.0;
+        wing.swing_deg = 28.0;
 
         let mut tail = RigPart::new("Tail", PartRole::Tail);
-        paint_triangle(
-            &mut tail.pixels,
-            (84.0, 66.0),
-            (107.0, 59.0),
-            (104.0, 74.0),
-            wing_c,
-        );
-        tail.socket_near = (85, 68);
-        tail.pivot = (85, 68);
+        #[rustfmt::skip]
+        let tail_grid: &[&str] = &[
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "........................KKKK....",
+            ".......................KDDDK....",
+            "......................KDDDDK....",
+            ".......................KKKK.....",
+        ];
+        paint_pixel_grid_4x(&mut tail.pixels, tail_grid, pal);
+        tail.socket_near = (88, 66);
+        tail.pivot = (88, 66);
         tail.swing_deg = 14.0;
 
         let mut foot = RigPart::new("Foot", PartRole::BackLimb);
-        paint_ellipse(&mut foot.pixels, 63.0, 90.0, 2.5, 7.5, beak);
-        paint_ellipse(&mut foot.pixels, 59.5, 96.5, 6.2, 2.6, beak);
+        #[rustfmt::skip]
+        let foot_grid: &[&str] = &[
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "...............KOK..............",
+            "...............KOK..............",
+            ".............KKYYK..............",
+            ".............KKKKK..............",
+        ];
+        paint_pixel_grid_4x(&mut foot.pixels, foot_grid, pal);
         foot.socket_near = (64, 84);
-        foot.socket_far = (57, 83);
-        foot.pivot = (63, 84);
-        foot.swing_deg = 18.0;
+        foot.socket_far = (56, 83);
+        foot.pivot = (64, 84);
+        foot.swing_deg = 16.0;
 
         p.parts = vec![wing, tail, foot];
         p
     }
 
+    /// Crisp 32x32->128x128 pixel-art Emerald Snake: expressive chibi raised head, forked tongue,
+    /// diamond back scales, cream belly plates, and coiled S-wave tail!
     pub fn template_snake() -> Self {
         let mut p = Self::blank(Archetype::Crawler);
         p.display_name = "Emerald Snake".to_string();
         p.pack_id = "emerald_snake".to_string();
-        p.outline_color = [22, 54, 38];
-        p.wave_amplitude = 5.5;
-        p.body_bob = 0.5;
+        p.outline_color = [20, 48, 34];
+        p.wave_amplitude = 3.8;
+        p.body_bob = 0.6;
         p.walk_step_px = 6;
 
-        let ink = [22, 54, 38, 255];
-        let green = [96, 204, 114, 255];
-        let belly = [224, 248, 184, 255];
-        let spot = [54, 154, 78, 255];
-        let tongue = [238, 76, 86, 255];
-        let blush = [252, 160, 170, 255];
+        let ink = [20, 48, 34, 255];
+        let emerald = [82, 194, 108, 255];
+        let hi = [144, 232, 148, 255];
+        let dark = [38, 134, 72, 255];
+        let belly = [234, 248, 190, 255];
+        let belly_sh = [196, 222, 144, 255];
+        let tongue = [236, 68, 86, 255];
+        let blush = [252, 152, 166, 255];
+        let pal: &[(u8, RgbaPixel)] = &[
+            (b'K', ink),
+            (b'G', emerald),
+            (b'H', hi),
+            (b'D', dark),
+            (b'C', belly),
+            (b'B', belly_sh),
+            (b'R', tongue),
+        ];
 
-        paint_ellipse(&mut p.body, 28.0, 74.0, 14.0, 11.5, green);
-        paint_ellipse(&mut p.body, 15.0, 76.0, 5.0, 1.0, tongue);
-        paint_triangle(&mut p.body, (11.0, 75.0), (7.0, 73.0), (9.0, 76.0), tongue);
-        paint_triangle(&mut p.body, (11.0, 77.0), (7.0, 79.0), (9.0, 76.0), tongue);
-        for i in 0..9 {
-            let cx = 38.0 + i as f32 * 8.5;
-            let ry = (9.5 - i as f32 * 0.72).max(2.8);
-            paint_ellipse(&mut p.body, cx, 78.0 + (i as f32 * 0.35), 7.5, ry, green);
-        }
-        for i in 0..8 {
-            let cx = 38.0 + i as f32 * 8.5;
-            let ry = (9.5 - i as f32 * 0.72).max(2.8);
-            paint_ellipse_clipped(
-                &mut p.body,
-                cx,
-                82.0 + (i as f32 * 0.3),
-                5.8,
-                ry * 0.45,
-                belly,
-            );
-            if i % 2 == 1 {
-                paint_ellipse_clipped(&mut p.body, cx, 73.5, 3.2, ry * 0.48, spot);
-                paint_ellipse_clipped(&mut p.body, cx + 1.0, 73.0, 1.2, 1.0, [137, 226, 142, 255]);
-            }
-        }
-        paint_soft_underside_shade(&mut p.body, 3, 0.90);
-
-        paint_standard_faces(&mut p.faces, 25.0, 71.0, ink, blush);
+        #[rustfmt::skip]
+        let body_grid: &[&str] = &[
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "......KKKKKK....................",
+            "....KKHHGGDGKK..................",
+            "...KHGGGGGGDGGK.................",
+            "...KGGGGGGGGGGK.................",
+            ".R.KGGGGGGGGGGK......KKKK.......",
+            "RRRKGGGGGGGGGGK....KKHGGDK......",
+            ".R..KCCCCGGGGGKKKKKHHGGDGGK...KK",
+            ".....KKKKCCGGDGGHHGGDGGGGGKK.KHK",
+            ".........KCCGGGGGGDGGGGGGGGKKGGK",
+            ".........KCCBCGGGGGGGGGGGDGGGGK.",
+            "..........KKBCBBCCBCGGGCCBCGGK..",
+            "............KKKKKKKKKKKKKKKKK...",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+        ];
+        paint_pixel_grid_4x(&mut p.body, body_grid, pal);
+        paint_standard_faces(&mut p.faces, 28.0, 63.0, ink, blush);
         p.parts.clear();
         p
     }
 
+    /// Crisp 32x32->128x128 pixel-art Koi Fish with dorsal crest, calico spots, and forked tail.
     pub fn template_fish() -> Self {
         let mut p = Self::blank(Archetype::Swimmer);
         p.display_name = "Koi Fish".to_string();
         p.pack_id = "koi_fish".to_string();
-        p.outline_color = [78, 34, 24];
-        p.wave_amplitude = 4.2;
-        p.body_bob = 2.4;
+        p.outline_color = [68, 28, 22];
+        p.wave_amplitude = 3.6;
+        p.body_bob = 2.0;
 
-        let ink = [78, 34, 24, 255];
-        let coral = [246, 126, 64, 255];
-        let cream = [254, 238, 214, 255];
-        let fin_c = [252, 182, 96, 255];
-        let blush = [252, 160, 170, 255];
+        let ink = [68, 28, 22, 255];
+        let coral = [244, 114, 58, 255];
+        let hi = [255, 174, 98, 255];
+        let deep = [196, 68, 42, 255];
+        let cream = [254, 242, 222, 255];
+        let fin_c = [252, 190, 108, 255];
+        let blush = [252, 152, 166, 255];
+        let pal: &[(u8, RgbaPixel)] = &[
+            (b'K', ink),
+            (b'O', coral),
+            (b'H', hi),
+            (b'D', deep),
+            (b'W', cream),
+            (b'F', fin_c),
+        ];
 
-        paint_ellipse(&mut p.body, 58.0, 68.0, 27.5, 16.5, coral);
-        paint_ellipse(&mut p.body, 62.0, 51.0, 11.0, 6.0, fin_c);
-        paint_ellipse_clipped(&mut p.body, 54.0, 76.0, 20.0, 9.0, cream);
-        paint_ellipse_clipped(&mut p.body, 67.0, 63.0, 8.0, 6.0, cream);
-        paint_ellipse_clipped(&mut p.body, 49.0, 65.0, 1.0, 5.0, [174, 72, 47, 255]);
-        paint_ellipse_clipped(&mut p.body, 69.0, 73.0, 2.0, 1.2, [222, 95, 49, 255]);
-        paint_ellipse_clipped(&mut p.body, 76.0, 69.0, 2.0, 1.2, [222, 95, 49, 255]);
-        paint_soft_underside_shade(&mut p.body, 4, 0.90);
-
-        paint_standard_faces(&mut p.faces, 39.0, 65.0, ink, blush);
+        #[rustfmt::skip]
+        let body_grid: &[&str] = &[
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "..............KKKKKK............",
+            ".............KFFFFFK............",
+            "..........KKKKHHWWKKKK..........",
+            "........KKHHOOWWWWOOOHKK........",
+            ".......KHOOOOOWWWOOOOOODK.......",
+            "......KOOOOOOOWWOOOOOOOODK......",
+            "......KOOOOOWWWWWOOOOOOODK......",
+            "......KOOOWWWWWWWWOOOOODK.......",
+            ".......KWWWWWOWWWWWOOODK........",
+            "........KKWWWWWWWWWDDKK.........",
+            "..........KKKKKKKKKKK...........",
+        ];
+        paint_pixel_grid_4x(&mut p.body, body_grid, pal);
+        paint_standard_faces(&mut p.faces, 36.0, 64.0, ink, blush);
 
         let mut fin = RigPart::new("Side Fin", PartRole::Wing);
-        paint_ellipse(&mut fin.pixels, 58.0, 77.0, 8.5, 4.8, fin_c);
-        fin.socket_near = (54, 75);
-        fin.socket_far = (50, 73);
-        fin.pivot = (52, 75);
-        fin.swing_deg = 22.0;
+        #[rustfmt::skip]
+        let fin_grid: &[&str] = &[
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "..............KKKK..............",
+            ".............KFFFK..............",
+            "..............KKK...............",
+        ];
+        paint_pixel_grid_4x(&mut fin.pixels, fin_grid, pal);
+        fin.socket_near = (56, 74);
+        fin.socket_far = (52, 72);
+        fin.pivot = (54, 74);
+        fin.swing_deg = 20.0;
 
         let mut tail = RigPart::new("Tail Fin", PartRole::Tail);
-        paint_ellipse(&mut tail.pixels, 95.0, 62.0, 11.0, 6.5, fin_c);
-        paint_ellipse(&mut tail.pixels, 95.0, 74.0, 11.0, 6.5, fin_c);
-        paint_ellipse_clipped(&mut tail.pixels, 97.0, 62.0, 7.0, 1.0, [220, 113, 61, 255]);
-        paint_ellipse_clipped(&mut tail.pixels, 97.0, 74.0, 7.0, 1.0, [220, 113, 61, 255]);
-        tail.socket_near = (84, 68);
-        tail.pivot = (85, 68);
-        tail.swing_deg = 24.0;
+        #[rustfmt::skip]
+        let tail_grid: &[&str] = &[
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            "................................",
+            ".........................KKK....",
+            "........................KFFFK...",
+            ".......................KFFFK....",
+            ".......................KFFFK....",
+            "........................KFFFK...",
+            ".........................KKK....",
+        ];
+        paint_pixel_grid_4x(&mut tail.pixels, tail_grid, pal);
+        tail.socket_near = (88, 66);
+        tail.pivot = (88, 66);
+        tail.swing_deg = 22.0;
 
         p.parts = vec![fin, tail];
         p
@@ -1658,7 +2037,7 @@ impl StudioProject {
                 &cropped,
                 dst_w,
                 dst_h,
-                image::imageops::FilterType::Lanczos3,
+                image::imageops::FilterType::Nearest,
             );
             // Crisp matte cleanup so exported tiles have zero fuzzy fringe halos
             for px in resized.pixels_mut() {
