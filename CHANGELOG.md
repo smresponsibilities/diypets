@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.1] - Unreleased
+
+### Fixed
+- Fix Linux Clippy errors in platform-specific code.
+- Update the winget manifest to published version 0.4.0.
+
 ## [0.4.0] - 2026-11-24
 
 ### Added

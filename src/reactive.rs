@@ -140,11 +140,14 @@ impl CpuSampler {
 
 #[derive(Debug, Default)]
 struct InputCadencePoller {
+    #[cfg(any(windows, test))]
     prev_tick: Option<u32>,
+    #[cfg(any(windows, test))]
     prev_cursor: Option<(i32, i32)>,
 }
 
 impl InputCadencePoller {
+    #[cfg(any(windows, test))]
     fn feed_sample(&mut self, input_tick: u32, cursor: Option<(i32, i32)>) -> bool {
         let Some(last_tick) = self.prev_tick else {
             self.prev_tick = Some(input_tick);

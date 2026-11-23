@@ -7,6 +7,7 @@
 use crate::settings::sibling_binary;
 use std::path::PathBuf;
 
+#[cfg(windows)]
 const APP_ID: &str = "DIYPets";
 
 /// Always register the main `diypets` runner binary (even when toggled from `diypets-settings`).
