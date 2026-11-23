@@ -319,6 +319,42 @@ impl Drop for LayeredSurface {
     }
 }
 
+/// Pure Win32 style sanitizer ensuring borderless WS_POPUP + WS_EX_LAYERED never regress.
+fn sanitize_layered_window_styles(style: u32, ex_style: i32, topmost: bool) -> (u32, i32) {
+    const WS_POPUP_M: u32 = 0x8000_0000;
+    const WS_CAPTION_M: u32 = 0x00C0_0000;
+    const WS_THICKFRAME_M: u32 = 0x0004_0000;
+    const WS_BORDER_M: u32 = 0x0080_0000;
+    const WS_SYSMENU_M: u32 = 0x0008_0000;
+    const WS_MINIMIZEBOX_M: u32 = 0x0002_0000;
+    const WS_MAXIMIZEBOX_M: u32 = 0x0001_0000;
+
+    const WS_EX_TOPMOST_M: i32 = 0x0000_0008;
+    const WS_EX_TRANSPARENT_M: i32 = 0x0000_0020;
+    const WS_EX_TOOLWINDOW_M: i32 = 0x0000_0080;
+    const WS_EX_LAYERED_M: i32 = 0x0008_0000;
+    const WS_EX_NOREDIRECTIONBITMAP_M: i32 = 0x0020_0000;
+    const WS_EX_NOACTIVATE_M: i32 = 0x0800_0000;
+
+    let strip_mask = WS_CAPTION_M
+        | WS_THICKFRAME_M
+        | WS_BORDER_M
+        | WS_SYSMENU_M
+        | WS_MINIMIZEBOX_M
+        | WS_MAXIMIZEBOX_M;
+    let clean_style = (style & !strip_mask) | WS_POPUP_M;
+
+    let mut clean_ex = (ex_style | WS_EX_NOACTIVATE_M | WS_EX_TOOLWINDOW_M | WS_EX_LAYERED_M)
+        & !WS_EX_NOREDIRECTIONBITMAP_M
+        & !WS_EX_TRANSPARENT_M;
+    if topmost {
+        clean_ex |= WS_EX_TOPMOST_M;
+    } else {
+        clean_ex &= !WS_EX_TOPMOST_M;
+    }
+    (clean_style, clean_ex)
+}
+
 #[cfg(windows)]
 fn enforce_layered_styles(hwnd: windows::Win32::Foundation::HWND, topmost: bool) {
     use windows::Win32::UI::WindowsAndMessaging::{
@@ -329,30 +365,11 @@ fn enforce_layered_styles(hwnd: windows::Win32::Foundation::HWND, topmost: bool)
     };
 
     unsafe {
-        // Strip all classic window chrome so [_][o][X] borders can never reappear
         let style = GetWindowLongW(hwnd, GWL_STYLE) as u32;
-        let strip_mask = WS_CAPTION.0
-            | WS_THICKFRAME.0
-            | WS_BORDER.0
-            | WS_SYSMENU.0
-            | WS_MINIMIZEBOX.0
-            | WS_MAXIMIZEBOX.0;
-        let clean_style = (style & !strip_mask) | WS_POPUP.0;
+        let ex = GetWindowLongW(hwnd, GWL_EXSTYLE);
+        let (clean_style, new_ex) = sanitize_layered_window_styles(style, ex, topmost);
         if clean_style != style {
             SetWindowLongW(hwnd, GWL_STYLE, clean_style as i32);
-        }
-
-        let ex = GetWindowLongW(hwnd, GWL_EXSTYLE);
-        let mut new_ex = (ex
-            | WS_EX_NOACTIVATE.0 as i32
-            | WS_EX_TOOLWINDOW.0 as i32
-            | WS_EX_LAYERED.0 as i32)
-            & !(WS_EX_NOREDIRECTIONBITMAP.0 as i32)
-            & !(WS_EX_TRANSPARENT.0 as i32);
-        if topmost {
-            new_ex |= WS_EX_TOPMOST.0 as i32;
-        } else {
-            new_ex &= !(WS_EX_TOPMOST.0 as i32);
         }
         if new_ex != ex {
             SetWindowLongW(hwnd, GWL_EXSTYLE, new_ex);
@@ -2329,4 +2346,25 @@ fn main() {
 
     let event_loop = EventLoop::new().unwrap();
     let _ = event_loop.run_app(&mut app);
+
+    #[test]
+    fn layered_window_styles_strip_chrome_and_preserve_layered_flag() {
+        // Simulate decorated Win32 window with WS_EX_NOREDIRECTIONBITMAP (which breaks UpdateLayeredWindow)
+        let dirty_style = 0x00CF_0000; // WS_OVERLAPPEDWINDOW
+        let dirty_ex = 0x0020_0020;    // WS_EX_NOREDIRECTIONBITMAP | WS_EX_TRANSPARENT
+        let (s_top, ex_top) = sanitize_layered_window_styles(dirty_style, dirty_ex, true);
+
+        // Classic [_][o][X] borders must be completely stripped
+        assert_eq!(s_top & 0x00CF_0000, 0);
+        assert_ne!(s_top & 0x8000_0000, 0, "WS_POPUP must be set");
+
+        // WS_EX_LAYERED must be set and conflicting bits cleared so UpdateLayeredWindow never fails with 0x80070057
+        assert_ne!(ex_top & 0x0008_0000, 0, "WS_EX_LAYERED must be set");
+        assert_eq!(ex_top & 0x0020_0000, 0, "WS_EX_NOREDIRECTIONBITMAP must be cleared");
+        assert_eq!(ex_top & 0x0000_0020, 0, "WS_EX_TRANSPARENT must be cleared");
+        assert_ne!(ex_top & 0x0000_0008, 0, "WS_EX_TOPMOST must be set when topmost=true");
+
+        let (_, ex_no_top) = sanitize_layered_window_styles(dirty_style, dirty_ex, false);
+        assert_eq!(ex_no_top & 0x0000_0008, 0, "WS_EX_TOPMOST must clear when topmost=false");
+    }
 }

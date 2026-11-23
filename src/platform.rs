@@ -50,6 +50,51 @@ pub fn global_cursor_pos() -> Option<(f32, f32)> {
 }
 
 /// Detect whether another non-desktop foreground window covers an entire monitor (fullscreen game/video).
+/// Pure decision logic for fullscreen auto-hide (unit-tested against maximized & popup false positives).
+pub fn should_auto_hide_fullscreen(
+    is_own: bool,
+    is_iconic: bool,
+    is_zoomed: bool,
+    cloaked: bool,
+    style: u32,
+    ex_style: u32,
+    class_name: &str,
+    rect: (i32, i32, i32, i32),
+    monitors: &[(i32, i32, i32, i32)],
+) -> bool {
+    const WS_CAPTION_MASK: u32 = 0x00C0_0000;
+    const WS_THICKFRAME_MASK: u32 = 0x0004_0000;
+    const WS_EX_TOOLWINDOW_MASK: u32 = 0x0000_0080;
+    const WS_EX_NOACTIVATE_MASK: u32 = 0x0800_0000;
+
+    if is_own || is_iconic || is_zoomed || cloaked {
+        return false;
+    }
+    if (ex_style & (WS_EX_TOOLWINDOW_MASK | WS_EX_NOACTIVATE_MASK)) != 0 {
+        return false;
+    }
+    if (style & WS_CAPTION_MASK) != 0 || (style & WS_THICKFRAME_MASK) != 0 {
+        return false;
+    }
+    if matches!(
+        class_name,
+        "Progman"
+            | "WorkerW"
+            | "Shell_TrayWnd"
+            | "Shell_SecondaryTrayWnd"
+            | "Windows.UI.Core.CoreWindow"
+            | "ApplicationFrameWindow"
+            | "CASCADIA_HOSTING_WINDOW_CLASS"
+            | "NotifyIconOverflowWindow"
+    ) {
+        return false;
+    }
+    let (left, top, right, bottom) = rect;
+    monitors
+        .iter()
+        .any(|&(mx, my, mr, mb)| left <= mx && top <= my && right >= mr && bottom >= mb)
+}
+
 #[cfg(windows)]
 pub fn is_fullscreen_app_active(own_hwnds: &[isize], monitors: &[(i32, i32, i32, i32)]) -> bool {
     use windows::Win32::Foundation::RECT;
@@ -118,18 +163,18 @@ pub fn is_fullscreen_app_active(own_hwnds: &[isize], monitors: &[(i32, i32, i32,
             return false;
         }
 
-        for &(mx, my, mr, mb) in monitors {
-            if rect.left <= mx && rect.top <= my && rect.right >= mr && rect.bottom >= mb {
-                #[cfg(debug_assertions)]
-                eprintln!(
-                    "[diypets] fullscreen auto-hide triggered by class={class_name:?} rect=({},{},{},{}) style=0x{style:08x}",
-                    rect.left, rect.top, rect.right, rect.bottom
-                );
-                return true;
-            }
-        }
+        return should_auto_hide_fullscreen(
+            false,
+            false,
+            false,
+            false,
+            style,
+            ex_style,
+            &class_name,
+            (rect.left, rect.top, rect.right, rect.bottom),
+            monitors,
+        );
     }
-    false
 }
 
 #[cfg(not(windows))]
@@ -354,5 +399,29 @@ mod tests {
         let hit = pick_window_under_point(&windows, 400, 302, &monitors).unwrap();
         assert_eq!(hit.id, 2);
         assert_eq!(pick_window_under_point(&windows, 50, 50, &monitors), None);
+    }
+
+    #[test]
+    fn fullscreen_auto_hide_regression_guards() {
+        let monitors = [(0, 0, 1920, 1080)];
+        let full_rect = (0, 0, 1920, 1080);
+
+        // 1. Maximized standard window (IsZoomed = true) must NEVER hide pets
+        assert!(!should_auto_hide_fullscreen(false, false, true, false, 0, 0, "Chrome_WidgetWin_1", full_rect, &monitors));
+
+        // 2. Window with WS_CAPTION or WS_THICKFRAME must NEVER hide pets
+        assert!(!should_auto_hide_fullscreen(false, false, false, false, 0x00C0_0000, 0, "Chrome_WidgetWin_1", full_rect, &monitors));
+        assert!(!should_auto_hide_fullscreen(false, false, false, false, 0x0004_0000, 0, "Chrome_WidgetWin_1", full_rect, &monitors));
+
+        // 3. Transient toolwindows / no-activate overlays must NEVER hide pets
+        assert!(!should_auto_hide_fullscreen(false, false, false, false, 0, 0x0000_0080, "PopupClass", full_rect, &monitors));
+        assert!(!should_auto_hide_fullscreen(false, false, false, false, 0, 0x0800_0000, "PopupClass", full_rect, &monitors));
+
+        // 4. Desktop shell / Windows Terminal classes must NEVER hide pets
+        assert!(!should_auto_hide_fullscreen(false, false, false, false, 0, 0, "WorkerW", full_rect, &monitors));
+        assert!(!should_auto_hide_fullscreen(false, false, false, false, 0, 0, "CASCADIA_HOSTING_WINDOW_CLASS", full_rect, &monitors));
+
+        // 5. True borderless fullscreen game/video covering monitor DOES trigger auto-hide
+        assert!(should_auto_hide_fullscreen(false, false, false, false, 0x8000_0000, 0, "SDL_app", full_rect, &monitors));
     }
 }
