@@ -1,11 +1,14 @@
 ---
 name: diypets-creator
-description: Create, rig, animate, and control DIYPets desktop mascots via 2D SVG CLI and stdio/HTTP MCP API (6 tools).
+description: Create, auto-rig, animate, and control ~7.8 MB native Rust DIYPets desktop mascots directly from AI prompts using the create_pet_from_svg MCP tool, 2D SVG CLI, and 1-click Claude Code / Cursor hooks.
 ---
 
-# DIYPets Agent Skill
+# DIYPets Creator & Agent Companion Skill
 
-## 1. Connect via Native stdio MCP (Claude Desktop / Cursor / Claude Code)
+Give Claude Code, Cursor, Codex, or Claude Desktop the ability to generate custom rigged pixel-art desktop pets in 1 prompt and react to coding lifecycle events (~7.8 MB idle RAM, cross-platform Rust).
+
+## 1. Connect Native stdio MCP Server
+
 ```json
 {
   "mcpServers": {
@@ -17,15 +20,28 @@ description: Create, rig, animate, and control DIYPets desktop mascots via 2D SV
 }
 ```
 
-## 2. Build a Desktop Pet From a 2D SVG (One Command)
-Create a 128x128 SVG facing **LEFT** with semantic <g id="..."> groups (body, front_leg, back_leg, wing, tail, ear, face, face_blink, face_happy, face_sleep, face_surprised), then run:
+Install 1-click lifecycle hooks:
+```bash
+diypets hooks install all
+```
 
+## 2. Create & Spawn Any Custom Desktop Pet in 1 Tool Call
+
+1. Author a clean 128x128 SVG facing LEFT (`viewBox="0 0 128 128"`).
+2. Group semantic parts with `<g id="...">`: `body`, `front_leg`, `back_leg`, `wing`, `tail`, `ear`, `face`, `face_blink`, `face_happy`, `face_sleep`, `face_surprised`.
+3. Call `create_pet_from_svg` with `{ "svg": "...", "name": "...", "archetype": "quadruped|biped|bird|crawler|swimmer", "spawn": true }`.
+
+CLI fallback:
 ```bash
 diypets-creator --from-svg pet.svg --name "My Pet" --archetype quadruped --author "AI Agent" --activate
 ```
-Archetypes: quadruped | biped | bird | crawler | swimmer.
 
-## 3. Control Live Desktop Pets (CLI / HTTP / MCP)
-- **CLI:** diypets say "Tests passed!" · diypets ball · diypets react --mood happy --text "PR merged!"
-- **HTTP (127.0.0.1:3721):** GET /status · GET /herd · POST /react · POST /mcp
-- **MCP tools:** react_pet, say, drop_ball, spawn_pet, set_follow_cursor, list_herd
+## 3. All 7 MCP Tools (`diypets mcp`)
+
+- `create_pet_from_svg`: Generate, auto-rig, install, and spawn a custom desktop pet from inline SVG or `.svg` file.
+- `react_pet`: Trigger `happy`, `hop`, `sleep`, `walk`, or `ball` with an optional speech bubble.
+- `say`: Show a calm status speech bubble without forcing a jump.
+- `drop_ball`: Drop a bouncy pixel toy ball for the active herd to chase.
+- `spawn_pet`: Add an existing mascot to the herd (up to 8).
+- `set_follow_cursor`: Toggle Play Mode cursor following.
+- `list_herd`: Read-only list of currently active desktop pets.

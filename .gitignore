@@ -12,3 +12,4 @@ assets/esheep_ani.gif
 !scripts/validate_sprites.py
 !assets/generate_demo.py
 !scripts/update_package_manifests.py
+!scripts/package_skill.py

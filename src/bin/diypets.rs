@@ -1691,6 +1691,13 @@ impl ApplicationHandler for DeskpetApp {
                 pet.squash.trigger_hop();
             }
         }
+        if let Some(alert_msg) = reactive_out.spike_alert
+            && !self.quiet_mode
+            && !self.fullscreen_hidden
+        {
+            let now_ms = self.start_time.elapsed().as_millis() as u64;
+            self.bubble = SpeechBubbleOverlay::create(event_loop, &alert_msg, now_ms + 5000);
+        }
         if reactive_out.speed_dirty {
             let default_speed = self.walk_speed;
             for (i, pet) in self.pets.iter_mut().enumerate() {

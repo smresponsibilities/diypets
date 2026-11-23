@@ -39,7 +39,12 @@
 - [x] **T-010: Keystroke & Click Reflex Mode (Bongo Bounce)**
   - *Reference:* **BongoCat** (Rust/Tauri).
   - *Scope:* Privacy-safe global input-cadence counter (counts tap rate only, never logs keys) so pets tap paws or cheer during coding bursts.
-- [x] **T-011: CPU & Build Activity Sprint Mode (RunCat Speed)**
+- [x] **T-011: CPU & Build Activity Sprint Mode (RunCat Speed) + Ambient Process-Spike Radar**
+  - *Scope:* Native zero-bloat culprit detector calls out runaway processes (`CPU 91%: cargo`) when CPU >= 85%.
+- [x] **Inversion 2: `create_pet_from_svg` Zero-Smell MCP Tool & Packaged `diypets.skill`**
+  - *Scope:* Prompt Claude/Cursor to generate, auto-rig, and spawn custom 2D SVG mascots in 1 tool call; auto-packaged `diypets.skill` in releases.
+- [x] **Inversion 3: Zero-Install Browser Mascot GIF Maker (`docs/index.html`)**
+  - *Scope:* Pure client-side lossless GIF89a encoder supporting built-in mascots + custom PNG/SVG uploads with transparent or README card export.
   - *Reference:* **RunCat 365**.
   - *Scope:* Optional CPU load binding where pets sprint faster during heavy compiles and nap when idle.
 - [ ] **T-012: Audio-Reactive Beat Bounce Mode**

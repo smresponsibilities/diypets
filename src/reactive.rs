@@ -1,12 +1,11 @@
-//! Reactive Developer Companion Modes (T-010 Typing Cadence & T-011 CPU Build Sprint).
-//!
-//! Privacy & AV-safety design:
-//! - T-010 NEVER installs a keyboard hook and NEVER reads keycodes or characters.
-//!   On Windows it checks `GetLastInputInfo` timestamps combined with cursor stillness
-//!   to detect typing/click rhythm safely without triggering antivirus false positives.
-//! - T-011 reads native OS CPU counters (`GetSystemTimes` on Windows, `/proc/stat` on Linux,
-//!   `getloadavg` on macOS) with zero external dependencies and ~0% overhead.
+//! Reactive Developer Companion Modes:
+//! - T-010: Privacy-Safe Typing Cadence Reflex (Bongo bounce, never logs keys)
+//! - T-011: Live CPU Build Sprint (RunCat walk acceleration)
+//! - Process-Spike Radar: Native zero-bloat culprit detector that calls out runaway
+//!   processes (`CPU 91%: cargo`) when CPU >= 85% with a 25s anti-spam cooldown.
 
+#[cfg(any(windows, target_os = "linux"))]
+use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
@@ -14,8 +13,11 @@ const TAP_WINDOW: Duration = Duration::from_secs(2);
 const HOP_COOLDOWN: Duration = Duration::from_millis(240);
 const CPU_POLL_INTERVAL: Duration = Duration::from_millis(1000);
 const INPUT_POLL_INTERVAL: Duration = Duration::from_millis(55);
+const SPIKE_WARMUP_THRESHOLD: f32 = 0.70;
+const SPIKE_ALERT_THRESHOLD: f32 = 0.85;
+const SPIKE_ALERT_COOLDOWN: Duration = Duration::from_secs(25);
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ReactiveOutput {
     /// True on beats where active pets should play a rhythmic Bongo hop/bounce.
     pub trigger_hop: bool,
@@ -27,6 +29,8 @@ pub struct ReactiveOutput {
     pub taps_per_sec: f32,
     /// True whenever `speed_multiplier` changed enough that pet walk speeds should be refreshed.
     pub speed_dirty: bool,
+    /// Optional ambient radar speech bubble when CPU >= 85% (e.g. `"CPU 91%: cargo"`).
+    pub spike_alert: Option<String>,
 }
 
 /// Map normalized CPU utilization (`0.0..=1.0`) to a RunCat-style walk/sprint multiplier.
@@ -39,6 +43,214 @@ pub fn cpu_load_to_speed_multiplier(cpu_fraction: f32) -> f32 {
     } else {
         let t = ((c - 0.35) / 0.60).clamp(0.0, 1.0);
         1.0 + t * 1.2
+    }
+}
+
+/// Clean a raw OS executable/process name for a compact pet speech bubble.
+pub fn sanitize_process_label(raw: &str) -> Option<String> {
+    let base = raw.trim().rsplit(['\\', '/']).next().unwrap_or("").trim();
+    let stripped = base
+        .strip_suffix(".exe")
+        .or_else(|| base.strip_suffix(".EXE"))
+        .unwrap_or(base)
+        .trim();
+    if stripped.is_empty() {
+        return None;
+    }
+    let low = stripped.to_ascii_lowercase();
+    if matches!(
+        low.as_str(),
+        "system" | "system idle process" | "idle" | "registry" | "memory compression"
+    ) {
+        return None;
+    }
+    let clean: String = stripped
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(20)
+        .collect();
+    if clean.is_empty() { None } else { Some(clean) }
+}
+
+/// Select the top non-idle process from `(name, cpu_delta)` pairs.
+pub fn pick_top_culprit(deltas: &[(String, u64)]) -> Option<String> {
+    deltas
+        .iter()
+        .filter(|(_, d)| *d > 0)
+        .filter_map(|(name, d)| sanitize_process_label(name).map(|clean| (clean, *d)))
+        .max_by_key(|(_, d)| *d)
+        .map(|(clean, _)| clean)
+}
+
+#[derive(Debug, Default)]
+struct ProcessRadar {
+    #[cfg(any(windows, target_os = "linux"))]
+    prev_times: HashMap<u32, u64>,
+    last_alert: Option<Instant>,
+}
+
+impl ProcessRadar {
+    fn reset(&mut self) {
+        #[cfg(any(windows, target_os = "linux"))]
+        self.prev_times.clear();
+    }
+
+    fn sample_top_process(&mut self) -> Option<String> {
+        #[cfg(windows)]
+        {
+            use windows::Win32::Foundation::{CloseHandle, FILETIME};
+            use windows::Win32::System::Diagnostics::ToolHelp::{
+                CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
+                TH32CS_SNAPPROCESS,
+            };
+            use windows::Win32::System::Threading::{
+                GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+            };
+
+            let ft_u64 =
+                |ft: FILETIME| ((ft.dwHighDateTime as u64) << 32) | (ft.dwLowDateTime as u64);
+
+            let snap = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) }.ok()?;
+            let mut entry = PROCESSENTRY32W {
+                dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
+                ..Default::default()
+            };
+
+            let mut next_times = HashMap::with_capacity(self.prev_times.len().max(64));
+            let mut deltas: Vec<(String, u64)> = Vec::new();
+            let self_pid = std::process::id();
+
+            if unsafe { Process32FirstW(snap, &mut entry) }.is_ok() {
+                loop {
+                    let pid = entry.th32ProcessID;
+                    if pid > 4
+                        && pid != self_pid
+                        && let Ok(proc_h) =
+                            unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }
+                    {
+                        let mut c_t = FILETIME::default();
+                        let mut e_t = FILETIME::default();
+                        let mut k_t = FILETIME::default();
+                        let mut u_t = FILETIME::default();
+                        if unsafe {
+                            GetProcessTimes(proc_h, &mut c_t, &mut e_t, &mut k_t, &mut u_t)
+                        }
+                        .is_ok()
+                        {
+                            let total = ft_u64(k_t).saturating_add(ft_u64(u_t));
+                            if let Some(&prev) = self.prev_times.get(&pid) {
+                                let d = total.saturating_sub(prev);
+                                if d > 0 {
+                                    let nul = entry
+                                        .szExeFile
+                                        .iter()
+                                        .position(|&c| c == 0)
+                                        .unwrap_or(entry.szExeFile.len());
+                                    let name = String::from_utf16_lossy(&entry.szExeFile[..nul]);
+                                    deltas.push((name, d));
+                                }
+                            }
+                            next_times.insert(pid, total);
+                        }
+                        let _ = unsafe { CloseHandle(proc_h) };
+                    }
+                    if unsafe { Process32NextW(snap, &mut entry) }.is_err() {
+                        break;
+                    }
+                }
+            }
+            let _ = unsafe { CloseHandle(snap) };
+            self.prev_times = next_times;
+            pick_top_culprit(&deltas)
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            let mut next_times = HashMap::with_capacity(self.prev_times.len().max(64));
+            let mut deltas: Vec<(String, u64)> = Vec::new();
+            let self_pid = std::process::id();
+            let Ok(entries) = std::fs::read_dir("/proc") else {
+                return None;
+            };
+            for ent in entries.flatten() {
+                let Ok(pid) = ent.file_name().to_string_lossy().parse::<u32>() else {
+                    continue;
+                };
+                if pid == self_pid {
+                    continue;
+                }
+                let Ok(stat) = std::fs::read_to_string(ent.path().join("stat")) else {
+                    continue;
+                };
+                let Some(rparen) = stat.rfind(')') else {
+                    continue;
+                };
+                let fields: Vec<&str> = stat[rparen + 1..].split_whitespace().collect();
+                if fields.len() < 13 {
+                    continue;
+                }
+                let utime = fields[11].parse::<u64>().unwrap_or(0);
+                let stime = fields[12].parse::<u64>().unwrap_or(0);
+                let total = utime.saturating_add(stime);
+                if let Some(&prev) = self.prev_times.get(&pid) {
+                    let d = total.saturating_sub(prev);
+                    if d > 0 {
+                        let name =
+                            std::fs::read_to_string(ent.path().join("comm")).unwrap_or_default();
+                        deltas.push((name, d));
+                    }
+                }
+                next_times.insert(pid, total);
+            }
+            self.prev_times = next_times;
+            pick_top_culprit(&deltas)
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            let out = std::process::Command::new("ps")
+                .args(["-Arcwwwxo", "%cpu,comm"])
+                .output()
+                .ok()?;
+            let text = String::from_utf8_lossy(&out.stdout);
+            for line in text.lines().skip(1) {
+                let mut parts = line.split_whitespace();
+                let _pct = parts.next()?;
+                let comm = parts.next()?;
+                if let Some(clean) = sanitize_process_label(comm)
+                    && !clean.eq_ignore_ascii_case("diypets")
+                {
+                    return Some(clean);
+                }
+            }
+            None
+        }
+
+        #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+        {
+            None
+        }
+    }
+
+    fn maybe_alert(&mut self, now: Instant, cpu_fraction: f32) -> Option<String> {
+        if cpu_fraction < SPIKE_WARMUP_THRESHOLD {
+            self.reset();
+            return None;
+        }
+        let top = self.sample_top_process();
+        if cpu_fraction < SPIKE_ALERT_THRESHOLD {
+            return None;
+        }
+        let ready = self
+            .last_alert
+            .is_none_or(|prev| now.saturating_duration_since(prev) >= SPIKE_ALERT_COOLDOWN);
+        if !ready {
+            return None;
+        }
+        let culprit = top?;
+        self.last_alert = Some(now);
+        let pct = (cpu_fraction * 100.0).round().clamp(0.0, 100.0) as u8;
+        Some(format!("CPU {pct}%: {culprit}"))
     }
 }
 
@@ -141,14 +353,12 @@ impl CpuSampler {
 
 #[derive(Debug, Default)]
 struct InputCadencePoller {
-    #[cfg(any(windows, test))]
     prev_tick: Option<u32>,
-    #[cfg(any(windows, test))]
     prev_cursor: Option<(i32, i32)>,
 }
 
 impl InputCadencePoller {
-    #[cfg(any(windows, test))]
+    #[cfg_attr(not(windows), allow(dead_code))]
     fn feed_sample(&mut self, input_tick: u32, cursor: Option<(i32, i32)>) -> bool {
         let Some(last_tick) = self.prev_tick else {
             self.prev_tick = Some(input_tick);
@@ -163,7 +373,6 @@ impl InputCadencePoller {
         self.prev_tick = Some(input_tick);
         self.prev_cursor = cursor;
 
-        // Only count as a typing/click tap when OS input tick advanced without passive mouse gliding.
         input_tick != last_tick && !moved_mouse
     }
 
@@ -203,6 +412,7 @@ impl InputCadencePoller {
 #[derive(Debug)]
 pub struct ReactiveCompanion {
     cpu_sampler: CpuSampler,
+    process_radar: ProcessRadar,
     input_poller: InputCadencePoller,
     tap_times: VecDeque<Instant>,
     last_hop: Option<Instant>,
@@ -223,6 +433,7 @@ impl ReactiveCompanion {
     pub fn new() -> Self {
         Self {
             cpu_sampler: CpuSampler::default(),
+            process_radar: ProcessRadar::default(),
             input_poller: InputCadencePoller::default(),
             tap_times: VecDeque::with_capacity(32),
             last_hop: None,
@@ -234,7 +445,6 @@ impl ReactiveCompanion {
         }
     }
 
-    /// Record a privacy-safe tap pulse (used internally by OS polling and unit tests).
     pub fn record_tap(&mut self, now: Instant) -> bool {
         self.prune_taps(now);
         self.tap_times.push_back(now);
@@ -259,7 +469,6 @@ impl ReactiveCompanion {
         }
     }
 
-    /// Advance reactive state once per runner tick.
     pub fn update(
         &mut self,
         now: Instant,
@@ -268,6 +477,7 @@ impl ReactiveCompanion {
     ) -> ReactiveOutput {
         let mut trigger_hop = false;
         let mut speed_dirty = false;
+        let mut spike_alert = None;
 
         if typing_reflex {
             let poll_due = self
@@ -299,6 +509,10 @@ impl ReactiveCompanion {
                         self.applied_multiplier = target_mult;
                         speed_dirty = true;
                     }
+                    spike_alert = self.process_radar.maybe_alert(now, self.smoothed_cpu);
+                    if spike_alert.is_some() {
+                        trigger_hop = true;
+                    }
                 }
             }
             if !self.was_cpu_sprint {
@@ -308,6 +522,7 @@ impl ReactiveCompanion {
         } else if self.was_cpu_sprint {
             self.was_cpu_sprint = false;
             self.applied_multiplier = 1.0;
+            self.process_radar.reset();
             speed_dirty = true;
         }
 
@@ -318,6 +533,7 @@ impl ReactiveCompanion {
             cpu_percent: (self.smoothed_cpu * 100.0).round().clamp(0.0, 100.0) as u8,
             taps_per_sec,
             speed_dirty,
+            spike_alert,
         }
     }
 }
@@ -339,9 +555,7 @@ mod tests {
         let mut comp = ReactiveCompanion::new();
         let t0 = Instant::now();
         assert!(comp.record_tap(t0));
-        // Too soon (< 240ms cooldown) -> no double jitter
         assert!(!comp.record_tap(t0 + Duration::from_millis(80)));
-        // Next beat (>= 240ms) -> crisp rhythmic hop
         assert!(comp.record_tap(t0 + Duration::from_millis(260)));
     }
 
@@ -349,11 +563,8 @@ mod tests {
     fn input_poller_ignores_passive_cursor_movement_without_keystroke() {
         let mut poller = InputCadencePoller::default();
         assert!(!poller.feed_sample(1000, Some((500, 500))));
-        // Cursor moved 40px -> passive mouse glide, NOT a typing/click tap
         assert!(!poller.feed_sample(1050, Some((540, 500))));
-        // Input tick advanced while cursor stayed still -> keystroke or click tap!
         assert!(poller.feed_sample(1120, Some((540, 500))));
-        // Same input tick -> idle
         assert!(!poller.feed_sample(1120, Some((540, 500))));
     }
 
@@ -366,5 +577,16 @@ mod tests {
         let out = comp.update(t0, false, false);
         assert!(out.speed_dirty);
         assert!((out.speed_multiplier - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn process_radar_picks_real_culprit_and_filters_system_idle() {
+        let deltas = vec![
+            ("System Idle Process".to_string(), 99_000),
+            ("C:\\Users\\sm\\.cargo\\bin\\cargo.exe".to_string(), 42_500),
+            ("node.exe".to_string(), 11_200),
+        ];
+        assert_eq!(pick_top_culprit(&deltas), Some("cargo".to_string()));
+        assert_eq!(sanitize_process_label("System"), None);
     }
 }

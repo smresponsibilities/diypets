@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 
 pub const DEFAULT_PORT: u16 = 3721;
 pub const MAX_HTTP_REQUEST_BYTES: usize = 4096;
+pub const MAX_SVG_BYTES: usize = 65_536;
 pub const MAX_TEXT_CHARS: usize = 160;
 pub const MAX_MOOD_CHARS: usize = 32;
 pub const MAX_PACK_ID_CHARS: usize = 64;
@@ -244,6 +245,110 @@ pub fn handle_http_request_with_herd(
     }
 }
 
+fn parse_archetype_hint(raw: Option<&str>) -> Option<crate::studio_model::Archetype> {
+    match raw?.trim().to_ascii_lowercase().as_str() {
+        "quadruped" | "cat" | "dog" | "cow" | "goat" => {
+            Some(crate::studio_model::Archetype::Quadruped)
+        }
+        "biped" | "buddy" | "human" | "robot" => Some(crate::studio_model::Archetype::Biped),
+        "bird" | "owl" | "duck" | "bat" => Some(crate::studio_model::Archetype::Bird),
+        "crawler" | "snake" | "worm" | "crab" | "bug" => {
+            Some(crate::studio_model::Archetype::Crawler)
+        }
+        "swimmer" | "fish" | "koi" | "shark" => Some(crate::studio_model::Archetype::Swimmer),
+        _ => None,
+    }
+}
+
+pub fn execute_create_pet_from_svg(
+    args: &serde_json::Value,
+    tx: Option<&Sender<AgentCommand>>,
+) -> Result<String, String> {
+    let svg_text = if let Some(inline) = args.get("svg").and_then(|v| v.as_str()) {
+        let trimmed = inline.trim();
+        if trimmed.is_empty() {
+            return Err("Parameter `svg` was empty".to_string());
+        }
+        if trimmed.len() > MAX_SVG_BYTES {
+            return Err(format!(
+                "Inline SVG exceeds {MAX_SVG_BYTES} byte safety cap"
+            ));
+        }
+        trimmed.to_string()
+    } else if let Some(path_str) = args.get("svg_path").and_then(|v| v.as_str()) {
+        let p = std::path::Path::new(path_str.trim());
+        let meta = std::fs::metadata(p)
+            .map_err(|e| format!("Cannot read svg_path {}: {e}", p.display()))?;
+        if meta.len() > MAX_SVG_BYTES as u64 {
+            return Err(format!("SVG file exceeds {MAX_SVG_BYTES} byte safety cap"));
+        }
+        std::fs::read_to_string(p).map_err(|e| format!("Failed reading {}: {e}", p.display()))?
+    } else {
+        return Err("Provide either `svg` (inline 128x128 SVG markup) or `svg_path`".to_string());
+    };
+
+    let display_name = args
+        .get("name")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("Custom Pet");
+    let author = args
+        .get("author")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("AI Agent");
+    let raw_id = args
+        .get("pack_id")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(display_name);
+    let pack_id = crate::studio_model::sanitize_pack_id(raw_id);
+    let archetype_opt = parse_archetype_hint(args.get("archetype").and_then(|v| v.as_str()));
+
+    let mut project = crate::svg_import::import_svg_to_project(
+        &svg_text,
+        display_name,
+        archetype_opt.unwrap_or(crate::studio_model::Archetype::Quadruped),
+    )?;
+    project.display_name = display_name.to_string();
+    project.pack_id = pack_id.clone();
+    project.author = author.to_string();
+    if let Some(arch) = archetype_opt {
+        project.archetype = arch;
+    }
+
+    let pack_dir = crate::settings::user_packs_dir().join(&pack_id);
+    project.export_to_dir(&pack_dir)?;
+
+    let should_spawn = args.get("spawn").and_then(|v| v.as_bool()).unwrap_or(true);
+    let mut spawn_note = String::new();
+    if should_spawn {
+        let spawn_cmd = AgentCommand {
+            mood: "spawn".to_string(),
+            text: Some(format!("Hi! I am {display_name}!")),
+            pack_id: Some(pack_id.clone()),
+            duration_ms: Some(3500),
+            enabled: None,
+        };
+        if let Some(ch) = tx {
+            let _ = dispatch_command(ch, spawn_cmd);
+            spawn_note = " and spawned onto desktop".to_string();
+        } else if send_cli_command(&spawn_cmd).is_ok() {
+            spawn_note = " and spawned onto desktop".to_string();
+        } else {
+            spawn_note = " (saved to packs dir; launch `diypets` to see it)".to_string();
+        }
+    }
+
+    Ok(format!(
+        "Created & rigged DIYPets mascot `{pack_id}` at {}{spawn_note}",
+        pack_dir.display()
+    ))
+}
+
 fn handle_mcp_jsonrpc(body: &str, tx: &Sender<AgentCommand>, active_herd: &[String]) -> String {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(body) else {
         return http_json(
@@ -383,6 +488,15 @@ fn handle_mcp_jsonrpc(body: &str, tx: &Sender<AgentCommand>, active_herd: &[Stri
                         }),
                     }
                 }
+                "create_pet_from_svg" => match execute_create_pet_from_svg(&args, Some(tx)) {
+                    Ok(msg) => serde_json::json!({
+                        "content": [{ "type": "text", "text": msg }]
+                    }),
+                    Err(err) => serde_json::json!({
+                        "isError": true,
+                        "content": [{ "type": "text", "text": err }]
+                    }),
+                },
                 "list_herd" => {
                     let summary = serde_json::json!({
                         "count": active_herd.len(),
@@ -560,58 +674,166 @@ fn mcp_tools_manifest() -> serde_json::Value {
         "tools": [
             {
                 "name": "react_pet",
-                "description": "Make your DIYPets desktop pets react (happy/hearts, hop, sleep, walk, ball) with an optional speech bubble",
+                "description": "Trigger a physical animation reaction and optional speech bubble on all active DIYPets desktop mascots (use when builds pass/fail, tests finish, or you want visual celebration; do not use when only showing text without hopping—use `say` instead).",
+                "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false,
+                    "idempotentHint": false,
+                    "openWorldHint": false
+                },
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "mood": { "type": "string", "enum": ["happy", "hop", "sleep", "walk", "ball"] },
-                        "text": { "type": "string" },
-                        "duration_ms": { "type": "integer", "minimum": 1000, "maximum": 15000 }
+                        "mood": {
+                            "type": "string",
+                            "enum": ["happy", "hop", "sleep", "walk", "ball"],
+                            "description": "Animation mood to perform on active desktop pets."
+                        },
+                        "text": {
+                            "type": "string",
+                            "maxLength": 160,
+                            "description": "Optional short status message for the floating speech bubble."
+                        },
+                        "duration_ms": {
+                            "type": "integer",
+                            "minimum": 1000,
+                            "maximum": 15000,
+                            "description": "How long to display the speech bubble in milliseconds (default 4500)."
+                        }
                     },
                     "required": ["mood"]
                 }
             },
             {
                 "name": "say",
-                "description": "Show a floating speech bubble above the primary desktop pet without forcing a hop",
+                "description": "Display a calm floating speech bubble above the primary DIYPets desktop mascot without forcing a jump or disrupting ongoing walk/sleep state (use for non-intrusive status updates).",
+                "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": false
+                },
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "text": { "type": "string" },
-                        "duration_ms": { "type": "integer", "minimum": 1000, "maximum": 15000 }
+                        "text": {
+                            "type": "string",
+                            "maxLength": 160,
+                            "description": "Short plain-text message to display above the pet."
+                        },
+                        "duration_ms": {
+                            "type": "integer",
+                            "minimum": 1000,
+                            "maximum": 15000,
+                            "description": "Speech bubble duration in milliseconds (default 4500)."
+                        }
                     },
                     "required": ["text"]
                 }
             },
             {
+                "name": "create_pet_from_svg",
+                "description": "Generate, auto-rig, install, and optionally spawn a brand-new animated DIYPets desktop mascot from a 128x128 2D SVG facing LEFT (accepts inline `svg` markup up to 64 KB or a local `svg_path`). Use when the user asks to create or draw a custom mascot.",
+                "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": false
+                },
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "svg": {
+                            "type": "string",
+                            "description": "Inline 128x128 SVG markup facing LEFT (optional semantic <g id='body|front_leg|back_leg|wing|tail|face'> groups)."
+                        },
+                        "svg_path": {
+                            "type": "string",
+                            "description": "Path to a local .svg file on disk (alternative to inline `svg`)."
+                        },
+                        "name": {
+                            "type": "string",
+                            "description": "Display name for the mascot (e.g. 'Cyber Crab')."
+                        },
+                        "pack_id": {
+                            "type": "string",
+                            "description": "Optional lowercase snake_case folder ID (derived from `name` if omitted)."
+                        },
+                        "archetype": {
+                            "type": "string",
+                            "enum": ["quadruped", "biped", "bird", "crawler", "swimmer"],
+                            "description": "Rigging archetype controlling walk/hop/slither/swim physics."
+                        },
+                        "author": {
+                            "type": "string",
+                            "description": "Creator attribution stored in the exported XML header."
+                        },
+                        "spawn": {
+                            "type": "boolean",
+                            "description": "If true (default), immediately spawn the newly created mascot onto the desktop."
+                        }
+                    }
+                }
+            },
+            {
                 "name": "drop_ball",
-                "description": "Drop a bouncy pixel toy ball onto the desktop for all pets to chase and kick",
+                "description": "Drop a bouncy pixel toy ball onto the desktop for all active pets to chase and kick around.",
+                "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false,
+                    "idempotentHint": false,
+                    "openWorldHint": false
+                },
                 "inputSchema": { "type": "object", "properties": {} }
             },
             {
                 "name": "spawn_pet",
-                "description": "Add another pet to the active desktop herd (up to 8)",
+                "description": "Add another existing mascot pack to the active desktop herd (up to 8 simultaneous pets). Call `list_herd` first if you need to check active count.",
+                "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false,
+                    "idempotentHint": false,
+                    "openWorldHint": false
+                },
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "pack_id": { "type": "string" }
+                        "pack_id": {
+                            "type": "string",
+                            "description": "Pack ID to spawn (e.g. highland_cow, dog, polar_bear, goat, stegosaurus, or a custom pack ID)."
+                        }
                     }
                 }
             },
             {
                 "name": "set_follow_cursor",
-                "description": "Enable or disable Play Mode cursor chasing across the active herd",
+                "description": "Toggle Play Mode cursor-following across all active desktop pets.",
+                "annotations": {
+                    "readOnlyHint": false,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": false
+                },
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "enabled": { "type": "boolean" }
+                        "enabled": {
+                            "type": "boolean",
+                            "description": "True to follow the mouse cursor, false to return to autonomous roaming."
+                        }
                     },
                     "required": ["enabled"]
                 }
             },
             {
                 "name": "list_herd",
-                "description": "List all currently active desktop pets in the herd",
+                "description": "Read-only query returning the count and pack IDs of all currently active DIYPets desktop mascots.",
+                "annotations": {
+                    "readOnlyHint": true,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": false
+                },
                 "inputSchema": { "type": "object", "properties": {} }
             }
         ]
@@ -667,6 +889,28 @@ pub fn process_stdio_mcp_line(line: &str) -> Option<String> {
             .to_string(),
         );
     };
+    if v.get("method").and_then(|m| m.as_str()) == Some("tools/call")
+        && v.pointer("/params/name").and_then(|n| n.as_str()) == Some("create_pet_from_svg")
+    {
+        let id = v.get("id").cloned().unwrap_or(serde_json::Value::Null);
+        let args = v.pointer("/params/arguments").cloned().unwrap_or_default();
+        let result = match execute_create_pet_from_svg(&args, None) {
+            Ok(msg) => serde_json::json!({
+                "content": [{ "type": "text", "text": msg }]
+            }),
+            Err(err) => serde_json::json!({
+                "isError": true,
+                "content": [{ "type": "text", "text": err }]
+            }),
+        };
+        let resp = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": result
+        });
+        return Some(resp.to_string());
+    }
+
     let method = v.get("method").and_then(|m| m.as_str()).unwrap_or("");
     let id = v.get("id").cloned();
 
@@ -854,5 +1098,31 @@ mod tests {
         drop(rx);
         let req = "POST /react HTTP/1.1\r\n\r\n{\"mood\":\"happy\"}";
         assert!(handle_http_request(req, &tx).starts_with("HTTP/1.1 503"));
+    }
+
+    #[test]
+    fn mcp_create_pet_from_svg_builds_pack_and_spawns_pet() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mini_svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+            <g id="body"><ellipse cx="64" cy="70" rx="28" ry="20" fill="#e65c4f"/></g>
+            <g id="face"><circle cx="48" cy="64" r="4" fill="#111111"/></g>
+        </svg>"##;
+        let args = serde_json::json!({
+            "svg": mini_svg,
+            "name": "Test MCP Crab",
+            "pack_id": "test_mcp_crab_unit",
+            "archetype": "crawler",
+            "spawn": true
+        });
+        let msg = execute_create_pet_from_svg(&args, Some(&tx))
+            .expect("create_pet_from_svg should succeed");
+        assert!(msg.contains("test_mcp_crab_unit"));
+        let cmd = rx.try_recv().expect("should emit spawn command");
+        assert_eq!(cmd.mood, "spawn");
+        assert_eq!(cmd.pack_id.as_deref(), Some("test_mcp_crab_unit"));
+
+        let pack_dir = crate::settings::user_packs_dir().join("test_mcp_crab_unit");
+        assert!(pack_dir.join("deskpet.xml").is_file());
+        let _ = std::fs::remove_dir_all(&pack_dir);
     }
 }

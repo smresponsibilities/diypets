@@ -75,6 +75,9 @@ jobs:
           else
             shasum -a 256 "$tarball" > "$tarball.sha256"
           fi
+      - name: Package diypets.skill archive
+        if: runner.os == 'Linux'
+        run: python3 scripts/package_skill.py
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
         with:
@@ -83,3 +86,4 @@ jobs:
             diypets-*.zip.sha256
             diypets-*.tar.gz
             diypets-*.tar.gz.sha256
+            dist/diypets.skill
