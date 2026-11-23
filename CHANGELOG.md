@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0] - 2026-11-24
+
+### Added
+- **Intelligent 8-Bit Sprite Sheet Importer (T-004):** Auto border flood-fill chroma-key removal, native `2x`/`3x`/`4x` pixel-scale snapping, Auto Grid / Auto Islands / Manual Grid slicing with live cut-box overlay, and 0px foot-locked normalization.
+- **Scratch-Style Costumes Flipbook & JuiceFX 1-Click Auto-Animator (T-005):** Numbered flipbook editor with Onion Skin, toggleable Foot-Anchor crosshair guide, and 5 procedural pixel-art motion generators (`Auto-Walk Bounce`, `Idle Breathing`, `Tail / Ear Wave`, `Squash Hop`, `Motion Smear`).
+- **Lossless Transparent & Social-Card GIF Exporter (T-007):** Exact-palette GIF89a export with `DisposalMethod::Background` (zero ghosting) inside Studio and via `diypets export-gif`.
+- **1-Click Coding-Agent Lifecycle Hooks (T-009):** `diypets hooks install <claude-code|cursor|all>` with idempotent non-destructive JSON merging and atomic config writes.
+- **Reactive Companion Modes (T-010 & T-011):** Privacy-safe Typing Cadence Reflex (Bongo bounce via OS input timestamps without keylogging) and live CPU Build Sprint Mode (RunCat-style walk acceleration during builds).
+
+### Security & Hardening
+- **Local HTTP/MCP API Hardening (T-022):** 4 KB request cap (`413`), sliding-window burst rate limiter (`429`), strict `127.0.0.1` loopback check, command sanitization, and structured logging/toasts replacing silent `let _ =` error swallows.
+
 ## [0.3.1] - 2026-11-23
 ### Fixed
 - **Windows Layered Visibility & Border Regression:** Replaced winit `set_visible()` toggling on Windows with native `ShowWindow` (`SW_HIDE` / `SW_SHOWNOACTIVATE`) + `WS_POPUP` / `WS_EX_LAYERED` style enforcement and automatic `UpdateLayeredWindow` (`0x80070057`) self-healing so pets never lose transparency or show classic window chrome.

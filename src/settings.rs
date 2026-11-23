@@ -43,6 +43,10 @@ pub struct Settings {
     pub follow_cursor: bool,
     /// Auto-hide pets and pause physics while a fullscreen game or video is active.
     pub auto_hide_fullscreen: bool,
+    /// Privacy-safe typing/click cadence reflex mode (Bongo bounce, never logs keys).
+    pub typing_reflex: bool,
+    /// Live CPU utilization sprint mode (RunCat speed tied to build spikes).
+    pub cpu_sprint: bool,
     /// Primary active pet pack ID.
     pub pet_pack: String,
     /// Additional simultaneous desktop pets (Herd Mode, up to `MAX_ACTIVE_PETS - 1`).
@@ -65,6 +69,8 @@ impl Default for Settings {
             start_on_login: false,
             follow_cursor: false,
             auto_hide_fullscreen: true,
+            typing_reflex: false,
+            cpu_sprint: false,
         }
     }
 }
@@ -403,6 +409,8 @@ mod tests {
             start_on_login: true,
             follow_cursor: true,
             auto_hide_fullscreen: false,
+            typing_reflex: true,
+            cpu_sprint: true,
         };
         wanted.set_slot_size(0, Some(168));
         wanted.set_slot_size(1, Some(72));

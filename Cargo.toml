@@ -1,14 +1,14 @@
 [package]
 name = "diypets"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2024"
 description = "Make your own desktop pet - lightweight cross-platform Rust mascot engine with a built-in 2D/SVG Pet Creator Studio and lazy-loaded eSheep XML packs."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/smresponsibilities/diypets"
 homepage = "https://shivammahajan.com/diypets/"
 readme = "README.md"
-keywords = ["desktop-pet", "mascot", "esheep", "shimeji", "egui"]
-categories = ["gui", "games"]
+keywords = ["desktop-pet", "mascot", "mcp", "pixel-art", "shimeji"]
+categories = ["gui", "games", "graphics", "command-line-utilities"]
 default-run = "diypets"
 autobins = false
 include = [
@@ -86,6 +86,8 @@ windows = { version = "0.58.0", features = [
     "Win32_Graphics_Dwm",
     "Win32_System_Com",
     "Win32_UI_HiDpi",
+    "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
 ] }
 
 [dev-dependencies]

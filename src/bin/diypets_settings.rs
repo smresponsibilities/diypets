@@ -1307,6 +1307,12 @@ impl eframe::App for MyApp {
                             changed |= ui
                                 .checkbox(&mut self.settings.click_through, "Click Through Transparent Corners")
                                 .changed();
+                            changed |= ui
+                                .checkbox(&mut self.settings.typing_reflex, "Typing Cadence Reflex (Bongo Bounce)")
+                                .changed();
+                            changed |= ui
+                                .checkbox(&mut self.settings.cpu_sprint, "CPU Build Sprint (RunCat Speed)")
+                                .changed();
                             if ui
                                 .checkbox(&mut self.settings.start_on_login, "Start on Login (Autostart)")
                                 .changed()

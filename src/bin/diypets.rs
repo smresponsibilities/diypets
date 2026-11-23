@@ -802,6 +802,9 @@ struct DeskpetApp {
     click_through: bool,
     start_on_login: bool,
     follow_cursor: bool,
+    typing_reflex: bool,
+    cpu_sprint: bool,
+    reactive: diypets::reactive::ReactiveCompanion,
     auto_hide_fullscreen: bool,
     quiet_mode: bool,
     fullscreen_hidden: bool,
@@ -852,6 +855,8 @@ impl DeskpetApp {
         s.always_on_top = self.is_topmost;
         s.start_on_login = self.start_on_login;
         s.follow_cursor = self.follow_cursor;
+        s.typing_reflex = self.typing_reflex;
+        s.cpu_sprint = self.cpu_sprint;
         s.auto_hide_fullscreen = self.auto_hide_fullscreen;
         if let Some(first) = self.desired_herd.first() {
             s.pet_pack = first.clone();
@@ -1088,6 +1093,8 @@ impl DeskpetApp {
         self.climb_windows = settings.climb_windows;
         self.click_through = settings.click_through;
         self.follow_cursor = settings.follow_cursor;
+        self.typing_reflex = settings.typing_reflex;
+        self.cpu_sprint = settings.cpu_sprint;
         self.auto_hide_fullscreen = settings.auto_hide_fullscreen;
         self.pet_size = settings.pet_size;
         self.walk_speed = settings.walk_speed;
@@ -1174,6 +1181,14 @@ impl DeskpetApp {
                     self.follow_cursor = cmd.enabled.unwrap_or(!self.follow_cursor);
                     self.persist_current_settings();
                 }
+                "typing_reflex" => {
+                    self.typing_reflex = cmd.enabled.unwrap_or(!self.typing_reflex);
+                    self.persist_current_settings();
+                }
+                "cpu_sprint" => {
+                    self.cpu_sprint = cmd.enabled.unwrap_or(!self.cpu_sprint);
+                    self.persist_current_settings();
+                }
                 "ball" | "play" | "treat" => {
                     self.drop_toy_ball(event_loop, now_ms);
                 }
@@ -1219,6 +1234,14 @@ impl DeskpetApp {
                 }
                 "follow_cursor" => {
                     self.follow_cursor = !self.follow_cursor;
+                    self.persist_current_settings();
+                }
+                "typing_reflex" => {
+                    self.typing_reflex = !self.typing_reflex;
+                    self.persist_current_settings();
+                }
+                "cpu_sprint" => {
+                    self.cpu_sprint = !self.cpu_sprint;
                     self.persist_current_settings();
                 }
                 id if id.starts_with("add_pack:") => {
@@ -1549,6 +1572,8 @@ impl ApplicationHandler for DeskpetApp {
                 None,
             );
             let quiet = CheckMenuItem::with_id("quiet_mode", "Quiet Mode (Hide Pets)", true, self.quiet_mode, None);
+            let typing_item = CheckMenuItem::with_id("typing_reflex", "Typing Cadence Reflex (Bongo)", true, self.typing_reflex, None);
+            let cpu_item = CheckMenuItem::with_id("cpu_sprint", "CPU Build Sprint (RunCat)", true, self.cpu_sprint, None);
             let sleep = MenuItem::with_id("sleep", "Sleep All", true, None);
             let creator = MenuItem::with_id("creator", "DIYPets Studio", true, None);
             let settings = MenuItem::with_id("settings", "Application Settings", true, None);
@@ -1575,6 +1600,8 @@ impl ApplicationHandler for DeskpetApp {
             let _ = menu.append(&follow);
             let _ = menu.append(&sleep);
             let _ = menu.append(&quiet);
+            let _ = menu.append(&typing_item);
+            let _ = menu.append(&cpu_item);
             let _ = menu.append(&PredefinedMenuItem::separator());
             let _ = menu.append(&creator);
             let _ = menu.append(&settings);
@@ -1598,6 +1625,25 @@ impl ApplicationHandler for DeskpetApp {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let reactive_out = self.reactive.update(
+            std::time::Instant::now(),
+            self.typing_reflex,
+            self.cpu_sprint,
+        );
+        if reactive_out.trigger_hop && !self.quiet_mode && !self.fullscreen_hidden {
+            for pet in &mut self.pets {
+                pet.squash.trigger_hop();
+            }
+        }
+        if reactive_out.speed_dirty {
+            let default_speed = self.walk_speed;
+            for (i, pet) in self.pets.iter_mut().enumerate() {
+                let base = self.desired_speeds.get(i).copied().unwrap_or(default_speed);
+                pet.state.walk_speed = ((base as f32) * reactive_out.speed_multiplier)
+                    .round()
+                    .clamp(1.0, 30.0) as i32;
+            }
+        }
         let now = Instant::now();
         if now >= self.next_frame {
             self.next_frame = now + FRAME_INTERVAL;
@@ -2422,6 +2468,9 @@ fn main() {
         click_through: settings.click_through,
         start_on_login: autostart::is_enabled() || settings.start_on_login,
         follow_cursor: settings.follow_cursor,
+        typing_reflex: settings.typing_reflex,
+        cpu_sprint: settings.cpu_sprint,
+        reactive: diypets::reactive::ReactiveCompanion::new(),
         auto_hide_fullscreen: settings.auto_hide_fullscreen,
         quiet_mode: false,
         fullscreen_hidden: false,
