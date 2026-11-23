@@ -243,13 +243,13 @@ pub fn spawn_unix_pet_menu(tx: Sender<AgentCommand>, follow_cursor: bool) {
             _ => return,
         };
 
-        let _ = tx.send(AgentCommand {
+        if let Err(e) = tx.send(AgentCommand {
             mood: mood.0.to_string(),
             text: mood.1.map(String::from),
             pack_id: None,
             duration_ms: None,
             enabled: None,
-        });
+        }) { crate::logging::warn(&format!("platform: failed forwarding agent command: {e}")); }
     });
 }
 

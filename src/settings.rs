@@ -322,7 +322,7 @@ impl Settings {
             .map_err(|e| format!("cannot write {}: {e}", tmp_path.display()))?;
 
         if fs::rename(&tmp_path, path).is_err() {
-            let _ = fs::remove_file(&tmp_path);
+            if let Err(e) = fs::remove_file(&tmp_path) { crate::logging::warn(&format!("settings: temp cleanup failed {}: {e}", tmp_path.display())); }
             fs::write(path, &text).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
         }
         Ok(())

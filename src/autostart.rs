@@ -53,10 +53,10 @@ pub fn set_enabled(enable: bool) -> Result<(), String> {
             return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
         }
     } else {
-        let _ = std::process::Command::new("reg")
+        if let Err(e) = std::process::Command::new("reg")
             .args(["delete", key, "/v", APP_ID, "/f"])
             .creation_flags(CREATE_NO_WINDOW)
-            .output();
+            .output() { crate::logging::warn(&format!("autostart: reg command failed: {e}")); }
     }
     Ok(())
 }

@@ -66,7 +66,7 @@
 ## P3b — Codebase Hardening & Platform Parity (v1.0 Readiness)
 - [ ] **T-021: Split Monolith Binaries into Submodules (`runner/`, `studio/`, `settings_ui/`)**
   - Break `diypets.rs`, `diypets_creator.rs`, and `diypets_settings.rs` into small testable modules so community PRs stay clean.
-- [ ] **T-022: Local HTTP Agent API Security & Rate-Limiting Hardening**
+- [x] **T-022: Local HTTP Agent API Security, Rate-Limiting & Silent Error Hardening**
   - Enforce 4 KB body cap, per-second reaction rate limiting, and strict `127.0.0.1` binding across all agent routes.
 - [ ] **T-023: True Linux Wayland (`zwlr_layer_shell_v1` + `wl_region` click-through) & macOS Ledge Verification**
   - Native Wayland transparent overlay surface with dynamic input masks and verified macOS `CGWindowListCopyWindowInfo` ledge walking.

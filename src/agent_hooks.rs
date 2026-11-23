@@ -122,17 +122,17 @@ fn atomic_write_json(path: &Path, value: &Value) -> Result<(), String> {
         if let Err(rename_err) = fs::rename(&tmp_path, path) {
             // Windows rejects rename onto an existing file; replace safely after staging.
             fs::copy(&tmp_path, path).map_err(|copy_err| {
-                let _ = fs::remove_file(&tmp_path);
+                if let Err(rm_err) = fs::remove_file(&tmp_path) { crate::logging::warn(&format!("agent_hooks: temp cleanup failed for {}: {rm_err}", tmp_path.display())); }
                 format!(
                     "Failed to update {} (rename: {rename_err}; copy: {copy_err})",
                     path.display()
                 )
             })?;
-            let _ = fs::remove_file(&tmp_path);
+            if let Err(rm_err) = fs::remove_file(&tmp_path) { crate::logging::warn(&format!("agent_hooks: temp cleanup failed for {}: {rm_err}", tmp_path.display())); }
         }
     } else {
         fs::rename(&tmp_path, path).map_err(|e| {
-            let _ = fs::remove_file(&tmp_path);
+            if let Err(rm_err) = fs::remove_file(&tmp_path) { crate::logging::warn(&format!("agent_hooks: temp cleanup failed for {}: {rm_err}", tmp_path.display())); }
             format!("Failed to write {}: {e}", path.display())
         })?;
     }
@@ -440,15 +440,17 @@ pub fn send_hook_reaction_nonblocking(reaction: &HookReaction) {
         .build();
     let base = format!("http://127.0.0.1:{DEFAULT_AGENT_PORT}");
     let payload = serde_json::to_string(&json!({
-        "action": reaction.emotion,
-        "message": reaction.text,
+        "mood": reaction.emotion,
         "text": reaction.text,
     }));
     if let Ok(body) = payload {
-        let _ = agent
-            .post(&format!("{base}/react"))
-            .set("Content-Type", "application/json")
-            .send_string(&body);
+        // Intentionally ignore offline-daemon errors so hooks never block Claude/Cursor.
+        drop(
+            agent
+                .post(&format!("{base}/react"))
+                .set("Content-Type", "application/json")
+                .send_string(&body),
+        );
     }
 }
 

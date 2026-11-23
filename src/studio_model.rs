@@ -624,7 +624,7 @@ pub fn rgba_buf_to_png_b64(buf: &[RgbaPixel]) -> String {
         img.put_pixel((i % BOARD_SIZE) as u32, (i / BOARD_SIZE) as u32, image::Rgba(px));
     }
     let mut bytes = Vec::new();
-    let _ = img.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png);
+    if let Err(e) = img.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png) { crate::logging::warn(&format!("studio_model: PNG encode failed: {e}")); }
     STANDARD.encode(&bytes)
 }
 
@@ -1788,7 +1788,7 @@ impl StudioProject {
         let dst = pack_dir.join("deskpet.xml");
         std::fs::write(&tmp, &xml).map_err(|e| format!("cannot write xml: {e}"))?;
         if std::fs::rename(&tmp, &dst).is_err() {
-            let _ = std::fs::remove_file(&tmp);
+            if let Err(e) = std::fs::remove_file(&tmp) { crate::logging::warn(&format!("studio_model: temp file cleanup failed: {e}")); }
             std::fs::write(&dst, &xml).map_err(|e| format!("cannot write xml: {e}"))?;
         }
         icon_tile

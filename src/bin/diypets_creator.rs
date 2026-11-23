@@ -888,7 +888,7 @@ impl StudioApp {
                     let sp = Settings::default_path();
                     let mut s = Settings::load_sanitized(&sp);
                     s.pet_pack = self.project.pack_id.clone();
-                    let _ = s.save(&sp);
+                    if let Err(e) = s.save(&sp) { diypets::logging::warn(&format!("creator: failed to save settings {}: {e}", sp.display())); self.toasts.warn(format!("Could not save settings: {e}")); }
                     self.status_msg = Some((
                         format!("Exported & activated '{}' on your desktop!", self.project.display_name),
                         false,
@@ -1160,18 +1160,18 @@ impl StudioApp {
             return;
         }
         let target = export_root_dir().join(&id);
-        let _ = std::fs::create_dir_all(&target);
+        if let Err(e) = std::fs::create_dir_all(&target) { diypets::logging::warn(&format!("creator: failed to create {}: {e}", target.display())); self.status_msg = Some((format!("Directory create error: {e}"), true)); return; }
         if let Err(e) = std::fs::write(target.join("deskpet.xml"), &xml) {
             self.status_msg = Some((format!("Write error: {e}"), true));
             return;
         }
         let icon = image::imageops::resize(&ing.frames[0], 64, 64, image::imageops::FilterType::Nearest);
-        let _ = icon.save(target.join("icon.png"));
+        if let Err(e) = icon.save(target.join("icon.png")) { diypets::logging::warn(&format!("creator: failed to save icon.png: {e}")); self.toasts.warn(format!("Pack saved, but icon.png failed: {e}")); }
         if activate {
             let sp = Settings::default_path();
             let mut s = Settings::load_sanitized(&sp);
             s.pet_pack = id.clone();
-            let _ = s.save(&sp);
+            if let Err(e) = s.save(&sp) { diypets::logging::warn(&format!("creator: failed to save settings {}: {e}", sp.display())); self.toasts.warn(format!("Could not save settings: {e}")); }
             self.status_msg = Some((
                 format!("Imported {count} foot-locked frames & activated '{id}' on desktop!"),
                 false,

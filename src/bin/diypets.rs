@@ -1010,7 +1010,7 @@ impl DeskpetApp {
                             let icon =
                                 TrayIconImage::from_rgba(img.to_vec(), img.width(), img.height())
                                     .ok();
-                            let _ = tray.set_icon(icon);
+                            if let Err(e) = tray.set_icon(icon) { logging::warn(&format!("runner: tray icon update failed: {e}")); }
                         }
                     self.pets[i].window.set_window_icon(
                         winit::window::Icon::from_rgba(img.to_vec(), img.width(), img.height())
@@ -1093,7 +1093,7 @@ impl DeskpetApp {
         self.walk_speed = settings.walk_speed;
         if self.start_on_login != settings.start_on_login {
             self.start_on_login = settings.start_on_login;
-            let _ = autostart::set_enabled(self.start_on_login);
+            if let Err(e) = autostart::set_enabled(self.start_on_login) { logging::warn(&format!("runner: autostart toggle failed: {e}")); }
         }
 
         let herd = settings.active_herd();
@@ -2225,9 +2225,8 @@ impl Drop for DeskpetApp {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    if args.get(1).map(String::as_str) != Some("mcp") {
-        let _ = logging::init("diypets");
-    }
+    if args.get(1).map(String::as_str) != Some("mcp")
+        && logging::init("diypets").is_none() { eprintln!("diypets: warning: could not initialize file logger"); }
     if matches!(args.get(1).map(String::as_str), Some("--version" | "-V" | "version")) {
         println!(
             "diypets v{} ({}, {}, {})",
@@ -2309,7 +2308,7 @@ fn main() {
         let mut stdin_buf = String::new();
         if !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
             use std::io::Read;
-            let _ = std::io::stdin().take(4096).read_to_string(&mut stdin_buf);
+            if let Err(e) = std::io::stdin().take(4096).read_to_string(&mut stdin_buf) { logging::warn(&format!("hook-event: stdin read failed: {e}")); }
         }
         if let Some(reaction) = diypets::agent_hooks::map_hook_event(agent, event, &stdin_buf) {
             diypets::agent_hooks::send_hook_reaction_nonblocking(&reaction);
@@ -2445,7 +2444,7 @@ fn main() {
     };
 
     let event_loop = EventLoop::new().unwrap();
-    let _ = event_loop.run_app(&mut app);
+    if let Err(e) = event_loop.run_app(&mut app) { logging::error(&format!("runner: event loop exited with error: {e}")); }
 }
 
 #[cfg(test)]

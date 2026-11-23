@@ -81,7 +81,7 @@ pub fn download_pack(entry: &CatalogEntry) -> Result<PathBuf, String> {
     fs::write(&tmp_path, &xml_text)
         .map_err(|e| format!("cannot write {}: {e}", tmp_path.display()))?;
     if fs::rename(&tmp_path, &xml_path).is_err() {
-        let _ = fs::remove_file(&tmp_path);
+        if let Err(e) = fs::remove_file(&tmp_path) { crate::logging::warn(&format!("catalog: temp cleanup failed {}: {e}", tmp_path.display())); }
         fs::write(&xml_path, &xml_text)
             .map_err(|e| format!("cannot write {}: {e}", xml_path.display()))?;
     }
@@ -95,8 +95,10 @@ pub fn download_pack(entry: &CatalogEntry) -> Result<PathBuf, String> {
                 |ch: u8| (u16::from(ch) * 255 / u16::from(a.max(1))).min(255) as u8;
             rgba.extend_from_slice(&[straight(r), straight(g), straight(b), a]);
         }
-        if let Some(img) = image::RgbaImage::from_raw(pack.tile_w, pack.tile_h, rgba) {
-            let _ = img.save(pack_dir.join("icon.png"));
+        if let Some(img) = image::RgbaImage::from_raw(pack.tile_w, pack.tile_h, rgba)
+            && let Err(e) = img.save(pack_dir.join("icon.png"))
+        {
+            crate::logging::warn(&format!("catalog: failed saving pack icon.png: {e}"));
         }
     }
 
@@ -118,8 +120,8 @@ pub fn download_and_cache_icon(entry: &CatalogEntry) -> Option<image::RgbaImage>
     let mut bytes = Vec::new();
     resp.into_reader().read_to_end(&mut bytes).ok()?;
     let img = image::load_from_memory(&bytes).ok()?.to_rgba8();
-    let _ = fs::create_dir_all(&cache_dir);
-    let _ = img.save(&cached);
+    if let Err(e) = fs::create_dir_all(&cache_dir) { crate::logging::warn(&format!("catalog: failed creating cache dir: {e}")); }
+    if let Err(e) = img.save(&cached) { crate::logging::warn(&format!("catalog: failed caching icon {}: {e}", cached.display())); }
     Some(img)
 }
 
@@ -194,18 +196,18 @@ pub fn default_app_icon(target_size: u32) -> Option<image::RgbaImage> {
 
 /// Open a directory in the OS file manager (Explorer / Finder / xdg-open).
 pub fn open_folder_in_os(path: &Path) {
-    let _ = fs::create_dir_all(path);
+    if let Err(e) = fs::create_dir_all(path) { crate::logging::warn(&format!("catalog: failed creating folder {}: {e}", path.display())); }
     #[cfg(windows)]
     {
-        let _ = std::process::Command::new("explorer").arg(path).spawn();
+        if let Err(e) = std::process::Command::new("explorer").arg(path).spawn() { crate::logging::warn(&format!("catalog: failed launching explorer: {e}")); }
     }
     #[cfg(target_os = "macos")]
     {
-        let _ = std::process::Command::new("open").arg(path).spawn();
+        if let Err(e) = std::process::Command::new("open").arg(path).spawn() { crate::logging::warn(&format!("catalog: failed launching open: {e}")); }
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {
-        let _ = std::process::Command::new("xdg-open").arg(path).spawn();
+        if let Err(e) = std::process::Command::new("xdg-open").arg(path).spawn() { crate::logging::warn(&format!("catalog: failed launching xdg-open: {e}")); }
     }
 }
 

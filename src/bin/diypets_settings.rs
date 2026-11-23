@@ -232,8 +232,8 @@ fn load_best_thumbnail(
         if let Some(thumb) = extract_xml_tile0_thumbnail(&xml_path)
             .or_else(|| load_square_thumbnail(&dir.join("strip.png")))
         {
-            let _ = std::fs::create_dir_all(cache_dir);
-            let _ = thumb.save(&cached_path);
+            if let Err(e) = std::fs::create_dir_all(cache_dir) { diypets::logging::warn(&format!("settings: failed to create cache dir: {e}")); }
+            if let Err(e) = thumb.save(&cached_path) { diypets::logging::warn(&format!("settings: failed to save cached icon {}: {e}", cached_path.display())); }
             return Some(thumb);
         }
     } else if cached_path.is_file()
@@ -509,7 +509,7 @@ impl MyApp {
             {
                 let latest = tag.trim_start_matches('v');
                 if !latest.is_empty() && latest != current {
-                    let _ = upd_tx.send(tag.to_string());
+                    if let Err(e) = upd_tx.send(tag.to_string()) { diypets::logging::warn(&format!("settings: update check send failed: {e}")); }
                     ctx_upd.request_repaint();
                 }
             }
@@ -597,9 +597,8 @@ impl MyApp {
                     [s(r), s(g), s(b), a]
                 })
                 .collect();
-            if let Some(img) = image::RgbaImage::from_raw(pack.tile_w, pack.tile_h, rgba) {
-                let _ = img.save(dest_dir.join("icon.png"));
-            }
+            if let Some(img) = image::RgbaImage::from_raw(pack.tile_w, pack.tile_h, rgba)
+                && let Err(e) = img.save(dest_dir.join("icon.png")) { diypets::logging::warn(&format!("settings: failed to save imported icon.png: {e}")); }
         }
         self.settings.pet_pack = id.clone();
         self.last_scan = Instant::now() - REFRESH_INTERVAL;
@@ -688,7 +687,7 @@ impl MyApp {
                     error,
                 },
             };
-            let _ = tx.send(outcome);
+            if let Err(e) = tx.send(outcome) { diypets::logging::warn(&format!("settings: download result send failed: {e}")); }
             ctx.request_repaint();
         });
     }
