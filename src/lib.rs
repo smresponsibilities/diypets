@@ -1,3 +1,4 @@
+pub mod juice_fx;
 pub mod gif_export;
 pub mod agent_hooks;
 pub mod sprite_ingest;

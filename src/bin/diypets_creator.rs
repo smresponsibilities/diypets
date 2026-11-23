@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use diypets::catalog::default_app_icon;
+use diypets::juice_fx::{JuiceEffect, build_costumes_pack_xml, detect_foot_y, flip_horizontal, generate_juice_frames, snap_feet_to_baseline};
 use diypets::sprite_ingest::{IngestedSheet, SliceMode, ingest_sprite_sheet, strip_border_background};
 use diypets::ui_toast::ToastQueue;
 use diypets::settings::{Settings, local_project_root, user_packs_dir};
@@ -52,6 +53,7 @@ const PALETTE: &[(u8, u8, u8)] = &[
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum StudioTab {
     Draw,
+    Costumes,
     Rig,
     Animate,
     Export,
@@ -293,6 +295,20 @@ struct StudioApp {
     sheet_pad_y: u32,
     sheet_merge_gap: u32,
     sheet_ingested: Option<IngestedSheet>,
+    show_foot_crosshair: bool,
+    costume_frames: Vec<image::RgbaImage>,
+    costume_selected: usize,
+    costume_foot_y: u32,
+    costume_fps_ms: u32,
+    costume_playing: bool,
+    costume_play_start: Instant,
+    costume_onion_skin: bool,
+    costume_juice_strength: f32,
+    costume_thumbs: Vec<egui::TextureHandle>,
+    costume_canvas_tex: Option<egui::TextureHandle>,
+    costume_dirty: bool,
+    costume_undo: Vec<Vec<image::RgbaImage>>,
+    costume_stroke_active: bool,
     sheet_name: String,
     unsaved_changes: bool,
     confirm_close_modal: bool,
@@ -375,6 +391,20 @@ impl Default for StudioApp {
             sheet_pad_y: 0,
             sheet_merge_gap: 2,
             sheet_ingested: None,
+            show_foot_crosshair: true,
+            costume_frames: Vec::new(),
+            costume_selected: 0,
+            costume_foot_y: (BOARD_SIZE as u32).saturating_sub(10),
+            costume_fps_ms: 120,
+            costume_playing: false,
+            costume_play_start: Instant::now(),
+            costume_onion_skin: true,
+            costume_juice_strength: 1.0,
+            costume_thumbs: Vec::new(),
+            costume_canvas_tex: None,
+            costume_dirty: true,
+            costume_undo: Vec::new(),
+            costume_stroke_active: false,
             sheet_name: "sheet_pet".to_string(),
             unsaved_changes: false,
             confirm_close_modal: false,
@@ -904,6 +934,514 @@ impl StudioApp {
         }
         self.confirm_overwrite_path = None;
         self.pending_activate = false;
+    }
+
+    fn push_costume_undo(&mut self) {
+        if self.costume_undo.len() >= 25 {
+            self.costume_undo.remove(0);
+        }
+        self.costume_undo.push(self.costume_frames.clone());
+    }
+
+    fn capture_costume_from_project(&mut self, replace_all: bool) {
+        match self.project.build_export_artifacts() {
+            Ok((sheet, _icon, xml)) => {
+                let mut tiles_x = 1u32;
+                let mut tiles_y = 1u32;
+                if let Ok(doc) = roxmltree::Document::parse(&xml) {
+                    for node in doc.descendants() {
+                        if node.has_tag_name("TilesX")
+                            && let Some(t) = node.text()
+                            && let Ok(v) = t.trim().parse::<u32>()
+                        {
+                            tiles_x = v.max(1);
+                        } else if node.has_tag_name("TilesY")
+                            && let Some(t) = node.text()
+                            && let Ok(v) = t.trim().parse::<u32>()
+                        {
+                            tiles_y = v.max(1);
+                        }
+                    }
+                }
+                let tw = (sheet.width() / tiles_x).max(1);
+                let th = (sheet.height() / tiles_y).max(1);
+                let tile0 = image::imageops::crop_imm(&sheet, 0, 0, tw, th).to_image();
+                let board = BOARD_SIZE as u32;
+                let frame = if tile0.width() == board && tile0.height() == board {
+                    tile0
+                } else {
+                    image::imageops::resize(&tile0, board, board, image::imageops::FilterType::Nearest)
+                };
+                self.push_costume_undo();
+                self.costume_foot_y = detect_foot_y(&frame);
+                if replace_all || self.costume_frames.is_empty() {
+                    self.costume_frames = vec![frame];
+                    self.costume_selected = 0;
+                } else {
+                    self.costume_frames.push(frame);
+                    self.costume_selected = self.costume_frames.len() - 1;
+                }
+                self.costume_dirty = true;
+                self.toasts.info("Captured current drawing into Costumes flipbook");
+            }
+            Err(e) => {
+                diypets::logging::warn(&format!("creator: capture costume failed: {e}"));
+                self.toasts.warn(format!("Capture failed: {e}"));
+            }
+        }
+    }
+
+    fn ensure_costume_init(&mut self) {
+        if self.costume_frames.is_empty() {
+            self.capture_costume_from_project(true);
+            if self.costume_frames.is_empty() {
+                let board = BOARD_SIZE as u32;
+                self.costume_frames.push(image::RgbaImage::new(board, board));
+                self.costume_selected = 0;
+                self.costume_dirty = true;
+            }
+        }
+    }
+
+    fn sync_costume_textures(&mut self, ctx: &egui::Context) {
+        if !self.costume_dirty && self.costume_thumbs.len() == self.costume_frames.len() {
+            return;
+        }
+        self.costume_thumbs.clear();
+        for (idx, fr) in self.costume_frames.iter().enumerate() {
+            let ci = egui::ColorImage::from_rgba_unmultiplied(
+                [fr.width() as usize, fr.height() as usize],
+                fr.as_flat_samples().as_slice(),
+            );
+            let tex = ctx.load_texture(
+                format!("t005_costume_thumb_{idx}"),
+                ci,
+                egui::TextureOptions::NEAREST,
+            );
+            self.costume_thumbs.push(tex);
+        }
+        if let Some(cur) = self.costume_frames.get(self.costume_selected) {
+            let ci = egui::ColorImage::from_rgba_unmultiplied(
+                [cur.width() as usize, cur.height() as usize],
+                cur.as_flat_samples().as_slice(),
+            );
+            self.costume_canvas_tex = Some(ctx.load_texture(
+                "t005_costume_canvas",
+                ci,
+                egui::TextureOptions::NEAREST,
+            ));
+        }
+        self.costume_dirty = false;
+    }
+
+    fn apply_juice_fx(&mut self, effect: JuiceEffect) {
+        self.ensure_costume_init();
+        let Some(base) = self.costume_frames.get(self.costume_selected).cloned() else {
+            return;
+        };
+        self.push_costume_undo();
+        let generated = generate_juice_frames(
+            &base,
+            effect,
+            self.costume_foot_y,
+            self.costume_juice_strength,
+        );
+        let count = generated.len();
+        self.costume_frames = generated;
+        self.costume_selected = 0;
+        self.costume_fps_ms = effect.default_interval_ms();
+        self.costume_playing = true;
+        self.costume_play_start = Instant::now();
+        self.costume_dirty = true;
+        self.toasts.info(format!(
+            "JuiceFX generated {} ({count} crisp frames)",
+            effect.label()
+        ));
+    }
+
+    fn paint_costume_at(&mut self, px: usize, py: usize, erase: bool) {
+        let Some(img) = self.costume_frames.get_mut(self.costume_selected) else {
+            return;
+        };
+        let (w, h) = (img.width() as i32, img.height() as i32);
+        let radius = (self.brush_size.max(1) as i32 - 1) / 2;
+        let col = if erase {
+            image::Rgba([0, 0, 0, 0])
+        } else {
+            let rgba = c32_to_rgba(self.current_color);
+            image::Rgba([rgba[0], rgba[1], rgba[2], 255])
+        };
+
+        let mut stamp = |cx: i32, cy: i32| {
+            for dy in -radius..=radius {
+                for dx in -radius..=radius {
+                    let nx = cx + dx;
+                    let ny = cy + dy;
+                    if nx >= 0 && ny >= 0 && nx < w && ny < h {
+                        img.put_pixel(nx as u32, ny as u32, col);
+                    }
+                }
+            }
+        };
+
+        stamp(px as i32, py as i32);
+        if self.mirror_draw_x {
+            stamp(w - 1 - px as i32, py as i32);
+        }
+        self.costume_dirty = true;
+    }
+
+    fn export_costumes_pack(&mut self, activate: bool) {
+        self.ensure_costume_init();
+        let id = sanitize_pack_id(&self.project.pack_id);
+        if BUNDLED_PROTECTED.contains(&id.as_str()) {
+            self.status_msg = Some((format!("'{id}' is reserved. Pick a unique Pack ID in Draw/Export."), true));
+            return;
+        }
+        match build_costumes_pack_xml(
+            &id,
+            &self.project.author,
+            &self.costume_frames,
+            self.costume_fps_ms,
+            self.costume_foot_y,
+        ) {
+            Ok((xml, icon)) => {
+                let target = export_root_dir().join(&id);
+                if let Err(e) = std::fs::create_dir_all(&target) {
+                    diypets::logging::warn(&format!("creator: costumes dir create failed: {e}"));
+                    self.status_msg = Some((format!("Directory create error: {e}"), true));
+                    return;
+                }
+                if let Err(e) = std::fs::write(target.join("deskpet.xml"), &xml) {
+                    self.status_msg = Some((format!("Write error: {e}"), true));
+                    return;
+                }
+                if let Err(e) = icon.save(target.join("icon.png")) {
+                    diypets::logging::warn(&format!("creator: costumes icon.png save failed: {e}"));
+                    self.toasts.warn(format!("Pack saved, but icon.png failed: {e}"));
+                }
+                if activate {
+                    let sp = Settings::default_path();
+                    let mut s = Settings::load_sanitized(&sp);
+                    s.pet_pack = id.clone();
+                    if let Err(e) = s.save(&sp) {
+                        diypets::logging::warn(&format!("creator: costumes settings save failed: {e}"));
+                        self.toasts.warn(format!("Could not save settings: {e}"));
+                    } else {
+                        self.toasts.info(format!("Activated Costumes pack '{id}' on desktop!"));
+                    }
+                } else {
+                    self.toasts.info(format!("Saved Costumes pack '{id}' to library"));
+                }
+                self.status_msg = Some((
+                    format!(
+                        "Exported {} Costumes frames to {}",
+                        self.costume_frames.len(),
+                        target.display()
+                    ),
+                    false,
+                ));
+            }
+            Err(e) => {
+                self.status_msg = Some((e, true));
+            }
+        }
+    }
+
+    fn export_costumes_gif(&mut self, social_card: bool) {
+        self.ensure_costume_init();
+        let default_name = format!(
+            "{}_costumes{}.gif",
+            sanitize_pack_id(&self.project.pack_id),
+            if social_card { "_card" } else { "" }
+        );
+        let Some(path) = rfd::FileDialog::new()
+            .set_file_name(&default_name)
+            .add_filter("Animated GIF", &["gif"])
+            .save_file()
+        else {
+            return;
+        };
+        let delays = vec![self.costume_fps_ms.clamp(50, 500); self.costume_frames.len()];
+        let cfg = if social_card {
+            diypets::gif_export::GifExportConfig::social_card(2)
+        } else {
+            diypets::gif_export::GifExportConfig::transparent(2)
+        };
+        match diypets::gif_export::encode_animated_gif(&self.costume_frames, &delays, &cfg) {
+            Ok(bytes) => match std::fs::write(&path, bytes) {
+                Ok(()) => {
+                    self.toasts.info("Exported Costumes GIF!");
+                    self.status_msg = Some((format!("Exported Costumes GIF -> {}", path.display()), false));
+                }
+                Err(e) => self.status_msg = Some((format!("GIF write error: {e}"), true)),
+            },
+            Err(e) => self.status_msg = Some((format!("GIF encode error: {e}"), true)),
+        }
+    }
+
+    fn render_costumes_sidebar(&mut self, ui: &mut egui::Ui) {
+        self.ensure_costume_init();
+        self.sync_costume_textures(ui.ctx());
+
+        ui.label(egui::RichText::new("Scratch-Style Costumes").strong());
+        ui.label(
+            egui::RichText::new("Duplicate & tweak frames or generate instant 8-bit motion with JuiceFX.")
+                .size(11.0)
+                .color(egui::Color32::GRAY),
+        );
+        ui.add_space(4.0);
+
+        ui.horizontal(|ui| {
+            if ui.button("Capture Draw").on_hover_text("Snap your current Draw/SVG pet into Costume #1").clicked() {
+                self.capture_costume_from_project(true);
+            }
+            if ui.button("+ Duplicate").on_hover_text("Duplicate selected costume to tweak the next frame").clicked()
+                && let Some(cur) = self.costume_frames.get(self.costume_selected).cloned()
+            {
+                self.push_costume_undo();
+                let insert_idx = self.costume_selected + 1;
+                self.costume_frames.insert(insert_idx, cur);
+                self.costume_selected = insert_idx;
+                self.costume_dirty = true;
+            }
+        });
+
+        ui.horizontal(|ui| {
+            if ui.button("Flip H").clicked()
+                && let Some(cur) = self.costume_frames.get(self.costume_selected).cloned()
+            {
+                self.push_costume_undo();
+                self.costume_frames[self.costume_selected] = flip_horizontal(&cur);
+                self.costume_dirty = true;
+            }
+            if ui.button("Snap Feet").on_hover_text("Align selected costume feet flush to the amber baseline").clicked()
+                && let Some(cur) = self.costume_frames.get(self.costume_selected).cloned()
+            {
+                self.push_costume_undo();
+                self.costume_frames[self.costume_selected] = snap_feet_to_baseline(&cur, self.costume_foot_y);
+                self.costume_dirty = true;
+            }
+            if ui.button("Undo").clicked()
+                && let Some(prev) = self.costume_undo.pop()
+            {
+                self.costume_frames = prev;
+                self.costume_selected = self.costume_selected.min(self.costume_frames.len().saturating_sub(1));
+                self.costume_dirty = true;
+            }
+        });
+
+        ui.separator();
+        ui.label(egui::RichText::new("JuiceFX 1-Click Auto-Animator").strong());
+        ui.add(egui::Slider::new(&mut self.costume_juice_strength, 0.5..=1.8).text("Juice Power"));
+        for &effect in JuiceEffect::all() {
+            if ui
+                .button(effect.label())
+                .on_hover_text("Generate a crisp looping animation from the currently selected costume")
+                .clicked()
+            {
+                self.apply_juice_fx(effect);
+            }
+        }
+
+        ui.separator();
+        ui.label(egui::RichText::new(format!("Costumes Flipbook ({})", self.costume_frames.len())).strong());
+        let mut delete_idx: Option<usize> = None;
+        let mut swap_pair: Option<(usize, usize)> = None;
+        let frame_count = self.costume_frames.len();
+        egui::ScrollArea::vertical().max_height(210.0).show(ui, |ui| {
+            for idx in 0..frame_count {
+                let selected = self.costume_selected == idx;
+                ui.horizontal(|ui| {
+                    if let Some(tex) = self.costume_thumbs.get(idx) {
+                        ui.image((tex.id(), egui::vec2(32.0, 32.0)));
+                    }
+                    if ui.selectable_label(selected, format!("Costume #{}", idx + 1)).clicked() {
+                        self.costume_selected = idx;
+                        self.costume_playing = false;
+                        self.costume_dirty = true;
+                    }
+                    if idx > 0 && ui.small_button("^").clicked() {
+                        swap_pair = Some((idx, idx - 1));
+                    }
+                    if idx + 1 < frame_count && ui.small_button("v").clicked() {
+                        swap_pair = Some((idx, idx + 1));
+                    }
+                    if frame_count > 1 && ui.small_button("X").clicked() {
+                        delete_idx = Some(idx);
+                    }
+                });
+            }
+        });
+        if let Some((a, b)) = swap_pair {
+            self.push_costume_undo();
+            self.costume_frames.swap(a, b);
+            self.costume_selected = b;
+            self.costume_dirty = true;
+        }
+        if let Some(rm) = delete_idx {
+            self.push_costume_undo();
+            self.costume_frames.remove(rm);
+            self.costume_selected = self.costume_selected.min(self.costume_frames.len().saturating_sub(1));
+            self.costume_dirty = true;
+        }
+
+        ui.separator();
+        ui.label(egui::RichText::new("Export Costumes").strong());
+        ui.horizontal(|ui| {
+            ui.label("Pack ID:");
+            ui.text_edit_singleline(&mut self.project.pack_id);
+        });
+        if ui.button("Export Costumes & Run on Desktop").clicked() {
+            self.export_costumes_pack(true);
+        }
+        ui.horizontal(|ui| {
+            if ui.button("Save Pack").clicked() {
+                self.export_costumes_pack(false);
+            }
+            if ui.button("Transparent GIF").clicked() {
+                self.export_costumes_gif(false);
+            }
+            if ui.button("Card GIF").clicked() {
+                self.export_costumes_gif(true);
+            }
+        });
+    }
+
+    fn render_costumes_canvas(&mut self, ui: &mut egui::Ui) {
+        self.ensure_costume_init();
+        if self.costume_playing && self.costume_frames.len() > 1 {
+            let elapsed = self.costume_play_start.elapsed().as_millis() as u64;
+            let iv = self.costume_fps_ms.clamp(50, 500) as u64;
+            let play_idx = ((elapsed / iv) as usize) % self.costume_frames.len();
+            if play_idx != self.costume_selected {
+                self.costume_selected = play_idx;
+                self.costume_dirty = true;
+            }
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(24));
+        }
+        self.sync_costume_textures(ui.ctx());
+
+        // Top controls strip
+        ui.horizontal_wrapped(|ui| {
+            let play_lbl = if self.costume_playing { "Pause Loop" } else { "Play Loop" };
+            if ui.button(play_lbl).clicked() {
+                self.costume_playing = !self.costume_playing;
+                self.costume_play_start = Instant::now();
+            }
+            ui.add(egui::Slider::new(&mut self.costume_fps_ms, 50..=400).text("ms/frame"));
+            ui.checkbox(&mut self.costume_onion_skin, "Onion Skin");
+            ui.checkbox(&mut self.show_foot_crosshair, "Foot Crosshair");
+            let max_y = (BOARD_SIZE as u32).saturating_sub(1);
+            ui.add(egui::Slider::new(&mut self.costume_foot_y, 16..=max_y).text("Foot Y"));
+        });
+
+        ui.horizontal_wrapped(|ui| {
+            ui.selectable_value(&mut self.tool, Tool::Brush, "Brush");
+            ui.selectable_value(&mut self.tool, Tool::Eraser, "Eraser");
+            ui.selectable_value(&mut self.tool, Tool::Eyedropper, "Pick");
+            ui.add(egui::Slider::new(&mut self.brush_size, 1..=8).text("Size"));
+            ui.checkbox(&mut self.mirror_draw_x, "Mirror X");
+            for &(r, g, b) in PALETTE.iter().take(12) {
+                let col = egui::Color32::from_rgb(r, g, b);
+                let (rect, resp) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::click());
+                ui.painter().rect_filled(rect, 2.0, col);
+                if self.current_color == col {
+                    ui.painter().rect_stroke(
+                        rect,
+                        2.0,
+                        egui::Stroke::new(2.0, egui::Color32::WHITE),
+                        egui::StrokeKind::Outside,
+                    );
+                }
+                if resp.clicked() {
+                    self.current_color = col;
+                }
+            }
+        });
+        ui.separator();
+
+        // Main interactive 128x128 Costume Canvas
+        let avail = ui.available_size();
+        let side = avail.x.min(avail.y).clamp(240.0, 560.0);
+        let (rect, resp) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::click_and_drag());
+        let painter = ui.painter_at(rect);
+        Self::draw_checkerboard(&painter, rect, (side / 16.0).max(8.0), self.light_checker);
+
+        let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+        // Onion Skin (previous costume red ghost, next costume cyan/blue ghost)
+        if self.costume_onion_skin && !self.costume_playing && self.costume_frames.len() > 1 {
+            if self.costume_selected > 0
+                && let Some(prev_tex) = self.costume_thumbs.get(self.costume_selected - 1)
+            {
+                painter.image(
+                    prev_tex.id(),
+                    rect,
+                    uv,
+                    egui::Color32::from_rgba_unmultiplied(255, 90, 90, 95),
+                );
+            }
+            if let Some(next_tex) = self.costume_thumbs.get(self.costume_selected + 1) {
+                painter.image(
+                    next_tex.id(),
+                    rect,
+                    uv,
+                    egui::Color32::from_rgba_unmultiplied(90, 180, 255, 95),
+                );
+            }
+        }
+
+        if let Some(tex) = &self.costume_canvas_tex {
+            painter.image(tex.id(), rect, uv, egui::Color32::WHITE);
+        }
+
+        // Scratch-style Foot-Anchor Crosshair Guide (amber baseline + center X)
+        if self.show_foot_crosshair {
+            let fy_norm = (self.costume_foot_y as f32 + 0.5) / BOARD_SIZE as f32;
+            let foot_screen_y = rect.top() + fy_norm * rect.height();
+            let mid_x = rect.center().x;
+            let guide = egui::Stroke::new(1.5, egui::Color32::from_rgba_unmultiplied(255, 196, 64, 210));
+            painter.line_segment(
+                [egui::pos2(rect.left(), foot_screen_y), egui::pos2(rect.right(), foot_screen_y)],
+                guide,
+            );
+            painter.line_segment(
+                [egui::pos2(mid_x, foot_screen_y - 12.0), egui::pos2(mid_x, foot_screen_y + 12.0)],
+                guide,
+            );
+            painter.circle_stroke(egui::pos2(mid_x, foot_screen_y), 5.0, guide);
+        }
+
+        // Direct pixel editing on the selected costume
+        if !self.costume_playing
+            && (resp.clicked() || resp.dragged())
+            && let Some(pos) = resp.interact_pointer_pos()
+        {
+            let nx = ((pos.x - rect.left()) / rect.width() * BOARD_SIZE as f32).floor() as i32;
+            let ny = ((pos.y - rect.top()) / rect.height() * BOARD_SIZE as f32).floor() as i32;
+            if nx >= 0 && ny >= 0 && nx < BOARD_SIZE as i32 && ny < BOARD_SIZE as i32 {
+                let (ux, uy) = (nx as usize, ny as usize);
+                if self.tool == Tool::Eyedropper {
+                    if let Some(img) = self.costume_frames.get(self.costume_selected) {
+                        let px = *img.get_pixel(ux as u32, uy as u32);
+                        if px[3] > 0 {
+                            self.current_color = egui::Color32::from_rgb(px[0], px[1], px[2]);
+                            self.tool = Tool::Brush;
+                        }
+                    }
+                } else {
+                    if !self.costume_stroke_active {
+                        self.push_costume_undo();
+                        self.costume_stroke_active = true;
+                    }
+                    let erase = self.tool == Tool::Eraser;
+                    self.paint_costume_at(ux, uy, erase);
+                }
+            }
+        }
+        if !resp.dragged() {
+            self.costume_stroke_active = false;
+        }
     }
 
     fn export_studio_gif(&mut self, social_card: bool) {
@@ -1585,6 +2123,7 @@ impl eframe::App for StudioApp {
                 );
                 ui.separator();
                 ui.selectable_value(&mut self.tab, StudioTab::Draw, "1. Draw & Layers");
+                ui.selectable_value(&mut self.tab, StudioTab::Costumes, "1b. Costumes + JuiceFX");
                 ui.selectable_value(&mut self.tab, StudioTab::Rig, "2. Rig & Parts");
                 ui.selectable_value(&mut self.tab, StudioTab::Animate, "3. Custom Anims");
                 ui.selectable_value(&mut self.tab, StudioTab::Export, "4. Export & Share");
@@ -1626,7 +2165,7 @@ impl eframe::App for StudioApp {
         });
 
         // RIGHT PANEL: Live Preview + Layer & Face Stack (always accessible in Draw/Rig/Animate)
-        if !matches!(self.tab, StudioTab::Export | StudioTab::ImportSheet | StudioTab::Sandbox) {
+        if !matches!(self.tab, StudioTab::Export | StudioTab::ImportSheet | StudioTab::Sandbox | StudioTab::Costumes) {
             egui::Panel::right("v2_right").show(ui, |ui| {
                 ui.set_width(268.0);
                 egui::ScrollArea::vertical().show(ui, |ui| {
@@ -2043,6 +2582,7 @@ impl eframe::App for StudioApp {
                     }
                 }
 
+                StudioTab::Costumes => self.render_costumes_sidebar(ui),
                 StudioTab::Sandbox => {
                     ui.label(egui::RichText::new("Live Physics Sandbox").strong());
                     ui.label(egui::RichText::new("Grab and toss your rigged pet onto the mini window ledge or drop a bouncy ball before exporting.").size(11.0).color(egui::Color32::GRAY));
@@ -2519,6 +3059,7 @@ impl eframe::App for StudioApp {
                 }
             }
 
+            StudioTab::Costumes => self.render_costumes_canvas(ui),
             StudioTab::Draw | StudioTab::Rig => {
                 ui.horizontal(|ui| {
                     ui.label(egui::RichText::new(format!("Canvas: {}", self.active_layer_title())).strong());
@@ -2613,6 +3154,14 @@ impl eframe::App for StudioApp {
                     }
 
                     let scale = board_px / BOARD_SIZE as f32;
+                    if self.show_foot_crosshair && self.tab == StudioTab::Draw {
+                        let fy_norm = (self.costume_foot_y as f32 + 0.5) / BOARD_SIZE as f32;
+                        let fy_px = rect.top() + fy_norm * rect.height();
+                        let cx_px = rect.center().x;
+                        let gstroke = egui::Stroke::new(1.5, egui::Color32::from_rgba_unmultiplied(255, 196, 64, 190));
+                        painter.line_segment([egui::pos2(rect.left(), fy_px), egui::pos2(rect.right(), fy_px)], gstroke);
+                        painter.circle_stroke(egui::pos2(cx_px, fy_px), 4.5, gstroke);
+                    }
                     if self.mirror_draw_x && self.tab == StudioTab::Draw {
                         let mx = rect.center().x;
                         painter.line_segment(

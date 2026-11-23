@@ -16,7 +16,7 @@
 - [x] **T-004: Intelligent 8-Bit Sprite Sheet Importer (Auto-Detect + User-Guided Fallback)**
   - *Reference:* Aseprite / TexturePacker / Piskel sprite-sheet slicing.
   - *Scope:* Ingest any PNG, GIF, JPG, Aseprite JSON, or packed RPG/SNES sheet -> corner chroma-key background removal -> native pixel-block scale detection (strips blurry AI mixels) -> 3 slicing modes (**Auto Grid Gutters**, **Connected-Components Auto-Box**, **Draggable Manual Grid/Box Fallback**) -> locked bottom-center foot anchor -> auto state bucketing (`Idle`, `Walk`, `Climb`, `Sleep`, `Fall`, `Drag`).
-- [ ] **T-005: Scratch-Style "Costumes" Flipbook & JuiceFX 1-Click Auto-Animator**
+- [x] **T-005: Scratch-Style "Costumes" Flipbook & JuiceFX 1-Click Auto-Animator**
   - *Reference:* **Scratch Costume Editor** (numbered flipbook, visible foot/center crosshair, Duplicate & Tweak) + **JuiceFX / PixelOver** (procedural secondary motion from a single static frame).
   - *Scope:* Add a beginner **Costumes** view with visible foot crosshair + 1-click procedural generators (**Auto-Walk Bounce**, **Idle Breathing**, **Tail/Ear Wave**, **Squash Hop**, **Motion Smear**).
 - [ ] **T-006: True 8-Bit Pixel Editor Core (`diypets-creator`)**
