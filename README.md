@@ -24,7 +24,7 @@ A tiny, blazing-fast, cross-platform desktop mascot engine with **Multi-Pet Herd
 
 
 <!-- AUTO:STATS:START -->
-> **Latest release:** `v0.1.6` · **5 Made by SM originals** + **27+ on-demand eSheep packs** · **~7.8 MB RAM** · **MCP API on `:3721`**
+> **Latest release:** `v0.2.0` · **5 Made by SM originals** + **27+ on-demand eSheep packs** · **~7.8 MB RAM** · **MCP API on `:3721`**
 <!-- AUTO:STATS:END -->
 
 ---
