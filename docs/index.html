@@ -87,6 +87,10 @@
   html::-webkit-scrollbar { width: 14px; }
   html::-webkit-scrollbar-track { background: var(--time-deep, #09131d); border-left: 2px solid #05070b; }
   html::-webkit-scrollbar-thumb { background: var(--time-accent, #ffd75e); border: 2px solid var(--time-deep, #09131d); }
+
+  /* Transparent OBS / Twitch Browser Source Mode (?overlay=1) */
+  html[data-overlay="1"], html[data-overlay="1"] body { background: transparent !important; overflow: hidden !important; }
+  html[data-overlay="1"] header, html[data-overlay="1"] main, html[data-overlay="1"] .toast-bar { display: none !important; }
   body {
     margin: 0;
     background: var(--bg);
@@ -634,6 +638,15 @@ let petSize = 84;
 let petSpeed = 6;
 let followCursor = false;
 let climbCards = true;
+
+// Transparent OBS / Twitch Streamer Browser Source Mode (?overlay=1&pets=highland_cow,goat&size=96)
+const URL_PARAMS = new URLSearchParams(window.location.search);
+if (URL_PARAMS.get("overlay") === "1") {
+  document.documentElement.setAttribute("data-overlay", "1");
+  climbCards = false;
+  const sz = Number(URL_PARAMS.get("size"));
+  if (sz >= 48 && sz <= 160) petSize = sz;
+}
 let mouseX = window.innerWidth * 0.5;
 let pets = [];
 let ball = null;

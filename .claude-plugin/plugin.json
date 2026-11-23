@@ -1,0 +1,14 @@
+{
+  "name": "diypets",
+  "version": "0.4.1",
+  "description": "Lightweight (~7.8 MB RAM) Rust desktop mascot engine with SVG pet generator MCP tool and 1-click Claude Code / Cursor hooks.",
+  "author": {
+    "name": "Shivam Mahajan",
+    "url": "https://shivammahajan.com/diypets/"
+  },
+  "homepage": "https://shivammahajan.com/diypets/",
+  "repository": "https://github.com/smresponsibilities/diypets",
+  "license": "MIT OR Apache-2.0",
+  "skills": "./skills",
+  "mcpServers": "./.mcp.json"
+}

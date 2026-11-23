@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "diypets": {
+      "command": "diypets",
+      "args": [
+        "mcp"
+      ]
+    }
+  }
+}

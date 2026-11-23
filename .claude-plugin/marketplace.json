@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "diypets",
+  "version": "0.4.1",
+  "description": "Official DIYPets Claude Code & Cowork plugin marketplace",
+  "owner": {
+    "name": "Shivam Mahajan",
+    "url": "https://github.com/smresponsibilities"
+  },
+  "plugins": [
+    {
+      "name": "diypets",
+      "source": "./",
+      "description": "Lightweight (~7.8 MB RAM) Rust desktop mascot engine with create_pet_from_svg MCP tool, skills, and coding-agent reactions.",
+      "category": "development"
+    }
+  ]
+}
