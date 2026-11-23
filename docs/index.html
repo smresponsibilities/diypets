@@ -744,31 +744,23 @@ function loop(now) {
     }
   }
 
-  // Non-stacking horizontal separation + Herd greetings
-  const minGap = petSize * 0.86;
+  // Cheerful mid-floor greetings (never traps or deadlocks pets against walls!)
   for (let i = 0; i < pets.length; i++) {
     for (let j = i + 1; j < pets.length; j++) {
       const a = pets[i], b = pets[j];
       if (a === dragPet || b === dragPet || a.airborne || b.airborne) continue;
+      if (followCursor || ball || now < a.cooldown || now < b.cooldown) continue;
+      // Only greet away from screen corners so pets never pin each other into a wall
+      const margin = petSize + 60;
+      if (a.x < margin || a.x > canvas.width - margin - petSize) continue;
+      if (b.x < margin || b.x > canvas.width - margin - petSize) continue;
       const dx = b.x - a.x;
-      const dist = Math.abs(dx);
-
-      // Push apart gently so Follow Cursor / Ball Chase NEVER stacks pets into a single blob!
-      if (dist < minGap) {
-        const push = (minGap - dist) * 0.5 * Math.min(1, dt * 10);
-        const sign = dx >= 0 ? 1 : -1;
-        a.x = Math.max(4, Math.min(canvas.width - petSize - 4, a.x - sign * push));
-        b.x = Math.max(4, Math.min(canvas.width - petSize - 4, b.x + sign * push));
-      }
-
-      if (!followCursor && !ball && now >= a.cooldown && now >= b.cooldown && dist < petSize * 0.75) {
+      if (Math.abs(dx) < petSize * 0.55) {
         if ((dx >= 0 && a.dir > 0 && b.dir < 0) || (dx < 0 && a.dir < 0 && b.dir > 0)) {
-          a.cooldown = now + 5500; b.cooldown = now + 5500;
-          const aLeft = a.x <= b.x;
-          a.dir = aLeft ? -1 : 1; b.dir = aLeft ? 1 : -1;
+          a.cooldown = now + 8000; b.cooldown = now + 8000;
           a.vy = -210; b.vy = -210;
           a.sqX = 0.88; a.sqY = 1.14; b.sqX = 0.88; b.sqY = 1.14;
-          a.heartsUntil = now + 1700; b.heartsUntil = now + 1700;
+          a.heartsUntil = now + 1600; b.heartsUntil = now + 1600;
         }
       }
     }
@@ -797,9 +789,15 @@ function loop(now) {
         if (ball) {
           targetX = ball.x - petSize * 0.5;
         } else if (followCursor) {
-          // Each pet gets its own spaced formation slot around the cursor!
-          const slotOffset = (idx - (n - 1) * 0.5) * (petSize * 0.96);
-          targetX = Math.max(8, Math.min(canvas.width - petSize - 8, mouseX - petSize * 0.5 + slotOffset));
+          // Clamp the formation center so pets stay evenly spaced even at the far left/right edge
+          const spacing = petSize * 1.05;
+          const halfSpan = ((n - 1) * spacing) * 0.5;
+          const minCenter = 12 + petSize * 0.5 + halfSpan;
+          const maxCenter = canvas.width - 12 - petSize * 0.5 - halfSpan;
+          const formCenter = minCenter <= maxCenter
+            ? Math.max(minCenter, Math.min(maxCenter, mouseX))
+            : canvas.width * 0.5;
+          targetX = formCenter + (idx - (n - 1) * 0.5) * spacing - petSize * 0.5;
         }
 
         if (targetX !== null) {
