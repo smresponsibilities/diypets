@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.0] - 2026-11-23
+### Added
+- **RotSprite Pixel-Art Rotation (`src/rotsprite.rs`):** 4x EPX (Scale2x) upscale -> rotate -> nearest downsample wired into `studio_model::render_pose` so rotated rigged limbs stay razor-sharp with zero blur or tearing.
+- **Runtime Squash & Stretch + Idle Breathing (`src/squash.rs`):** Bottom-anchored spring-damper physics on landing, hops, headpats, and herd greetings, plus subtle sinusoidal breathing while idle or sleeping.
+- **Studio V4 Drawing & Animation Upgrades (`diypets-creator`):** Added **Select (M)** marquee tool (`Copy`/`Paste`/`Flip H`/`Del` + `Ctrl+C`/`Ctrl+V`), **1-Click Auto-Outline**, **Mirror X** symmetry drawing, and **Keyframe Onion Skinning** (Prev Red / Next Blue) in Custom Anims.
+- **Cross-Platform Window-Ledge Detection (`src/platform.rs`):** Added background macOS (`CGWindowListCopyWindowInfo`) and Linux (`wmctrl`) window-ledge detection and riding.
 ## [0.2.0] - 2026-11-23
 ### Added
 - **Native `stdio` MCP Server (`diypets mcp`):** Direct JSON-RPC 2.0 stdin/stdout bridge for Claude Desktop, Cursor, and Claude Code (`"command": "diypets", "args": ["mcp"]`) exposing all 6 tools (`react_pet`, `say`, `drop_ball`, `spawn_pet`, `set_follow_cursor`, `list_herd`).

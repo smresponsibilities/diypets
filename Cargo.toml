@@ -1,6 +1,6 @@
 [package]
 name = "diypets"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 description = "Make your own desktop pet - lightweight cross-platform Rust mascot engine with a built-in 2D/SVG Pet Creator Studio and lazy-loaded eSheep XML packs."
 license = "MIT OR Apache-2.0"

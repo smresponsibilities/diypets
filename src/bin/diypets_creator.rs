@@ -239,6 +239,7 @@ struct StudioApp {
     show_grid: bool,
     light_checker: bool,
     show_onion_skin: bool,
+    anim_onion_skin: bool,
     zoom: f32,
     pan_offset: egui::Vec2,
     rig_dirty: bool,
@@ -300,6 +301,7 @@ struct StudioApp {
     sel_rect: Option<(usize, usize, usize, usize)>,
     sel_drag_start: Option<(usize, usize)>,
     clipboard_pixels: Option<(usize, usize, Vec<[u8; 4]>)>,
+    mirror_x: bool,
 }
 
 impl Default for StudioApp {
@@ -316,6 +318,7 @@ impl Default for StudioApp {
             show_grid: false,
             light_checker: true,
             show_onion_skin: true,
+            anim_onion_skin: true,
             zoom: 4.0,
             pan_offset: egui::Vec2::ZERO,
             rig_dirty: true,
@@ -373,6 +376,7 @@ impl Default for StudioApp {
             sel_rect: None,
             sel_drag_start: None,
             clipboard_pixels: None,
+            mirror_x: false,
         }
     }
 }
@@ -697,6 +701,30 @@ impl StudioApp {
             }
         }
         self.mark_dirty();
+    }
+
+    fn auto_outline_layer(&mut self) {
+        self.push_undo();
+        let col = c32_to_rgba(self.current_color);
+        let outline_col = if col[3] == 0 { [24, 18, 22, 255] } else { [col[0], col[1], col[2], 255] };
+        let src = self.active_buf().to_vec();
+        let dst = self.active_buf_mut();
+        for y in 0..BOARD_SIZE {
+            for x in 0..BOARD_SIZE {
+                if src[y * BOARD_SIZE + x][3] > 0 {
+                    continue;
+                }
+                let touches_opaque = (x > 0 && src[y * BOARD_SIZE + (x - 1)][3] > 0)
+                    || (x + 1 < BOARD_SIZE && src[y * BOARD_SIZE + (x + 1)][3] > 0)
+                    || (y > 0 && src[(y - 1) * BOARD_SIZE + x][3] > 0)
+                    || (y + 1 < BOARD_SIZE && src[(y + 1) * BOARD_SIZE + x][3] > 0);
+                if touches_opaque {
+                    dst[y * BOARD_SIZE + x] = outline_col;
+                }
+            }
+        }
+        self.mark_dirty();
+        self.status_msg = Some(("Applied 1px Auto-Outline to active layer.".to_string(), false));
     }
 
     fn nudge_layer(&mut self, dx: isize, dy: isize) {
@@ -1336,6 +1364,9 @@ impl eframe::App for StudioApp {
                     self.tool = Tool::Rect;
                 } else if i.key_pressed(egui::Key::O) {
                     self.tool = Tool::Circle;
+                }
+                if i.key_pressed(egui::Key::M) {
+                    self.tool = Tool::Select;
                 } else if i.key_pressed(egui::Key::M) {
                     self.mirror_draw_x = !self.mirror_draw_x;
                 }
@@ -1574,6 +1605,7 @@ impl eframe::App for StudioApp {
                         ui.selectable_value(&mut self.tool, Tool::Line, "Line (L)");
                         ui.selectable_value(&mut self.tool, Tool::Rect, "Rect (U)");
                         ui.selectable_value(&mut self.tool, Tool::Circle, "Oval (O)");
+                        ui.selectable_value(&mut self.tool, Tool::Select, "Select (M)");
                     });
                     if self.tool == Tool::Shade {
                         ui.horizontal(|ui| {
@@ -1633,6 +1665,10 @@ impl eframe::App for StudioApp {
                             if ui.small_button("Paste").clicked() {
                                 self.paste_clipboard();
                             }
+                            if ui.small_button("Auto-Outline").clicked() {
+                                self.auto_outline_layer();
+                            }
+                            ui.checkbox(&mut self.mirror_x, "Mirror X");
                             if self.sel_rect.is_some() && ui.small_button("Del").clicked() {
                                 self.clear_selection_pixels();
                             }
@@ -1732,6 +1768,7 @@ impl eframe::App for StudioApp {
                 }
 
                 StudioTab::Animate => {
+                    ui.checkbox(&mut self.anim_onion_skin, "Onion Skin (Prev Red / Next Blue)");
                     ui.label(egui::RichText::new("Custom Animations").strong());
                     ui.horizontal_wrapped(|ui| {
                         if ui.button("+ Hop").clicked() {
@@ -2297,6 +2334,17 @@ impl eframe::App for StudioApp {
                             painter.image(rig_tex.id(), rect, uv, egui::Color32::WHITE);
                         }
                     } else {
+                        if self.tab == StudioTab::Animate && self.anim_onion_skin {
+                            let uv_full = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+                            if self.selected_keyframe > 0 {
+                                if let Some(prev_tex) = self.kf_thumbs.get(self.selected_keyframe - 1) {
+                                    painter.image(prev_tex.id(), rect, uv_full, egui::Color32::from_rgba_unmultiplied(255, 90, 90, 72));
+                                }
+                            }
+                            if let Some(next_tex) = self.kf_thumbs.get(self.selected_keyframe + 1) {
+                                painter.image(next_tex.id(), rect, uv_full, egui::Color32::from_rgba_unmultiplied(90, 165, 255, 72));
+                            }
+                        }
                         if self.show_onion_skin && self.edit_layer != EditLayer::Body {
                             if let Some(ghost) = &self.tex_body_ghost {
                                 painter.image(
@@ -2458,10 +2506,21 @@ impl eframe::App for StudioApp {
                                         self.push_undo();
                                         self.last_draw_pos = Some((lx, ly));
                                         self.apply_brush(lx, ly, col, shade);
+                                        if self.mirror_x {
+                                            self.apply_brush(BOARD_SIZE - 1 - lx, ly, col, shade);
+                                        }
                                     }
                                     if response.dragged() {
                                         if let Some(last) = self.last_draw_pos {
                                             self.paint_line(last, (lx, ly), col, shade);
+                                            if self.mirror_x {
+                                                self.paint_line(
+                                                    (BOARD_SIZE - 1 - last.0, last.1),
+                                                    (BOARD_SIZE - 1 - lx, ly),
+                                                    col,
+                                                    shade,
+                                                );
+                                            }
                                         }
                                         self.last_draw_pos = Some((lx, ly));
                                     }

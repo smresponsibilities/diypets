@@ -18,6 +18,7 @@ use diypets::deskpet_state::{
     window_floor_candidate,
 };
 use diypets::platform;
+use diypets::squash::{SquashSpring, apply_squash_nearest};
 use diypets::deskpet_xml::DeskpetPack;
 use diypets::settings::{
     MAX_ACTIVE_PETS, Settings, find_pack_icon, find_pack_xml, pack_search_dirs,
@@ -649,6 +650,8 @@ struct RenderKey {
     dst_w: u32,
     dst_h: u32,
     heart_tick: u8,
+    squash_x_q: u16,
+    squash_y_q: u16,
 }
 
 struct PetInstance {
@@ -662,6 +665,8 @@ struct PetInstance {
     buffer: Vec<u32>,
     #[cfg(windows)]
     scaled_buf: Vec<u32>,
+    #[cfg(windows)]
+    squash_buf: Vec<u32>,
     #[cfg(windows)]
     frame_cache: HashMap<(usize, bool, u32, u32), Vec<u32>>,
     state: DeskpetState,
@@ -680,6 +685,8 @@ struct PetInstance {
     rub_accum: f32,
     last_rub_ms: u64,
     last_interact_ms: u64,
+    squash: SquashSpring,
+    was_airborne: bool,
     last_render: Option<RenderKey>,
 }
 
@@ -858,6 +865,8 @@ impl DeskpetApp {
             #[cfg(windows)]
             scaled_buf,
             #[cfg(windows)]
+            squash_buf: Vec::new(),
+            #[cfg(windows)]
             frame_cache: HashMap::new(),
             state,
             last_tick: now_ms,
@@ -875,6 +884,8 @@ impl DeskpetApp {
             rub_accum: 0.0,
             last_rub_ms: 0,
             last_interact_ms: 0,
+            squash: SquashSpring::default(),
+            was_airborne: false,
             last_render: None,
         }
     }
@@ -1054,6 +1065,7 @@ impl DeskpetApp {
                         pet.state.is_tossing = true;
                         pet.state.toss_force_x = if pet.state.is_moving_left { -3.0 } else { 3.0 };
                         pet.state.toss_vert_vel = -10.0;
+                        pet.squash.trigger_hop();
                     }
                 }
                 "say" => {}
@@ -1276,9 +1288,11 @@ impl DeskpetApp {
                     self.pets[i].state.is_tossing = true;
                     self.pets[i].state.toss_force_x = if a_on_left { -2.2 } else { 2.2 };
                     self.pets[i].state.toss_vert_vel = -7.5;
+                    self.pets[i].squash.trigger_hop();
                     self.pets[j].state.is_tossing = true;
                     self.pets[j].state.toss_force_x = if a_on_left { 2.2 } else { -2.2 };
                     self.pets[j].state.toss_vert_vel = -7.5;
+                    self.pets[j].squash.trigger_hop();
                 }
             }
         }
@@ -1585,6 +1599,7 @@ impl ApplicationHandler for DeskpetApp {
                         pet.state.is_tossing = true;
                         pet.state.toss_force_x = if pet.state.is_moving_left { -3.0 } else { 3.0 };
                         pet.state.toss_vert_vel = -10.0;
+                        pet.squash.trigger_hop();
                         self.bubble = SpeechBubbleOverlay::create(event_loop, "<3", now_ms + 2200);
                     }
                     2 => {
@@ -1890,7 +1905,14 @@ impl ApplicationHandler for DeskpetApp {
                     pet.state.screen_h = max_y - min_y;
                     pet.state.area_h = floor_y + ground_height;
                     pet.state.tick_in_bounds(delta, floor_y, wall_left, wall_right);
+                    let now_airborne = pet.state.y < floor_y - 3.0;
+                    if pet.was_airborne && !now_airborne {
+                        pet.squash.trigger_land();
+                    }
+                    pet.was_airborne = now_airborne;
                 }
+                let is_idle_or_sleep = matches!(pet.state.current_anim_id.as_str(), "2" | "12" | "13");
+                let (sq_x, sq_y) = pet.squash.step(delta as f32 / 1000.0, now as f32 / 1000.0, is_idle_or_sleep);
 
                 let frame_idx = pet.state.current_frame().unwrap_or(0) as usize;
                 let pos_x = pet.state.x.round() as i32;
@@ -1908,6 +1930,8 @@ impl ApplicationHandler for DeskpetApp {
                     } else {
                         0
                     },
+                    squash_x_q: (sq_x * 100.0).round() as u16,
+                    squash_y_q: (sq_y * 100.0).round() as u16,
                 };
 
                 if pet.last_render == Some(render_key) {
@@ -2053,8 +2077,14 @@ impl ApplicationHandler for DeskpetApp {
                     if needs_recreate {
                         pet.layered = LayeredSurface::new(scaled_w, scaled_h);
                     }
+                    let final_buf = if (sq_x - 1.0).abs() >= 0.006 || (sq_y - 1.0).abs() >= 0.006 {
+                        apply_squash_nearest(present_buf, &mut pet.squash_buf, scaled_w, scaled_h, sq_x, sq_y);
+                        pet.squash_buf.as_slice()
+                    } else {
+                        present_buf
+                    };
                     if let Some(layered) = &mut pet.layered {
-                        layered.present(&pet.window, present_buf, pos_x, pos_y);
+                        layered.present(&pet.window, final_buf, pos_x, pos_y);
                     }
                 }
             }
