@@ -1,5 +1,7 @@
 # diypets
 
+[![diypets MCP server](https://glama.ai/mcp/servers/@smresponsibilities/diypets/badge)](https://glama.ai/mcp/servers/@smresponsibilities/diypets)
+
 Cross-platform desktop mascot engine written in Rust (~7.8 MB idle RAM), with multi-pet herds, a built-in 2D/SVG sprite studio, and an MCP server for coding agents.
 
 Live sandbox: [shivammahajan.com/diypets](https://shivammahajan.com/diypets/) · Package: [crates.io/crates/diypets](https://crates.io/crates/diypets)
