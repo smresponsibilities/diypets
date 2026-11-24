@@ -401,6 +401,9 @@ fn handle_mcp_jsonrpc(body: &str, tx: &Sender<AgentCommand>, active_herd: &[Stri
             let name = params.get("name").and_then(|n| n.as_str()).unwrap_or("");
             let args = params.get("arguments").cloned().unwrap_or_default();
             match name {
+                "launch_app" => serde_json::json!({
+                    "content": [{ "type": "text", "text": "DIYPets desktop app is already running." }]
+                }),
                 "react_pet" => {
                     let mood = args
                         .get("mood")
@@ -703,6 +706,28 @@ fn mcp_tools_manifest() -> serde_json::Value {
     serde_json::json!({
         "tools": [
             {
+                "name": "launch_app",
+                "description": "Launch the DIYPets desktop mascot application in the background if it is not already running. Call this first when other tools report that the desktop daemon is not running.",
+                "annotations": {
+                    "title": "Launch DIYPets App",
+                    "readOnlyHint": false,
+                    "destructiveHint": false,
+                    "idempotentHint": true,
+                    "openWorldHint": false
+                },
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "pet": {
+                            "type": "string",
+                            "default": "highland_cow",
+                            "examples": ["highland_cow", "polar_bear", "dog"],
+                            "description": "Optional mascot pack ID to launch with (e.g. 'highland_cow')."
+                        }
+                    }
+                }
+            },
+            {
                 "name": "react_pet",
                 "description": "Trigger a physical animation reaction and optional speech bubble on all active DIYPets desktop mascots (use when builds pass/fail, tests finish, or you want visual celebration; do not use when only showing text without hopping—use `say` instead).",
                 "annotations": {
@@ -717,11 +742,15 @@ fn mcp_tools_manifest() -> serde_json::Value {
                         "mood": {
                             "type": "string",
                             "enum": ["happy", "hop", "sleep", "walk", "ball"],
+                            "default": "happy",
+                            "examples": ["happy", "hop"],
                             "description": "Animation mood to perform on active desktop pets."
                         },
                         "text": {
                             "type": "string",
                             "maxLength": 160,
+                            "default": "Build passed!",
+                            "examples": ["Build passed!", "Tests green!"],
                             "description": "Optional short status message for the floating speech bubble."
                         },
                         "duration_ms": {
@@ -749,6 +778,8 @@ fn mcp_tools_manifest() -> serde_json::Value {
                         "text": {
                             "type": "string",
                             "maxLength": 160,
+                            "default": "Hello from MCP!",
+                            "examples": ["Hello from MCP!", "PR merged!"],
                             "description": "Short plain-text message to display above the pet."
                         },
                         "duration_ms": {
@@ -783,6 +814,8 @@ fn mcp_tools_manifest() -> serde_json::Value {
                         },
                         "name": {
                             "type": "string",
+                            "default": "Cyber Crab",
+                            "examples": ["Cyber Crab", "Pixel Fox"],
                             "description": "Display name for the mascot (e.g. 'Cyber Crab')."
                         },
                         "pack_id": {
@@ -792,6 +825,7 @@ fn mcp_tools_manifest() -> serde_json::Value {
                         "archetype": {
                             "type": "string",
                             "enum": ["quadruped", "biped", "bird", "crawler", "swimmer"],
+                            "default": "quadruped",
                             "description": "Rigging archetype controlling walk/hop/slither/swim physics."
                         },
                         "author": {
@@ -800,6 +834,7 @@ fn mcp_tools_manifest() -> serde_json::Value {
                         },
                         "spawn": {
                             "type": "boolean",
+                            "default": true,
                             "description": "If true (default), immediately spawn the newly created mascot onto the desktop."
                         }
                     }
@@ -919,6 +954,46 @@ pub fn process_stdio_mcp_line(line: &str) -> Option<String> {
             .to_string(),
         );
     };
+    if v.get("method").and_then(|m| m.as_str()) == Some("tools/call")
+        && v.pointer("/params/name").and_then(|n| n.as_str()) == Some("launch_app")
+    {
+        let id = v.get("id").cloned().unwrap_or(serde_json::Value::Null);
+        let pet = v
+            .pointer("/params/arguments/pet")
+            .and_then(|s| s.as_str())
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty());
+        let msg = if std::net::TcpStream::connect_timeout(
+            &"127.0.0.1:3721".parse().unwrap(),
+            std::time::Duration::from_millis(150),
+        )
+        .is_ok()
+        {
+            "DIYPets desktop app is already running on 127.0.0.1:3721.".to_string()
+        } else if let Ok(exe) = std::env::current_exe() {
+            let mut cmd = std::process::Command::new(exe);
+            if let Some(p) = pet {
+                cmd.arg("--pet").arg(p);
+            }
+            cmd.stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null());
+            match cmd.spawn() {
+                Ok(child) => format!("Launched DIYPets desktop app (pid {}).", child.id()),
+                Err(e) => format!("Failed to launch DIYPets desktop app: {}", e),
+            }
+        } else {
+            "Could not resolve current diypets binary path.".to_string()
+        };
+        return Some(
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": { "content": [{ "type": "text", "text": msg }] }
+            })
+            .to_string(),
+        );
+    }
     if v.get("method").and_then(|m| m.as_str()) == Some("tools/call")
         && v.pointer("/params/name").and_then(|n| n.as_str()) == Some("create_pet_from_svg")
     {
