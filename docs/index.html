@@ -585,6 +585,7 @@
               </select>
             </label>
             <label class="slider-chip">FPS <span id="gif-fps-val">8</span> <input id="gif-fps" type="range" min="4" max="14" value="8" oninput="updateGifPreviewFps()" /></label>
+            <label class="slider-chip" title="Animation Motion Intensity">AMP <span id="gif-amp-val">1.0x</span> <input id="gif-amp" type="range" min="0.4" max="1.8" step="0.1" value="1.0" style="width:62px;" oninput="onGifAmpChange()" /></label>
             <label class="slider-chip">RIG
               <select id="gif-body-select" class="ctrl-input" style="width:92px;padding:3px 6px;" onchange="refreshCleanedCustomImg()">
                 <option value="auto">Auto</option>
@@ -597,6 +598,11 @@
               </select>
             </label>
             <label class="gif-check-chip"><input id="gif-clean-bg" type="checkbox" checked onchange="refreshCleanedCustomImg()" /> CLEAN FRINGE</label>
+            <button class="ctrl-btn" id="gif-pick-key-btn" onclick="toggleGifKeyPicker()" title="Click canvas to chroma-key any background color" style="padding:3px 7px;display:inline-flex;align-items:center;gap:4px;">KEY BG <span id="gif-key-swatch" style="display:inline-block;width:10px;height:10px;border:1px solid #888;border-radius:2px;background:transparent;"></span></button>
+            <button class="ctrl-btn" onclick="clearGifChromaKey()" title="Reset chroma-key color" style="padding:3px 6px;">&times;</button>
+            <label class="slider-chip" title="Chroma-key color tolerance">TOL <span id="gif-key-tol-val">40</span> <input id="gif-key-tol" type="range" min="10" max="100" value="40" style="width:52px;" oninput="onGifCleanParamChange()" /></label>
+            <label class="slider-chip" title="Exterior grey-halo defringe passes">DEFRINGE <span id="gif-defringe-val">2</span> <input id="gif-defringe" type="range" min="0" max="3" value="2" style="width:40px;" oninput="onGifCleanParamChange()" /></label>
+            <label class="gif-check-chip" title="Ordered 4x4 Bayer dithering in Oklab space"><input id="gif-dither" type="checkbox" /> DITHER</label>
             <label class="gif-check-chip"><input id="gif-outline-lock" type="checkbox" checked /> 1PX OUTLINE LOCK</label>
             <label class="gif-check-chip"><input id="gif-mirror" type="checkbox" onchange="renderGifPreviewNow()" /> MIRROR</label>
             <label class="gif-check-chip"><input id="gif-pingpong" type="checkbox" onchange="renderGifPreviewNow()" /> PING-PONG</label>
@@ -614,6 +620,7 @@
               <input id="gif-upload" type="file" accept="image/png,image/svg+xml,image/webp,image/jpeg,.xml" style="display:none;" onchange="handleGifUpload(event)" />
             </label>
             <button class="ctrl-btn primary" onclick="exportMascotGif()">EXPORT .GIF</button>
+            <button class="ctrl-btn" onclick="exportMascotApng()" title="24-bit color + smooth 8-bit alpha Animated PNG">EXPORT .APNG</button>
             <button class="ctrl-btn" onclick="exportMascotSpriteSheet()">EXPORT SHEET (.PNG)</button>
             <button class="ctrl-btn" onclick="exportMascotXmlPack()" title="Download a ready-to-run deskpet.xml pack for the desktop app">EXPORT .XML PACK</button>
             <button class="ctrl-btn" id="gif-clear-btn" style="display:none;" onclick="syncGifMascotSelection()">USE BUILT-IN</button>
@@ -1293,7 +1300,7 @@ function loop(now) {
 requestAnimationFrame(loop);
 
 </script>
-<script src="gif_maker.js?v=14">
+<script src="gif_maker.js?v=15">
 // Auto-sync displayed version from GitHub Releases API (cached per session, fallback v0.4.1)
 (function syncLatestVersion() {
   const applyVer = (tag) => {

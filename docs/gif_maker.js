@@ -50,24 +50,30 @@ function removeFloatingSpecks(data, w, h) {
   }
 }
 
-function cleanRgbaPixels(data, w, h) {
+function cleanRgbaPixels(data, w, h, opts) {
   const out = new Uint8ClampedArray(data);
   const n = w * h;
+  const tol = (opts && typeof opts.tolerance === "number") ? opts.tolerance : 40;
+  const keyColor = (opts && Array.isArray(opts.keyColor) && opts.keyColor.length === 3) ? opts.keyColor : null;
 
-  // Pass 1: Border flood-fill removal for opaque/checkerboard outer backgrounds
+  // Pass 1: Border flood-fill removal for opaque/checkerboard/chroma-key outer backgrounds
   const corners = [0, w - 1, (h - 1) * w, (h - 1) * w + (w - 1)];
   const bgSamples = [];
-  for (let i = 0; i < corners.length; i++) {
-    const p = corners[i] * 4;
-    if (out[p + 3] >= 24) bgSamples.push([out[p], out[p + 1], out[p + 2]]);
+  if (keyColor) {
+    bgSamples.push([keyColor[0], keyColor[1], keyColor[2]]);
+  } else {
+    for (let i = 0; i < corners.length; i++) {
+      const p = corners[i] * 4;
+      if (out[p + 3] >= 24) bgSamples.push([out[p], out[p + 1], out[p + 2]]);
+    }
   }
   const matchOuterBg = (p) => {
     if (out[p + 3] < 32) return true;
     const r = out[p], g = out[p + 1], b = out[p + 2];
-    if (bgSamples.length > 0 && isNeutralGrey(r, g, b)) return true;
+    if (!keyColor && bgSamples.length > 0 && isNeutralGrey(r, g, b)) return true;
     for (let i = 0; i < bgSamples.length; i++) {
       const s = bgSamples[i];
-      if (Math.abs(r - s[0]) + Math.abs(g - s[1]) + Math.abs(b - s[2]) <= 40) return true;
+      if (Math.abs(r - s[0]) + Math.abs(g - s[1]) + Math.abs(b - s[2]) <= tol) return true;
     }
     return false;
   };
@@ -89,6 +95,18 @@ function cleanRgbaPixels(data, w, h) {
       if (cx + 1 < w) push(cur + 1);
       if (cy > 0) push(cur - w);
       if (cy + 1 < h) push(cur + w);
+    }
+  }
+
+  if (keyColor) {
+    const kTol = tol * 1.15;
+    for (let i = 0; i < n; i++) {
+      const p = i * 4;
+      if (out[p + 3] === 0) continue;
+      const d = Math.abs(out[p] - keyColor[0]) + Math.abs(out[p + 1] - keyColor[1]) + Math.abs(out[p + 2] - keyColor[2]);
+      if (d <= kTol) {
+        out[p] = 0; out[p + 1] = 0; out[p + 2] = 0; out[p + 3] = 0;
+      }
     }
   }
 
@@ -305,8 +323,9 @@ function extractPaddedNativeGrid(rgba, w, h) {
 
 // Strip exterior grey anti-aliasing halo (neutral grey pixels touching transparency & a dark outline)
 // plus detached 1-5px floating dust specks without ever touching interior shading or dark outlines.
-function stripExteriorGreyHalo(grid, w, h) {
-  for (let pass = 0; pass < 2; pass++) {
+function stripExteriorGreyHalo(grid, w, h, passesOpt) {
+  const passes = typeof passesOpt === "number" ? Math.max(0, Math.min(4, Math.round(passesOpt))) : 2;
+  for (let pass = 0; pass < passes; pass++) {
     const snap = new Uint8ClampedArray(grid);
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
@@ -590,10 +609,148 @@ function findColumnMassCenter(grid, w, x0, x1, y0, y1, fallbackX, fallbackY) {
   return cnt > 0 ? { x: sx / cnt, y: sy / cnt } : { x: fallbackX, y: fallbackY };
 }
 
-function buildAutoRig(rawRgba, rawW, rawH, cleanBg, modeHint) {
-  const cleaned = cleanBg ? cleanRgbaPixels(rawRgba, rawW, rawH) : new Uint8ClampedArray(rawRgba);
+
+// 2D Medial-Axis Skeleton Extraction (Chamfer Distance Transform + Zhang-Suen Thinning)
+// Finds true torso core & real silhouette limb/tail/head endpoints instead of blind bbox percentages.
+function extractMedialAxisFeatures(grid, w, h, bbox) {
+  const n = w * h;
+  const mask = new Uint8Array(n);
+  const dist = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    if (grid[i * 4 + 3] > 0) {
+      mask[i] = 1;
+      dist[i] = 1e6;
+    }
+  }
+
+  // 2-pass Chamfer Distance Transform (core radius & true torso center)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (!mask[i]) continue;
+      let d = dist[i];
+      if (x === 0 || y === 0) d = 1;
+      else {
+        d = Math.min(d, dist[i - 1] + 1, dist[i - w] + 1, dist[i - w - 1] + 1.414);
+        if (x + 1 < w) d = Math.min(d, dist[i - w + 1] + 1.414);
+      }
+      dist[i] = d;
+    }
+  }
+  let coreX = (bbox.minX + bbox.maxX) * 0.5;
+  let coreY = (bbox.minY + bbox.maxY) * 0.5;
+  let coreR = 0;
+  for (let y = h - 1; y >= 0; y--) {
+    for (let x = w - 1; x >= 0; x--) {
+      const i = y * w + x;
+      if (!mask[i]) continue;
+      let d = dist[i];
+      if (x === w - 1 || y === h - 1) d = Math.min(d, 1);
+      else {
+        d = Math.min(d, dist[i + 1] + 1, dist[i + w] + 1, dist[i + w + 1] + 1.414);
+        if (x > 0) d = Math.min(d, dist[i + w - 1] + 1.414);
+      }
+      dist[i] = d;
+      if (d > coreR) { coreR = d; coreX = x; coreY = y; }
+    }
+  }
+
+  // Zhang-Suen Thinning (fast 2-subiteration morphological skeleton)
+  const skel = new Uint8Array(mask);
+  const toDel = [];
+  const x0 = Math.max(1, bbox.minX), x1 = Math.min(w - 2, bbox.maxX);
+  const y0 = Math.max(1, bbox.minY), y1 = Math.min(h - 2, bbox.maxY);
+
+  for (let iter = 0; iter < 36; iter++) {
+    let changed = false;
+    for (let sub = 0; sub < 2; sub++) {
+      toDel.length = 0;
+      for (let y = y0; y <= y1; y++) {
+        const row = y * w;
+        for (let x = x0; x <= x1; x++) {
+          const idx = row + x;
+          if (!skel[idx]) continue;
+          const p2 = skel[idx - w];
+          const p3 = skel[idx - w + 1];
+          const p4 = skel[idx + 1];
+          const p5 = skel[idx + w + 1];
+          const p6 = skel[idx + w];
+          const p7 = skel[idx + w - 1];
+          const p8 = skel[idx - 1];
+          const p9 = skel[idx - w - 1];
+          const B = p2 + p3 + p4 + p5 + p6 + p7 + p8 + p9;
+          if (B < 2 || B > 6) continue;
+          const A =
+            (!p2 && p3 ? 1 : 0) + (!p3 && p4 ? 1 : 0) + (!p4 && p5 ? 1 : 0) + (!p5 && p6 ? 1 : 0) +
+            (!p6 && p7 ? 1 : 0) + (!p7 && p8 ? 1 : 0) + (!p8 && p9 ? 1 : 0) + (!p9 && p2 ? 1 : 0);
+          if (A !== 1) continue;
+          if (sub === 0) {
+            if (p2 * p4 * p6 !== 0 || p4 * p6 * p8 !== 0) continue;
+          } else {
+            if (p2 * p4 * p8 !== 0 || p2 * p6 * p8 !== 0) continue;
+          }
+          toDel.push(idx);
+        }
+      }
+      if (toDel.length > 0) {
+        changed = true;
+        for (let k = 0; k < toDel.length; k++) skel[toDel[k]] = 0;
+      }
+    }
+    if (!changed) break;
+  }
+
+  // Collect skeleton points and true anatomical endpoints (degree <= 1)
+  const points = [];
+  const endpoints = [];
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      const idx = y * w + x;
+      if (!skel[idx]) continue;
+      points.push([x, y]);
+      const deg =
+        skel[idx - w] + skel[idx - w + 1] + skel[idx + 1] + skel[idx + w + 1] +
+        skel[idx + w] + skel[idx + w - 1] + skel[idx - 1] + skel[idx - w - 1];
+      if (deg <= 1) {
+        endpoints.push({ x, y, r: dist[idx], dCore: Math.hypot(x - coreX, y - coreY) });
+      }
+    }
+  }
+  return { core: { x: coreX, y: coreY, r: coreR }, points, endpoints };
+}
+
+// Seamless periodic damped spring-mass solver for secondary motion (Willett et al., SIGGRAPH 2017)
+// Runs 2 full warmup cycles so frame 0 wraps cleanly into frame N-1 with zero loop discontinuity.
+function computeSpringFollowThrough(primaryDeltas, stiffness, damping) {
+  const n = primaryDeltas.length;
+  if (n === 0) return [];
+  const k = typeof stiffness === "number" ? stiffness : 0.36;
+  const d = typeof damping === "number" ? damping : 0.58;
+  let px = 0, py = 0, vx = 0, vy = 0;
+  const out = new Array(n);
+  for (let cycle = 0; cycle < 3; cycle++) {
+    for (let i = 0; i < n; i++) {
+      const prev = primaryDeltas[(i - 1 + n) % n];
+      const cur = primaryDeltas[i];
+      const next = primaryDeltas[(i + 1) % n];
+      // Torso acceleration impulse drives spring lag & overshoot
+      const ax = (next.dx - 2 * cur.dx + prev.dx);
+      const ay = (next.dy - 2 * cur.dy + prev.dy);
+      vx = (vx + (-k * px - ax * 0.45)) * d;
+      vy = (vy + (-k * py - ay * 0.45)) * d;
+      px += vx;
+      py += vy;
+      if (cycle === 2) out[i] = { dx: px, dy: py };
+    }
+  }
+  return out;
+}
+
+function buildAutoRig(rawRgba, rawW, rawH, cleanBg, modeHint, cleanOpts) {
+  const cleaned = cleanBg ? cleanRgbaPixels(rawRgba, rawW, rawH, cleanOpts) : new Uint8ClampedArray(rawRgba);
   const { grid, w, h, nativeW, nativeH, blockScale = 1 } = extractPaddedNativeGrid(cleaned, rawW, rawH);
-  if (cleanBg) stripExteriorGreyHalo(grid, w, h);
+  const defringePasses = (cleanOpts && typeof cleanOpts.defringe === "number") ? cleanOpts.defringe : 2;
+  if (cleanBg && defringePasses > 0) stripExteriorGreyHalo(grid, w, h, defringePasses);
   const isHiResNative = (blockScale === 1 && Math.max(nativeW, nativeH) >= 90);
   const epx = isHiResNative ? { data: grid, w, h, factor: 1 } : Object.assign(upscale2xEpx(grid, w, h), { factor: 2 });
   const bbox = findBbox(grid, w, h);
@@ -767,16 +924,51 @@ function buildAutoRig(rawRgba, rawW, rawH, cleanBg, modeHint) {
     );
   }
 
+  // Refine pins using true Medial-Axis skeleton core & limb endpoints (Zhang-Suen + Distance Transform)
+  const medial = extractMedialAxisFeatures(grid, w, h, bbox);
+  if (medial.endpoints.length > 0 && bodyType !== "blob") {
+    const snapRadius = Math.max(8, Math.min(bbox.bw, bbox.bh) * 0.24);
+    for (let pi = 0; pi < pins.length; pi++) {
+      const pin = pins[pi];
+      if (pin.id === "chest") {
+        // Blend chest gently toward true distance-transform torso core
+        pin.x = pin.x * 0.65 + medial.core.x * 0.35;
+        pin.y = pin.y * 0.65 + medial.core.y * 0.35;
+        continue;
+      }
+      if (pin.id === "pelvis") continue;
+      let bestEp = null, bestD = snapRadius;
+      for (let ei = 0; ei < medial.endpoints.length; ei++) {
+        const ep = medial.endpoints[ei];
+        // Keep paw pins in lower half and head/tail pins out of the floor
+        if ((pin.id === "fl" || pin.id === "fr" || pin.id === "bl" || pin.id === "br") && ep.y < hipY) continue;
+        if ((pin.id === "head" || pin.id === "tail") && ep.y > bbox.maxY - Math.max(3, bbox.bh * 0.14)) continue;
+        const d = Math.hypot(ep.x - pin.x, ep.y - pin.y);
+        if (d < bestD) { bestD = d; bestEp = ep; }
+      }
+      if (bestEp) {
+        // Blend 65% toward real skeleton extremity so paws/ears/tails lock onto actual silhouette tips
+        pin.x = pin.x * 0.35 + bestEp.x * 0.65;
+        pin.y = pin.y * 0.35 + bestEp.y * 0.65;
+      }
+    }
+  }
+
   const geo = computeGeodesicSkinning(grid, w, h, pins);
-  return { grid, epx, w, h, nativeW, nativeH, isHiResNative, bbox, hipY, facesLeft, bodyType, maxRuns, pins, inkColor, geo };
+  return { grid, epx, w, h, nativeW, nativeH, isHiResNative, bbox, hipY, facesLeft, bodyType, maxRuns, pins, inkColor, geo, medial };
 }
 
 // FIXED FORWARD GAIT PHYSICS:
 // When facesLeft = true (dir = -1):
 //   Swing phase (lifted: cos(phase) > 0, phase in [-pi/2, +pi/2]): dx = dir * sin(phase) moves +stride -> -stride (FORWARD LEFT!)
 //   Stance phase (planted: cos(phase) < 0, phase in [pi/2, 3pi/2]): dx moves -stride -> +stride (pushes ground BACKWARD!)
-function computeAnimatedPins(rig, fx, frameIdx, totalFrames) {
+function computeAnimatedPins(rig, fx, frameIdx, totalFrames, ampScaleOpt) {
   const { bbox, facesLeft, bodyType, pins } = rig;
+  let ampScale = typeof ampScaleOpt === "number" ? ampScaleOpt : 1.0;
+  if (typeof ampScaleOpt !== "number" && typeof document !== "undefined") {
+    const ampEl = document.getElementById("gif-amp");
+    if (ampEl) ampScale = Math.max(0.3, Math.min(2.0, parseFloat(ampEl.value) || 1.0));
+  }
   const phase = (frameIdx / totalFrames) * Math.PI * 2;
   const dir = facesLeft ? -1 : 1;
   // Restrained stride prevents opposite-moving paws from stretching outlines across empty gaps
@@ -924,7 +1116,34 @@ function computeAnimatedPins(rig, fx, frameIdx, totalFrames) {
       if (pin.id === "tail") { dy = Math.sin(phase) * 2.2; dx = dir * Math.cos(phase) * 1.2; }
       else if (pin.id === "head") { dy = Math.sin(phase + 1.1) * 1.0; }
     }
-    return { id: pin.id, x: pin.x + dx, y: pin.y + dy };
+    return { id: pin.id, x: pin.x + dx * ampScale, y: pin.y + dy * ampScale };
+  });
+}
+
+function computeAnimatedPinsWithSpring(rig, fx, frameIdx, totalFrames, ampScaleOpt) {
+  const base = computeAnimatedPins(rig, fx, frameIdx, totalFrames, ampScaleOpt);
+  if (fx === "breathe" || fx === "sleep" || totalFrames < 3) return base;
+  // Compute periodic torso motion curve across the cycle for secondary spring follow-through on tail/head/wing
+  const torsoIdx = rig.pins.findIndex((p) => p.id === "chest" || p.id === "pelvis");
+  if (torsoIdx === -1) return base;
+  const primaryDeltas = [];
+  for (let fi = 0; fi < totalFrames; fi++) {
+    const fp = computeAnimatedPins(rig, fx, fi, totalFrames, ampScaleOpt);
+    primaryDeltas.push({
+      dx: fp[torsoIdx].x - rig.pins[torsoIdx].x,
+      dy: fp[torsoIdx].y - rig.pins[torsoIdx].y,
+    });
+  }
+  const springTail = computeSpringFollowThrough(primaryDeltas, 0.34, 0.62);
+  const springHead = computeSpringFollowThrough(primaryDeltas, 0.46, 0.52);
+  const fi = ((frameIdx % totalFrames) + totalFrames) % totalFrames;
+  const st = springTail[fi] || { dx: 0, dy: 0 };
+  const sh = springHead[fi] || { dx: 0, dy: 0 };
+  return base.map((p) => {
+    if (p.id === "tail") return { id: p.id, x: p.x + st.dx * 0.9, y: p.y + st.dy * 1.15 };
+    if (p.id === "head") return { id: p.id, x: p.x + sh.dx * 0.35, y: p.y + sh.dy * 0.45 };
+    if (p.id === "wing") return { id: p.id, x: p.x + st.dx * 0.5, y: p.y + st.dy * 0.65 };
+    return p;
   });
 }
 
@@ -1129,7 +1348,7 @@ function evalRigidMlsInverse(vx, vy, srcPins, dstPins) {
 // Zero rubber stretching across leg gaps, zero 1px seam holes, true far/near leg depth ordering!
 function renderRiggedFrame(rig, fx, frameIdx, totalFrames) {
   const { grid, epx, w, h, bbox, pins, geo } = rig;
-  const dstPins = computeAnimatedPins(rig, fx, frameIdx, totalFrames);
+  const dstPins = computeAnimatedPinsWithSpring(rig, fx, frameIdx, totalFrames);
   const out = new Uint8ClampedArray(w * h * 4);
   const zBuf = new Int8Array(w * h).fill(-10);
   const ew = epx.w, eh = epx.h, edata = epx.data, efactor = epx.factor || 2;
@@ -1318,8 +1537,15 @@ function refreshCleanedCustomImg() {
     gifCustomSheet = null;
     setSheetControlsVisible(false);
     const bodySel = document.getElementById("gif-body-select");
+    const tolEl = document.getElementById("gif-key-tol");
+    const defEl = document.getElementById("gif-defringe");
+    const cleanOpts = {
+      keyColor: gifChromaKeyRgb,
+      tolerance: tolEl ? (parseInt(tolEl.value, 10) || 40) : 40,
+      defringe: defEl ? parseInt(defEl.value, 10) : 2,
+    };
     invalidateGifFrameCache();
-    gifCustomRig = buildAutoRig(raw, w, h, cleanBg, bodySel ? bodySel.value : "auto");
+    gifCustomRig = buildAutoRig(raw, w, h, cleanBg, bodySel ? bodySel.value : "auto", cleanOpts);
     if (st) {
       const modeTag = gifCustomRig.isHiResNative ? "NATIVE 1:1 RIGID MLS" : "2x EPX RIGID MLS";
       st.textContent = modeTag + " (" + gifCustomRig.bodyType.toUpperCase() + ", " + gifCustomRig.nativeW + "x" + gifCustomRig.nativeH + ")";
@@ -1462,7 +1688,9 @@ function invalidateGifFrameCache() {
 function getCachedRiggedFrame(rig, fx, frameIdx, totalFrames) {
   const lockEl = typeof document !== "undefined" ? document.getElementById("gif-outline-lock") : null;
   const lockKey = (!lockEl || lockEl.checked) ? "1" : "0";
-  const key = rig.w + "x" + rig.h + ":" + rig.bodyType + ":" + fx + ":" + totalFrames + ":" + lockKey;
+  const ampEl = typeof document !== "undefined" ? document.getElementById("gif-amp") : null;
+  const ampKey = ampEl ? ampEl.value : "1";
+  const key = rig.w + "x" + rig.h + ":" + rig.bodyType + ":" + fx + ":" + totalFrames + ":" + lockKey + ":" + ampKey;
   if (_gifFrameCacheKey !== key) {
     _gifFrameCacheKey = key;
     _gifFrameCache.clear();
@@ -1655,6 +1883,29 @@ function lzwEncodeGif(indices, minCodeSize) {
   return out;
 }
 
+// Perceptual Oklab color conversion (Björn Ottosson, 2020)
+function rgbToOklab(r, g, b) {
+  const sr = r / 255, sg = g / 255, sb = b / 255;
+  const lr = sr <= 0.04045 ? sr / 12.92 : Math.pow((sr + 0.055) / 1.055, 2.4);
+  const lg = sg <= 0.04045 ? sg / 12.92 : Math.pow((sg + 0.055) / 1.055, 2.4);
+  const lb = sb <= 0.04045 ? sb / 12.92 : Math.pow((sb + 0.055) / 1.055, 2.4);
+  const l = Math.cbrt(0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb);
+  const m = Math.cbrt(0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb);
+  const s = Math.cbrt(0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb);
+  return [
+    0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s,
+    1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s,
+    0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s,
+  ];
+}
+
+const BAYER_4X4 = [
+  0, 8, 2, 10,
+  12, 4, 14, 6,
+  3, 11, 1, 9,
+  15, 7, 13, 5,
+];
+
 function buildGifPalette(framesRgba, transparent) {
   const uniqueMap = new Map(), counts = [];
   for (let f = 0; f < framesRgba.length; f++) {
@@ -1663,8 +1914,13 @@ function buildGifPalette(framesRgba, transparent) {
       if (transparent && rgba[p + 3] < 128) continue;
       const r = rgba[p], g = rgba[p + 1], b = rgba[p + 2], key = (r << 16) | (g << 8) | b;
       const idx = uniqueMap.get(key);
-      if (idx === undefined) { uniqueMap.set(key, counts.length); counts.push([r, g, b, 1]); }
-      else counts[idx][3]++;
+      if (idx === undefined) {
+        const lab = rgbToOklab(r, g, b);
+        uniqueMap.set(key, counts.length);
+        counts.push([r, g, b, 1, lab[0], lab[1], lab[2]]);
+      } else {
+        counts[idx][3]++;
+      }
     }
   }
   const palette = [[0, 0, 0]];
@@ -1672,23 +1928,25 @@ function buildGifPalette(framesRgba, transparent) {
     for (let i = 0; i < counts.length; i++) palette.push([counts[i][0], counts[i][1], counts[i][2]]);
     return palette;
   }
+  // Perceptual Oklab Median-Cut Quantization
   const boxes = [counts];
   while (boxes.length < 255) {
-    let splitIdx = -1, bestRange = -1, splitChan = 0;
+    let splitIdx = -1, bestRange = -1, splitChan = 4;
     for (let i = 0; i < boxes.length; i++) {
       const box = boxes[i];
       if (box.length < 2) continue;
-      let minR = 255, maxR = 0, minG = 255, maxG = 0, minB = 255, maxB = 0;
+      let minL = 2, maxL = -2, minA = 2, maxA = -2, minB = 2, maxB = -2;
       for (let j = 0; j < box.length; j++) {
         const c = box[j];
-        if (c[0] < minR) minR = c[0]; if (c[0] > maxR) maxR = c[0];
-        if (c[1] < minG) minG = c[1]; if (c[1] > maxG) maxG = c[1];
-        if (c[2] < minB) minB = c[2]; if (c[2] > maxB) maxB = c[2];
+        if (c[4] < minL) minL = c[4]; if (c[4] > maxL) maxL = c[4];
+        if (c[5] < minA) minA = c[5]; if (c[5] > maxA) maxA = c[5];
+        if (c[6] < minB) minB = c[6]; if (c[6] > maxB) maxB = c[6];
       }
-      const rR = maxR - minR, rG = maxG - minG, rB = maxB - minB, m = Math.max(rR, rG, rB);
-      if (m > bestRange) { bestRange = m; splitIdx = i; splitChan = m === rG ? 1 : (m === rR ? 0 : 2); }
+      const rL = (maxL - minL) * 1.15, rA = maxA - minA, rB = maxB - minB;
+      const m = Math.max(rL, rA, rB);
+      if (m > bestRange) { bestRange = m; splitIdx = i; splitChan = m === rL ? 4 : (m === rA ? 5 : 6); }
     }
-    if (splitIdx === -1 || bestRange <= 0) break;
+    if (splitIdx === -1 || bestRange <= 1e-5) break;
     const box = boxes.splice(splitIdx, 1)[0];
     box.sort((a, b) => a[splitChan] - b[splitChan]);
     const mid = box.length >> 1;
@@ -1703,33 +1961,51 @@ function buildGifPalette(framesRgba, transparent) {
   return palette;
 }
 
-function encodeGif89a(framesRgba, w, h, delayCs, transparent) {
+function encodeGif89a(framesRgba, w, h, delayCs, transparent, opts) {
+  const useDither = Boolean(opts && opts.dither);
+  const useDirtyRect = !(opts && opts.optimize === false);
   const palette = buildGifPalette(framesRgba, transparent);
+  const palLab = palette.map((c) => rgbToOklab(c[0], c[1], c[2]));
   const lookup = new Map();
   for (let i = 1; i < palette.length; i++) {
     const c = palette[i];
     lookup.set((c[0] << 16) | (c[1] << 8) | c[2], i);
   }
+  const nearestColor = (r, g, b) => {
+    const key = (r << 16) | (g << 8) | b;
+    let ci = lookup.get(key);
+    if (ci !== undefined) return ci;
+    const lab = rgbToOklab(r, g, b);
+    let best = 1, bestD = 1e9;
+    for (let j = 1; j < palLab.length; j++) {
+      const dL = lab[0] - palLab[j][0], dA = lab[1] - palLab[j][1], dB = lab[2] - palLab[j][2];
+      const d = dL * dL + dA * dA + dB * dB;
+      if (d < bestD) { bestD = d; best = j; }
+    }
+    lookup.set(key, best);
+    return best;
+  };
+
   const indexedFrames = [];
   for (let f = 0; f < framesRgba.length; f++) {
     const rgba = framesRgba[f], idxBuf = new Uint8Array(w * h);
-    for (let p = 0; p < w * h; p++) {
-      if (transparent && rgba[p * 4 + 3] < 128) { idxBuf[p] = 0; continue; }
-      const r = rgba[p * 4], g = rgba[p * 4 + 1], b = rgba[p * 4 + 2], key = (r << 16) | (g << 8) | b;
-      let ci = lookup.get(key);
-      if (ci === undefined) {
-        let best = 1, bestD = 1e9;
-        for (let j = 1; j < palette.length; j++) {
-          const dr = r - palette[j][0], dg = g - palette[j][1], db = b - palette[j][2];
-          const d = dr * dr * 2 + dg * dg * 4 + db * db * 3;
-          if (d < bestD) { bestD = d; best = j; }
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const p = y * w + x;
+        if (transparent && rgba[p * 4 + 3] < 128) { idxBuf[p] = 0; continue; }
+        let r = rgba[p * 4], g = rgba[p * 4 + 1], b = rgba[p * 4 + 2];
+        if (useDither && palette.length > 16) {
+          const thr = (BAYER_4X4[(y & 3) * 4 + (x & 3)] / 16 - 0.5) * 14;
+          r = Math.max(0, Math.min(255, Math.round(r + thr)));
+          g = Math.max(0, Math.min(255, Math.round(g + thr)));
+          b = Math.max(0, Math.min(255, Math.round(b + thr)));
         }
-        ci = best; lookup.set(key, ci);
+        idxBuf[p] = nearestColor(r, g, b);
       }
-      idxBuf[p] = ci;
     }
     indexedFrames.push(idxBuf);
   }
+
   const bytes = [];
   const pushStr = (s) => { for (let i = 0; i < s.length; i++) bytes.push(s.charCodeAt(i)); };
   const pushU16 = (v) => { bytes.push(v & 0xff, (v >> 8) & 0xff); };
@@ -1737,11 +2013,65 @@ function encodeGif89a(framesRgba, w, h, delayCs, transparent) {
   bytes.push(0xF7, 0x00, 0x00);
   for (let i = 0; i < 256; i++) { const c = palette[i] || [0, 0, 0]; bytes.push(c[0], c[1], c[2]); }
   bytes.push(0x21, 0xFF, 0x0B); pushStr("NETSCAPE2.0"); bytes.push(0x03, 0x01, 0x00, 0x00, 0x00);
+
   for (let f = 0; f < indexedFrames.length; f++) {
-    bytes.push(0x21, 0xF9, 0x04, transparent ? 0x09 : 0x08);
+    const cur = indexedFrames[f];
+    let rx = 0, ry = 0, rw = w, rh = h;
+    let frameData = cur;
+    let gceFlags = transparent ? 0x09 : 0x04;
+
+    if (useDirtyRect && !transparent && f > 0) {
+      // Opaque-BG Dirty-Rect + Transparency Delta Optimization (disposal=Do Not Dispose, 0x05)
+      const prev = indexedFrames[f - 1];
+      let minX = w, minY = h, maxX = -1, maxY = -1;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const p = y * w + x;
+          if (cur[p] !== prev[p]) {
+            if (x < minX) minX = x; if (x > maxX) maxX = x;
+            if (y < minY) minY = y; if (y > maxY) maxY = y;
+          }
+        }
+      }
+      if (maxX >= minX) {
+        rx = minX; ry = minY; rw = maxX - minX + 1; rh = maxY - minY + 1;
+        frameData = new Uint8Array(rw * rh);
+        for (let y = 0; y < rh; y++) {
+          for (let x = 0; x < rw; x++) {
+            const sp = (ry + y) * w + (rx + x);
+            frameData[y * rw + x] = cur[sp] === prev[sp] ? 0 : cur[sp];
+          }
+        }
+        gceFlags = 0x05; // disposal=1 (keep), transparent=1 (index 0 skips unchanged pixels)
+      } else {
+        rx = 0; ry = 0; rw = 1; rh = 1;
+        frameData = new Uint8Array([0]);
+        gceFlags = 0x05;
+      }
+    } else if (useDirtyRect && transparent) {
+      // Transparent-BG tight bounding-box crop (disposal=2 restore to background, 0x09)
+      let minX = w, minY = h, maxX = -1, maxY = -1;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          if (cur[y * w + x] !== 0) {
+            if (x < minX) minX = x; if (x > maxX) maxX = x;
+            if (y < minY) minY = y; if (y > maxY) maxY = y;
+          }
+        }
+      }
+      if (maxX >= minX) {
+        rx = minX; ry = minY; rw = maxX - minX + 1; rh = maxY - minY + 1;
+        frameData = new Uint8Array(rw * rh);
+        for (let y = 0; y < rh; y++) {
+          frameData.set(cur.subarray((ry + y) * w + rx, (ry + y) * w + rx + rw), y * rw);
+        }
+      }
+    }
+
+    bytes.push(0x21, 0xF9, 0x04, gceFlags);
     pushU16(delayCs); bytes.push(0x00, 0x00, 0x2C);
-    pushU16(0); pushU16(0); pushU16(w); pushU16(h); bytes.push(0x00, 8);
-    const lzw = lzwEncodeGif(indexedFrames[f], 8);
+    pushU16(rx); pushU16(ry); pushU16(rw); pushU16(rh); bytes.push(0x00, 8);
+    const lzw = lzwEncodeGif(frameData, 8);
     for (let i = 0; i < lzw.length; i += 255) {
       const len = Math.min(255, lzw.length - i);
       bytes.push(len);
@@ -1751,6 +2081,110 @@ function encodeGif89a(framesRgba, w, h, delayCs, transparent) {
   }
   bytes.push(0x3B);
   return new Uint8Array(bytes);
+}
+
+// Pure-JS 24-bit APNG Assembler (full 24-bit RGB + smooth 8-bit Alpha)
+const _CRC32_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+
+function crc32Bytes(buf) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < buf.length; i++) c = _CRC32_TABLE[(c ^ buf[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+function makePngChunk(typeStr, data) {
+  const out = new Uint8Array(12 + data.length);
+  const dv = new DataView(out.buffer);
+  dv.setUint32(0, data.length, false);
+  for (let i = 0; i < 4; i++) out[4 + i] = typeStr.charCodeAt(i);
+  out.set(data, 8);
+  dv.setUint32(8 + data.length, crc32Bytes(out.subarray(4, 8 + data.length)), false);
+  return out;
+}
+
+function parsePngChunks(pngBytes) {
+  const chunks = [];
+  const dv = new DataView(pngBytes.buffer, pngBytes.byteOffset, pngBytes.byteLength);
+  let pos = 8;
+  while (pos + 12 <= pngBytes.length) {
+    const len = dv.getUint32(pos, false);
+    const type = String.fromCharCode(pngBytes[pos + 4], pngBytes[pos + 5], pngBytes[pos + 6], pngBytes[pos + 7]);
+    const data = pngBytes.subarray(pos + 8, pos + 8 + len);
+    chunks.push({ type, data });
+    pos += 12 + len;
+    if (type === "IEND") break;
+  }
+  return chunks;
+}
+
+function assembleApngFromPngFrames(pngBuffers, delayMs) {
+  if (!pngBuffers || pngBuffers.length === 0) return new Uint8Array(0);
+  const firstChunks = parsePngChunks(pngBuffers[0]);
+  const ihdr = firstChunks.find((c) => c.type === "IHDR");
+  if (!ihdr) throw new Error("Missing IHDR in PNG frame");
+  const ihdrView = new DataView(ihdr.data.buffer, ihdr.data.byteOffset, ihdr.data.byteLength);
+  const w = ihdrView.getUint32(0, false);
+  const h = ihdrView.getUint32(4, false);
+
+  const parts = [new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])];
+  parts.push(makePngChunk("IHDR", ihdr.data));
+
+  // acTL: num_frames, num_plays = 0 (infinite loop)
+  const actl = new Uint8Array(8);
+  const actlDv = new DataView(actl.buffer);
+  actlDv.setUint32(0, pngBuffers.length, false);
+  actlDv.setUint32(4, 0, false);
+  parts.push(makePngChunk("acTL", actl));
+
+  let seq = 0;
+  const delayNum = Math.max(10, Math.round(delayMs));
+  const delayDen = 1000;
+
+  for (let f = 0; f < pngBuffers.length; f++) {
+    const chunks = f === 0 ? firstChunks : parsePngChunks(pngBuffers[f]);
+    const idats = chunks.filter((c) => c.type === "IDAT");
+
+    // fcTL (26 bytes)
+    const fctl = new Uint8Array(26);
+    const fdv = new DataView(fctl.buffer);
+    fdv.setUint32(0, seq++, false);
+    fdv.setUint32(4, w, false);
+    fdv.setUint32(8, h, false);
+    fdv.setUint32(12, 0, false);
+    fdv.setUint32(16, 0, false);
+    fdv.setUint16(20, delayNum, false);
+    fdv.setUint16(22, delayDen, false);
+    fctl[24] = 1; // APNG_DISPOSE_OP_BACKGROUND
+    fctl[25] = 0; // APNG_BLEND_OP_SOURCE
+    parts.push(makePngChunk("fcTL", fctl));
+
+    if (f === 0) {
+      for (const idat of idats) parts.push(makePngChunk("IDAT", idat.data));
+    } else {
+      for (const idat of idats) {
+        const fdat = new Uint8Array(4 + idat.data.length);
+        new DataView(fdat.buffer).setUint32(0, seq++, false);
+        fdat.set(idat.data, 4);
+        parts.push(makePngChunk("fdAT", fdat));
+      }
+    }
+  }
+  parts.push(makePngChunk("IEND", new Uint8Array(0)));
+
+  let totalLen = 0;
+  for (const p of parts) totalLen += p.length;
+  const out = new Uint8Array(totalLen);
+  let off = 0;
+  for (const p of parts) { out.set(p, off); off += p.length; }
+  return out;
 }
 
 function buildDeskpetXmlString(title, tilesX, pngBase64) {
@@ -1816,7 +2250,8 @@ function exportMascotGif() {
       drawGifMakerFrame(octx, size, size, seq[i], baseTotal, false);
       frames.push(octx.getImageData(0, 0, size, size).data);
     }
-    const gifBytes = encodeGif89a(frames, size, size, Math.max(4, Math.round(100 / fps)), transparent);
+    const ditherEl = document.getElementById("gif-dither");
+    const gifBytes = encodeGif89a(frames, size, size, Math.max(4, Math.round(100 / fps)), transparent, { dither: Boolean(ditherEl && ditherEl.checked), optimize: true });
     const blob = new Blob([gifBytes], { type: "image/gif" });
     const slug = ((gifCustomRig || gifCustomSheet) && gifCustomName) ? gifCustomName : petId;
     const a = document.createElement("a");
@@ -1917,6 +2352,88 @@ function exportMascotXmlPack() {
   }
 }
 
+let gifChromaKeyRgb = null;
+let gifPickingKey = false;
+
+function toggleGifKeyPicker() {
+  if (!gifCustomRawImg) {
+    if (typeof showToast === "function") showToast("Upload a sprite first to pick a chroma-key background color");
+    return;
+  }
+  gifPickingKey = !gifPickingKey;
+  const btn = document.getElementById("gif-pick-key-btn");
+  const prevC = document.getElementById("gif-preview-canvas");
+  if (btn) btn.style.borderColor = gifPickingKey ? "#7ee8fa" : "";
+  if (prevC) prevC.style.cursor = gifPickingKey ? "crosshair" : "";
+}
+
+function clearGifChromaKey() {
+  gifChromaKeyRgb = null;
+  gifPickingKey = false;
+  const sw = document.getElementById("gif-key-swatch");
+  const btn = document.getElementById("gif-pick-key-btn");
+  const prevC = document.getElementById("gif-preview-canvas");
+  if (sw) { sw.style.background = "transparent"; sw.title = "Auto corner background"; }
+  if (btn) btn.style.borderColor = "";
+  if (prevC) prevC.style.cursor = "";
+  refreshCleanedCustomImg();
+}
+
+function onGifAmpChange() {
+  const el = document.getElementById("gif-amp");
+  const lbl = document.getElementById("gif-amp-val");
+  if (el && lbl) lbl.textContent = Number(el.value).toFixed(1) + "x";
+  invalidateGifFrameCache();
+  renderGifPreviewNow();
+}
+
+function onGifCleanParamChange() {
+  const tolEl = document.getElementById("gif-key-tol");
+  const tolLbl = document.getElementById("gif-key-tol-val");
+  if (tolEl && tolLbl) tolLbl.textContent = String(tolEl.value);
+  const defEl = document.getElementById("gif-defringe");
+  const defLbl = document.getElementById("gif-defringe-val");
+  if (defEl && defLbl) defLbl.textContent = String(defEl.value);
+  refreshCleanedCustomImg();
+}
+
+async function exportMascotApng() {
+  const statusEl = document.getElementById("gif-status");
+  try {
+    const size = Math.max(64, Math.min(256, Number(document.getElementById("gif-size-select").value) || 128));
+    const off = document.createElement("canvas");
+    off.width = size; off.height = size;
+    const octx = off.getContext("2d", { willReadFrequently: true });
+    const fx = document.getElementById("gif-fx-select").value;
+    const petId = document.getElementById("gif-pet-select").value;
+    const fps = Math.max(4, Math.min(14, Number(document.getElementById("gif-fps").value) || 8));
+    const ppEl = document.getElementById("gif-pingpong");
+    const baseTotal = getGifTotalFrames(fx);
+    const seq = getGifPlaybackSequence(baseTotal, Boolean(ppEl && ppEl.checked));
+
+    const pngFrames = [];
+    for (let i = 0; i < seq.length; i++) {
+      drawGifMakerFrame(octx, size, size, seq[i], baseTotal, false);
+      const blob = await new Promise((res) => off.toBlob(res, "image/png"));
+      if (!blob) throw new Error("Canvas toBlob failed");
+      pngFrames.push(new Uint8Array(await blob.arrayBuffer()));
+    }
+    const apngBytes = assembleApngFromPngFrames(pngFrames, Math.round(1000 / fps));
+    const blob = new Blob([apngBytes], { type: "image/apng" });
+    const slug = ((gifCustomRig || gifCustomSheet) && gifCustomName) ? gifCustomName : petId;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = slug + "-" + (gifCustomSheet ? "sheet" : fx) + "-" + size + "px-apng.png";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2500);
+    statusEl.textContent = "EXPORTED " + (apngBytes.length / 1024).toFixed(1) + " KB 24-BIT APNG (" + size + "px, " + seq.length + "f)";
+    if (typeof showToast === "function") showToast("Exported 24-bit APNG: " + a.download);
+  } catch (err) {
+    console.error("APNG export error:", err);
+    statusEl.textContent = "ERROR EXPORTING APNG";
+  }
+}
+
 function updateGifPreviewFps() {
   const fpsEl = document.getElementById("gif-fps");
   if (!fpsEl) return;
@@ -1957,6 +2474,28 @@ if (typeof document !== "undefined") {
       return { x: (ev.clientX - r.left) * (prevC.width / r.width), y: (ev.clientY - r.top) * (prevC.height / r.height) };
     };
     prevC.addEventListener("pointerdown", (ev) => {
+      if (gifPickingKey && gifCustomRawImg) {
+        const pt = getCanvasPos(ev);
+        const rw = gifCustomRawImg.naturalWidth || gifCustomRawImg.width || 128;
+        const rh = gifCustomRawImg.naturalHeight || gifCustomRawImg.height || 128;
+        const rc = document.createElement("canvas");
+        rc.width = rw; rc.height = rh;
+        const rctx = rc.getContext("2d", { willReadFrequently: true });
+        rctx.drawImage(gifCustomRawImg, 0, 0, rw, rh);
+        const sx = Math.max(0, Math.min(rw - 1, Math.floor((pt.x / prevC.width) * rw)));
+        const sy = Math.max(0, Math.min(rh - 1, Math.floor((pt.y / prevC.height) * rh)));
+        const px = rctx.getImageData(sx, sy, 1, 1).data;
+        gifChromaKeyRgb = [px[0], px[1], px[2]];
+        gifPickingKey = false;
+        const sw = document.getElementById("gif-key-swatch");
+        const btn = document.getElementById("gif-pick-key-btn");
+        if (sw) { sw.style.background = "rgb(" + px[0] + "," + px[1] + "," + px[2] + ")"; sw.title = "Key: rgb(" + px[0] + "," + px[1] + "," + px[2] + ")"; }
+        if (btn) btn.style.borderColor = "";
+        prevC.style.cursor = "";
+        refreshCleanedCustomImg();
+        if (typeof showToast === "function") showToast("Chroma-keyed rgb(" + px[0] + "," + px[1] + "," + px[2] + ")");
+        return;
+      }
       const editEl = document.getElementById("gif-show-rig");
       if (!gifCustomRig || !gifLastCanvasGeom || !editEl || !editEl.checked) return;
       const pt = getCanvasPos(ev);
@@ -2020,6 +2559,10 @@ if (typeof module !== "undefined" && module.exports) {
     buildAutoRig,
     computeAnimatedPins,
     renderRiggedFrame,
+    extractMedialAxisFeatures,
+    computeSpringFollowThrough,
+    rgbToOklab,
+    assembleApngFromPngFrames,
     encodeGif89a,
   };
 }
