@@ -148,8 +148,15 @@ function cleanRgbaPixels(data, w, h, opts) {
         }
       }
     }
+    let sumLum = 0;
+    for (let k = 0; k < tail; k++) {
+      const pk = q2[k] * 4;
+      sumLum += out[pk] * 0.299 + out[pk + 1] * 0.587 + out[pk + 2] * 0.114;
+    }
+    const avgLum = tail > 0 ? (sumLum / tail) : 0;
     const isOuter = touchesEmpty > 0 && tail <= Math.max(24, n * 0.04);
-    const isTrapped = touchesEmpty === 0 && touchesDark >= 6 && tail <= Math.max(36, n * 0.03);
+    // Only strip trapped interior pockets if they are large bright white/checkerboard cutouts (never tiny grey shading in eyes/mouth/paws!)
+    const isTrapped = touchesEmpty === 0 && touchesDark >= 8 && tail >= 18 && tail <= Math.max(48, n * 0.03) && avgLum >= 215;
     if (isOuter || isTrapped) {
       for (let k = 0; k < tail; k++) {
         const p = q2[k] * 4;
@@ -1442,6 +1449,56 @@ function computeLimbGaitPose(rig, fx, frameIdx, totalFrames, ampScale) {
   return poses;
 }
 
+
+// Seal 1px barycentric triangle-seam pinholes (surrounded on all 4 cardinal sides)
+// and remove tiny 1-2px detached outline flecks from rotated paws.
+function sealPinholesAndSpecks(rgba, w, h) {
+  const snap = new Uint8ClampedArray(rgba);
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const p = (y * w + x) * 4;
+      if (snap[p + 3] > 0) continue;
+      const pL = p - 4, pR = p + 4, pU = p - w * 4, pD = p + w * 4;
+      if (snap[pL + 3] > 0 && snap[pR + 3] > 0 && snap[pU + 3] > 0 && snap[pD + 3] > 0) {
+        rgba[p]     = (snap[pL]     + snap[pR]     + snap[pU]     + snap[pD]) >> 2;
+        rgba[p + 1] = (snap[pL + 1] + snap[pR + 1] + snap[pU + 1] + snap[pD + 1]) >> 2;
+        rgba[p + 2] = (snap[pL + 2] + snap[pR + 2] + snap[pU + 2] + snap[pD + 2]) >> 2;
+        rgba[p + 3] = 255;
+      }
+    }
+  }
+  // Remove detached 1-2px floating specks (8-connected components <= 2 px)
+  const n = w * h;
+  const vis = new Uint8Array(n);
+  const q = new Int32Array(n);
+  const comp = [];
+  for (let i = 0; i < n; i++) {
+    if (vis[i] || rgba[i * 4 + 3] === 0) continue;
+    let head = 0, tail = 0;
+    vis[i] = 1; q[tail++] = i; comp.length = 0;
+    while (head < tail) {
+      const u = q[head++];
+      comp.push(u);
+      const ux = u % w, uy = (u / w) | 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          const nx = ux + dx, ny = uy + dy;
+          if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+          const v = ny * w + nx;
+          if (!vis[v] && rgba[v * 4 + 3] > 0) { vis[v] = 1; q[tail++] = v; }
+        }
+      }
+    }
+    if (comp.length <= 2) {
+      for (let k = 0; k < comp.length; k++) {
+        const pk = comp[k] * 4;
+        rgba[pk] = 0; rgba[pk + 1] = 0; rgba[pk + 2] = 0; rgba[pk + 3] = 0;
+      }
+    }
+  }
+}
+
 function renderRiggedFrame(rig, fx, frameIdx, totalFrames, techOpt) {
   const { grid, epx, w, h, bbox, pins, geo } = rig;
   let ampScale = 1.0;
@@ -1691,6 +1748,7 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames, techOpt) {
     }
   }
 
+  sealPinholesAndSpecks(finalOut, w, h);
   const lockEl = typeof document !== "undefined" ? document.getElementById("gif-outline-lock") : null;
   if ((!lockEl || lockEl.checked) && !rig.isHiResNative) {
     applyCrispOutlineLock(finalOut, w, h, rig.inkColor || [20, 22, 28]);
@@ -3039,6 +3097,7 @@ if (typeof module !== "undefined" && module.exports) {
     computeLimbGaitPose,
     countInteriorHoles,
     buildFrameDiffRgba,
+    sealPinholesAndSpecks,
     renderRiggedFrame,
     extractMedialAxisFeatures,
     computeSpringFollowThrough,
