@@ -627,3 +627,157 @@ mod oklab_adversarial_tests {
         assert_eq!(aligned[0].get_pixel(6, 13)[3], 255);
     }
 }
+
+/// Strip exterior neutral-grey anti-aliasing halo (low-saturation grey pixels bordering both
+/// transparency and a dark outline) plus detached floating dust specks (<= 5px components).
+pub fn strip_exterior_grey_halo(img: &image::RgbaImage) -> image::RgbaImage {
+    let (w, h) = img.dimensions();
+    let mut out = img.clone();
+    if w == 0 || h == 0 {
+        return out;
+    }
+
+    for _pass in 0..2 {
+        let snap = out.clone();
+        for y in 0..h as i32 {
+            for x in 0..w as i32 {
+                let p = *snap.get_pixel(x as u32, y as u32);
+                if p[3] == 0 {
+                    continue;
+                }
+                let sat = p[0].max(p[1]).max(p[2]) - p[0].min(p[1]).min(p[2]);
+                let lum = 0.299 * p[0] as f32 + 0.587 * p[1] as f32 + 0.114 * p[2] as f32;
+                if sat > 12 || !(90.0..=210.0).contains(&lum) {
+                    continue;
+                }
+                let mut touches_trans = false;
+                let mut touches_dark = false;
+                let dirs = [
+                    (-1, 0),
+                    (1, 0),
+                    (0, -1),
+                    (0, 1),
+                    (-1, -1),
+                    (1, -1),
+                    (-1, 1),
+                    (1, 1),
+                ];
+                for (k, (dx, dy)) in dirs.iter().enumerate() {
+                    let nx = x + dx;
+                    let ny = y + dy;
+                    if nx < 0 || nx >= w as i32 || ny < 0 || ny >= h as i32 {
+                        if k < 4 {
+                            touches_trans = true;
+                        }
+                        continue;
+                    }
+                    let np = *snap.get_pixel(nx as u32, ny as u32);
+                    if np[3] == 0 {
+                        if k < 4 {
+                            touches_trans = true;
+                        }
+                    } else {
+                        let nlum =
+                            0.299 * np[0] as f32 + 0.587 * np[1] as f32 + 0.114 * np[2] as f32;
+                        if nlum < 68.0 {
+                            touches_dark = true;
+                        }
+                    }
+                }
+                if touches_trans && touches_dark {
+                    out.put_pixel(x as u32, y as u32, image::Rgba([0, 0, 0, 0]));
+                }
+            }
+        }
+    }
+
+    // Remove detached 8-connected dust specks <= 5 pixels
+    let n = (w as usize) * (h as usize);
+    let mut visited = vec![false; n];
+    let mut queue = std::collections::VecDeque::new();
+    let mut comp = Vec::new();
+    for i in 0..n {
+        let sx = (i % w as usize) as u32;
+        let sy = (i / w as usize) as u32;
+        if visited[i] || out.get_pixel(sx, sy)[3] == 0 {
+            continue;
+        }
+        visited[i] = true;
+        queue.push_back((sx as i32, sy as i32));
+        comp.clear();
+        while let Some((ux, uy)) = queue.pop_front() {
+            comp.push((ux as u32, uy as u32));
+            for dy in -1..=1 {
+                for dx in -1..=1 {
+                    if dx == 0 && dy == 0 {
+                        continue;
+                    }
+                    let nx = ux + dx;
+                    let ny = uy + dy;
+                    if nx < 0 || nx >= w as i32 || ny < 0 || ny >= h as i32 {
+                        continue;
+                    }
+                    let v = (ny as usize) * (w as usize) + (nx as usize);
+                    if !visited[v] && out.get_pixel(nx as u32, ny as u32)[3] > 0 {
+                        visited[v] = true;
+                        queue.push_back((nx, ny));
+                    }
+                }
+            }
+        }
+        if comp.len() <= 5 {
+            for &(cx, cy) in &comp {
+                out.put_pixel(cx, cy, image::Rgba([0, 0, 0, 0]));
+            }
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod grey_halo_tests {
+    use super::*;
+
+    #[test]
+    fn strip_exterior_grey_halo_removes_fringe_and_dust_specks() {
+        let mut img = image::RgbaImage::new(32, 32);
+        for y in 6..=25 {
+            for x in 6..=25 {
+                let on_halo = x == 6 || x == 25 || y == 6 || y == 25;
+                let on_outline = !on_halo && (x == 7 || x == 24 || y == 7 || y == 24);
+                let px = if on_halo {
+                    image::Rgba([170, 170, 170, 255])
+                } else if on_outline {
+                    image::Rgba([15, 15, 18, 255])
+                } else {
+                    image::Rgba([248, 246, 240, 255])
+                };
+                img.put_pixel(x, y, px);
+            }
+        }
+        img.put_pixel(1, 1, image::Rgba([140, 140, 140, 255]));
+        img.put_pixel(2, 1, image::Rgba([140, 140, 140, 255]));
+
+        let cleaned = strip_exterior_grey_halo(&img);
+        assert_eq!(
+            cleaned.get_pixel(6, 15)[3],
+            0,
+            "exterior grey halo must be removed"
+        );
+        assert_eq!(
+            cleaned.get_pixel(1, 1)[3],
+            0,
+            "floating dust speck must be removed"
+        );
+        assert_eq!(
+            cleaned.get_pixel(7, 15)[3],
+            255,
+            "dark outline must stay intact"
+        );
+        assert_eq!(
+            cleaned.get_pixel(15, 15)[3],
+            255,
+            "white interior must stay intact"
+        );
+    }
+}
