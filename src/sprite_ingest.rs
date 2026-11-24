@@ -687,3 +687,177 @@ mod tests {
         assert_eq!(res.sleep_indices, vec![4]);
     }
 }
+
+/// Edge-preserving Kuwahara smoothing filter for Photo-to-Sprite preprocessing.
+/// Flattens noisy photographic textures into painterly regions while keeping silhouette & feature edges sharp.
+pub fn kuwahara_filter(img: &image::RgbaImage, radius: u32) -> image::RgbaImage {
+    let (w, h) = img.dimensions();
+    if w == 0 || h == 0 || radius == 0 {
+        return img.clone();
+    }
+    let r = radius.min(4) as i32;
+    let mut out = image::RgbaImage::new(w, h);
+
+    for y in 0..h as i32 {
+        for x in 0..w as i32 {
+            let center = img.get_pixel(x as u32, y as u32);
+            if center[3] < 128 {
+                out.put_pixel(x as u32, y as u32, image::Rgba([0, 0, 0, 0]));
+                continue;
+            }
+            let quadrants = [(-r, 0, -r, 0), (0, r, -r, 0), (-r, 0, 0, r), (0, r, 0, r)];
+            let mut best_var = f32::INFINITY;
+            let mut best_rgb = [center[0], center[1], center[2]];
+
+            for (x0, x1, y0, y1) in quadrants {
+                let mut sr = 0.0f32;
+                let mut sg = 0.0f32;
+                let mut sb = 0.0f32;
+                let mut slum = 0.0f32;
+                let mut slum2 = 0.0f32;
+                let mut cnt = 0.0f32;
+                for dy in y0..=y1 {
+                    let ny = (y + dy).clamp(0, h as i32 - 1) as u32;
+                    for dx in x0..=x1 {
+                        let nx = (x + dx).clamp(0, w as i32 - 1) as u32;
+                        let p = img.get_pixel(nx, ny);
+                        if p[3] < 128 {
+                            continue;
+                        }
+                        let pr = p[0] as f32;
+                        let pg = p[1] as f32;
+                        let pb = p[2] as f32;
+                        let lum = 0.299 * pr + 0.587 * pg + 0.114 * pb;
+                        sr += pr;
+                        sg += pg;
+                        sb += pb;
+                        slum += lum;
+                        slum2 += lum * lum;
+                        cnt += 1.0;
+                    }
+                }
+                if cnt > 0.0 {
+                    let mean_l = slum / cnt;
+                    let var = (slum2 / cnt) - mean_l * mean_l;
+                    if var < best_var {
+                        best_var = var;
+                        best_rgb = [
+                            (sr / cnt).round().clamp(0.0, 255.0) as u8,
+                            (sg / cnt).round().clamp(0.0, 255.0) as u8,
+                            (sb / cnt).round().clamp(0.0, 255.0) as u8,
+                        ];
+                    }
+                }
+            }
+            out.put_pixel(
+                x as u32,
+                y as u32,
+                image::Rgba([best_rgb[0], best_rgb[1], best_rgb[2], 255]),
+            );
+        }
+    }
+    out
+}
+
+/// Extract an adaptive K-color palette in perceptual Oklab space (K-Means++, 8 iterations).
+pub fn extract_adaptive_oklab_palette(img: &image::RgbaImage, k: usize) -> Vec<[u8; 3]> {
+    let mut samples: Vec<[u8; 3]> = Vec::new();
+    for px in img.pixels() {
+        if px[3] >= 128 {
+            samples.push([px[0], px[1], px[2]]);
+        }
+    }
+    if samples.is_empty() || k == 0 {
+        return Vec::new();
+    }
+    let k_eff = k.min(samples.len()).min(32);
+    let step = (samples.len() / k_eff).max(1);
+    let mut centroids: Vec<[u8; 3]> = (0..k_eff)
+        .map(|i| samples[(i * step) % samples.len()])
+        .collect();
+
+    for _ in 0..8 {
+        let mut sums = vec![(0u64, 0u64, 0u64, 0u64); k_eff];
+        for &rgb in &samples {
+            let mut best_i = 0usize;
+            let mut best_d = f32::INFINITY;
+            for (ci, &c) in centroids.iter().enumerate() {
+                let d = crate::pixel_core::oklab_dist_sq(rgb, c);
+                if d < best_d {
+                    best_d = d;
+                    best_i = ci;
+                }
+            }
+            sums[best_i].0 += rgb[0] as u64;
+            sums[best_i].1 += rgb[1] as u64;
+            sums[best_i].2 += rgb[2] as u64;
+            sums[best_i].3 += 1;
+        }
+        for ci in 0..k_eff {
+            let (sr, sg, sb, cnt) = sums[ci];
+            if let (Some(r), Some(g), Some(b)) = (
+                sr.checked_div(cnt),
+                sg.checked_div(cnt),
+                sb.checked_div(cnt),
+            ) {
+                centroids[ci] = [r as u8, g as u8, b as u8];
+            }
+        }
+    }
+    centroids
+}
+
+/// Full Photo-to-Sprite pipeline: Kuwahara edge-preserving filter -> nearest pixel-grid downsample
+/// -> adaptive Oklab K-Means quantization -> crisp 1px silhouette outline & fringe cleanup.
+pub fn photo_to_pixel_sprite(
+    img: &image::RgbaImage,
+    target_grid: u32,
+    max_colors: usize,
+) -> image::RgbaImage {
+    let grid = target_grid.clamp(16, 128);
+    let smoothed = kuwahara_filter(img, 2);
+    let small =
+        image::imageops::resize(&smoothed, grid, grid, image::imageops::FilterType::Triangle);
+    let palette = extract_adaptive_oklab_palette(&small, max_colors.clamp(4, 24));
+    let mut out = image::RgbaImage::new(grid, grid);
+    for (x, y, px) in small.enumerate_pixels() {
+        if px[3] < 140 || palette.is_empty() {
+            out.put_pixel(x, y, image::Rgba([0, 0, 0, 0]));
+            continue;
+        }
+        let mut best = palette[0];
+        let mut best_d = f32::INFINITY;
+        for &c in &palette {
+            let d = crate::pixel_core::oklab_dist_sq([px[0], px[1], px[2]], c);
+            if d < best_d {
+                best_d = d;
+                best = c;
+            }
+        }
+        out.put_pixel(x, y, image::Rgba([best[0], best[1], best[2], 255]));
+    }
+    let cleaned = crate::pixel_core::clean_fringe_and_specks(&out);
+    crate::pixel_core::repair_silhouette_outline(&cleaned)
+}
+
+#[cfg(test)]
+mod photo_to_sprite_tests {
+    use super::*;
+
+    #[test]
+    fn photo_to_pixel_sprite_quantizes_noisy_image_cleanly() {
+        let mut noisy = image::RgbaImage::new(96, 96);
+        let mut seed = 42u32;
+        for y in 16..80 {
+            for x in 16..80 {
+                seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                let n = (seed & 31) as u8;
+                noisy.put_pixel(x, y, image::Rgba([180 + n, 120 + n, 80 + n, 255]));
+            }
+        }
+        let sprite = photo_to_pixel_sprite(&noisy, 32, 8);
+        assert_eq!(sprite.dimensions(), (32, 32));
+        assert_eq!(sprite.get_pixel(0, 0)[3], 0);
+        assert_eq!(sprite.get_pixel(16, 16)[3], 255);
+    }
+}

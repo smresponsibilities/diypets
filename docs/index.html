@@ -581,7 +581,10 @@
               <select id="gif-body-select" class="ctrl-input" style="width:92px;padding:3px 6px;" onchange="refreshCleanedCustomImg()">
                 <option value="auto">Auto</option>
                 <option value="quadruped">4-Leg</option>
-                <option value="biped">2-Leg</option>
+                <option value="biped">2-Leg (Biped)</option>
+                <option value="crawler">Snake / Crawler</option>
+                <option value="swimmer">Fish / Swimmer</option>
+                <option value="bird">Bird / Winged</option>
                 <option value="blob">Blob</option>
               </select>
             </label>
@@ -1278,7 +1281,7 @@ function loop(now) {
 requestAnimationFrame(loop);
 
 </script>
-<script src="gif_maker.js?v=8">
+<script src="gif_maker.js?v=9">
 // Auto-sync displayed version from GitHub Releases API (cached per session, fallback v0.4.1)
 (function syncLatestVersion() {
   const applyVer = (tag) => {

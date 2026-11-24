@@ -625,9 +625,49 @@ function buildAutoRig(rawRgba, rawW, rawH, cleanBg, modeHint) {
       { id: "br", label: "BR", color: "#50f082", x: findPawX(0.75, 0.98, 0.86), y: pawY }
     );
   } else if (bodyType === "biped") {
+    // 2-Bone IK + opposite arm counter-swing pins (Aristidou & Lasenby 2011)
+    const armY = bbox.minY + bbox.bh * 0.56;
     pins.push(
+      { id: "l_hand", label: "L-Hand", color: "#ff9f43", x: atRelX(0.20), y: armY },
+      { id: "r_hand", label: "R-Hand", color: "#54a0ff", x: atRelX(0.80), y: armY },
       { id: "fl", label: "L-Foot", color: "#50f082", x: findPawX(0.18, 0.50, 0.35), y: pawY },
       { id: "br", label: "R-Foot", color: "#ff7373", x: findPawX(0.50, 0.84, 0.66), y: pawY }
+    );
+  } else if (bodyType === "crawler") {
+    // Hirose (1993) Serpenoid medial-axis spine: 5 evenly spaced pins along body length
+    pins.length = 0;
+    const nSpine = 5;
+    for (let si = 0; si < nSpine; si++) {
+      const t = 0.12 + (si / (nSpine - 1)) * 0.78;
+      const sx = atRelX(t);
+      const c = findColumnMassCenter(grid, w, sx - 3, sx + 3, bbox.minY, bbox.maxY, sx, bbox.minY + bbox.bh * 0.65);
+      pins.push({ id: "spine_" + si, label: "S" + si, color: si === 0 ? "#ffd166" : "#50f082", x: c.x, y: c.y });
+    }
+  } else if (bodyType === "swimmer") {
+    // Lighthill (1960) Carangiform swimmer: rigid anterior head/chest + flexible mid-tail & caudal fin
+    pins.length = 0;
+    const pts = [
+      { id: "head", t: 0.16, col: "#ffd166" },
+      { id: "chest", t: 0.38, col: "#5ec8ff" },
+      { id: "pelvis", t: 0.64, col: "#50f082" },
+      { id: "tail", t: 0.90, col: "#e07bff" },
+    ];
+    for (let i = 0; i < pts.length; i++) {
+      const sx = atRelX(pts[i].t);
+      const c = findColumnMassCenter(grid, w, sx - 3, sx + 3, bbox.minY, bbox.maxY, sx, bbox.minY + bbox.bh * 0.5);
+      pins.push({ id: pts[i].id, label: pts[i].id, color: pts[i].col, x: c.x, y: c.y });
+    }
+  } else if (bodyType === "bird") {
+    // Tobalske (2007) Asymmetric flapping-wing kinematics: wingtip pin + tail pitch + feet
+    const wingC = findColumnMassCenter(
+      grid, w,
+      Math.min(atRelX(0.32), atRelX(0.72)), Math.max(atRelX(0.32), atRelX(0.72)),
+      bbox.minY + bbox.bh * 0.22, bbox.minY + bbox.bh * 0.62,
+      atRelX(0.52), bbox.minY + bbox.bh * 0.42
+    );
+    pins.push(
+      { id: "wing", label: "Wing", color: "#ff9f43", x: wingC.x, y: wingC.y },
+      { id: "fl", label: "Foot", color: "#50f082", x: findPawX(0.30, 0.70, 0.50), y: pawY }
     );
   } else {
     pins.push(
@@ -655,27 +695,70 @@ function computeAnimatedPins(rig, fx, frameIdx, totalFrames) {
   return pins.map((pin) => {
     let dx = 0, dy = 0;
     if (fx === "walk") {
-      const sA = Math.sin(phase);
-      const sB = Math.sin(phase + Math.PI);
-      const lA = Math.max(0, Math.cos(phase));
-      const lB = Math.max(0, Math.cos(phase + Math.PI));
-      const bob = -Math.abs(Math.cos(phase)) * Math.max(0.8, bbox.bh * 0.028);
-      if (pin.id === "head") {
-        dy = -Math.abs(Math.cos(phase - 0.8)) * Math.max(1.0, bbox.bh * 0.036);
-        dx = dir * Math.sin(phase - 0.6) * 0.9;
-      } else if (pin.id === "chest") {
-        dy = bob;
-      } else if (pin.id === "pelvis") {
-        dy = bob * 0.9;
-      } else if (pin.id === "tail") {
-        dy = bob + Math.sin(phase * 2) * 1.4;
-        dx = -dir * Math.cos(phase) * 0.7;
-      } else if (bodyType !== "blob" && (pin.id === "fl" || pin.id === "br")) {
-        dx = dir * sA * stride;
-        dy = -lA * liftMax;
-      } else if (bodyType !== "blob" && (pin.id === "fr" || pin.id === "bl")) {
-        dx = dir * sB * stride;
-        dy = -lB * liftMax;
+      if (bodyType === "crawler" && pin.id.startsWith("spine_")) {
+        // Hirose (1993) Serpenoid traveling wave: head stabilized, trailing wave along spine
+        const si = parseInt(pin.id.slice(6), 10) || 0;
+        const amp = si === 0 ? 0.45 : Math.max(1.2, bbox.bh * 0.14) * (0.45 + 0.55 * (si / 4));
+        dy = -Math.abs(Math.sin(phase - si * 1.05)) * amp;
+        dx = dir * Math.cos(phase - si * 1.05) * (si === 0 ? 0.5 : 1.1);
+      } else if (bodyType === "swimmer") {
+        // Lighthill (1960) Carangiform swimming: rigid head, quadratic caudal fin wave + buoyancy
+        const buoy = Math.sin(phase) * Math.max(0.8, bbox.bh * 0.04);
+        if (pin.id === "head") { dy = buoy * 0.5; }
+        else if (pin.id === "chest") { dy = buoy * 0.8 + Math.sin(phase - 0.5) * 0.5; }
+        else if (pin.id === "pelvis") { dy = buoy + Math.sin(phase - 1.2) * Math.max(1.4, bbox.bh * 0.07); }
+        else if (pin.id === "tail") {
+          dy = buoy + Math.sin(phase - 2.1) * Math.max(2.6, bbox.bh * 0.16);
+          dx = -dir * Math.abs(Math.cos(phase - 2.1)) * 1.1;
+        }
+      } else if (bodyType === "bird") {
+        // Tobalske (2007) Asymmetric flapping: fast downstroke lifts body, tucked upstroke dips body
+        const flap = Math.sin(phase);
+        const bodyLift = -flap * Math.max(1.4, bbox.bh * 0.06);
+        if (pin.id === "wing") {
+          dy = flap * Math.max(3.2, bbox.bh * 0.22);
+          dx = -dir * Math.cos(phase) * 1.2;
+        } else if (pin.id === "tail") {
+          dy = bodyLift - flap * 1.4;
+        } else {
+          dy = bodyLift;
+        }
+      } else {
+        const sA = Math.sin(phase);
+        const sB = Math.sin(phase + Math.PI);
+        const lA = Math.max(0, Math.cos(phase));
+        const lB = Math.max(0, Math.cos(phase + Math.PI));
+        const bob = -Math.abs(Math.cos(phase)) * Math.max(0.8, bbox.bh * 0.028);
+        if (pin.id === "head") {
+          dy = -Math.abs(Math.cos(phase - 0.8)) * Math.max(1.0, bbox.bh * 0.036);
+          dx = dir * Math.sin(phase - 0.6) * 0.9;
+        } else if (pin.id === "chest") {
+          dy = bob;
+        } else if (pin.id === "pelvis") {
+          dy = bob * 0.9;
+        } else if (pin.id === "tail") {
+          dy = bob + Math.sin(phase * 2) * 1.4;
+          dx = -dir * Math.cos(phase) * 0.7;
+        } else if (bodyType === "biped" && pin.id === "l_hand") {
+          // Opposite-phase arm counter-swing (L-Hand swings opposite to L-Foot `fl`)
+          dx = dir * sB * stride * 0.85;
+          dy = bob - Math.abs(sB) * 0.8;
+        } else if (bodyType === "biped" && pin.id === "r_hand") {
+          dx = dir * sA * stride * 0.85;
+          dy = bob - Math.abs(sA) * 0.8;
+        } else if (bodyType === "biped" && pin.id === "fl") {
+          dx = dir * sA * stride;
+          dy = -lA * liftMax;
+        } else if (bodyType === "biped" && pin.id === "br") {
+          dx = dir * sB * stride;
+          dy = -lB * liftMax;
+        } else if (bodyType !== "blob" && (pin.id === "fl" || pin.id === "br")) {
+          dx = dir * sA * stride;
+          dy = -lA * liftMax;
+        } else if (bodyType !== "blob" && (pin.id === "fr" || pin.id === "bl")) {
+          dx = dir * sB * stride;
+          dy = -lB * liftMax;
+        }
       }
     } else if (fx === "run") {
       const runS = Math.max(2.4, bbox.bw * 0.088);
@@ -929,6 +1012,7 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames) {
     else if (id === "tail") pinDepth[i] = 2;
     else if (id === "chest" || id === "pelvis") pinDepth[i] = 3;
     else if (id === "head") pinDepth[i] = 4;
+    else if (id === "wing" || id === "l_hand") pinDepth[i] = 6;
     else pinDepth[i] = 5; // near legs (fl, br)
   }
 
@@ -979,7 +1063,7 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames) {
 
   // Strict ground-baseline alignment for grounded cycles
   let finalOut = out;
-  if (fx === "walk" || fx === "breathe" || fx === "wave") {
+  if ((fx === "walk" || fx === "breathe" || fx === "wave") && rig.bodyType !== "bird" && rig.bodyType !== "swimmer") {
     let curFoot = -1;
     for (let y = h - 1; y >= 0 && curFoot === -1; y--) {
       for (let x = 0; x < w; x++) {

@@ -5,6 +5,7 @@ pub mod bubble;
 pub mod catalog;
 pub mod deskpet_state;
 pub mod deskpet_xml;
+pub mod geodesic_rig;
 pub mod gif_export;
 pub mod juice_fx;
 pub mod logging;

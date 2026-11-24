@@ -94,25 +94,25 @@
   - *Scope:* Solve `(blockSize, phaseX, phaseY)` by maximizing edge-gradient alignment before downsampling to the native pixel grid; combine with 2x EPX -> Geodesic Bone MLS -> 1px Outline Lock.
   - *Acceptance:* Crisp 1px dark outlines and intact paw claws on `open.png` and all 5 mascots.
 
-- [ ] **T-027: Biped Archetype Physics (2-Bone IK + Opposite Arm Counter-Swing)**
+- [x] **T-027: Biped Archetype Physics (2-Bone IK + Opposite Arm Counter-Swing)**
   - *Problem:* Bipeds currently only move 2 foot pins with rigid upper bodies.
   - *Research:* Aristidou & Lasenby (2011, *FABRIK* / analytical 2-bone IK).
   - *Scope:* Auto-place `head`, `chest`, `l_hand`, `r_hand`, `pelvis`, `l_foot`, `r_foot` pins; drive opposite-phase arm swing, knee lift arc, and 1px vertical passing bob.
   - *Acceptance:* Passes dedicated biped benchmark fixture with grounded stance feet and counter-swinging arms.
 
-- [ ] **T-028: Snake & Crawler Archetype Physics (Serpenoid Traveling Wave)**
+- [x] **T-028: Snake & Crawler Archetype Physics (Serpenoid Traveling Wave)**
   - *Problem:* Limbless crawlers currently fall back to static `blob` rigs.
   - *Research:* Hirose (1993, *Biologically Inspired Robots: Serpenoid Curve*).
   - *Scope:* Extract 5-7 spine pins along the horizontal medial axis; drive traveling serpenoid wave `y(s,t) = A * sin(k*s - w*t)` with head stabilization and grounded contact points.
   - *Acceptance:* Smooth undulation on horizontal snake/crawler fixture with zero tail clipping.
 
-- [ ] **T-029: Swimmer Archetype Physics (Carangiform Tail-Fin Wave + Buoyancy)**
+- [x] **T-029: Swimmer Archetype Physics (Carangiform Tail-Fin Wave + Buoyancy)**
   - *Problem:* Fish/swimmers have no aquatic tail propulsion or buoyancy motion.
   - *Research:* Lighthill (1960, *Elongated-Body Theory of Fish Locomotion*).
   - *Scope:* Lock anterior head/chest nearly rigid while applying exponentially increasing tail-fin amplitude `A(x) = a * x^2 * sin(k*x - w*t)` plus gentle sinusoidal buoyancy drift.
   - *Acceptance:* Rigid head + lively caudal fin propulsion on swimmer fixture.
 
-- [ ] **T-030: Bird Archetype Physics (Asymmetric Wing-Flap + Counter-Bob)**
+- [x] **T-030: Bird Archetype Physics (Asymmetric Wing-Flap + Counter-Bob)**
   - *Problem:* Birds lack wing-flap articulation separate from torso motion.
   - *Research:* Tobalske (2007, *Biomechanics of Bird Flight*).
   - *Scope:* Segment wingtip pin(s) from torso; drive asymmetric downstroke (wing extended down, body rises 2px) vs upstroke (wing tucked up, body dips 1px) + tail pitch counter-balance.

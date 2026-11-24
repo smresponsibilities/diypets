@@ -1412,6 +1412,26 @@ impl StudioApp {
                     self.costume_dirty = true;
                     self.toasts.info("Cleaned L-corner pixel doubles");
                 }
+                ui.small("One-Click Sprite Polish:");
+                if ui
+                    .button("Photo -> Pixel Art (Kuwahara + Oklab)")
+                    .on_hover_text("Turn a noisy photo or illustration into crisp 64px pixel art with adaptive 12-color Oklab palette, fringe cleanup & 1px outline lock")
+                    .clicked()
+                    && let Some(cur) = self.costume_frames.get(self.costume_selected).cloned()
+                {
+                    self.push_costume_undo();
+                    let (cw, ch) = cur.dimensions();
+                    let pix = diypets::sprite_ingest::photo_to_pixel_sprite(&cur, 64, 12);
+                    let crisp = image::imageops::resize(
+                        &pix,
+                        cw,
+                        ch,
+                        image::imageops::FilterType::Nearest,
+                    );
+                    self.costume_frames[self.costume_selected] = crisp;
+                    self.costume_dirty = true;
+                    self.toasts.info("Converted frame with Kuwahara + Oklab Photo-to-Sprite");
+                }
                 if ui
                     .button("Clean Fringe & Specks")
                     .on_hover_text("Remove translucent grey edge halos and floating 1-2px dust specks")
