@@ -1074,8 +1074,8 @@ function computeAnimatedPins(rig, fx, frameIdx, totalFrames, ampScaleOpt) {
       const bounce = -Math.abs(Math.sin(phase * 2)) * Math.max(1.4, bbox.bh * 0.05);
       if (pin.id === "head") { dx = sway * 1.3; dy = bounce * 1.35; }
       else if (pin.id === "chest") { dx = sway; dy = bounce; }
-      else if (pin.id === "pelvis") { dx = -sway * 0.65; dy = bounce * 0.6; }
-      else if (pin.id === "tail") { dx = -sway * 1.2; dy = bounce + Math.sin(phase * 2) * 1.6; }
+      else if (pin.id === "pelvis") { dx = sway * 0.35; dy = bounce * 0.6; }
+      else if (pin.id === "tail") { dx = sway * 0.15; dy = bounce + Math.sin(phase * 2) * 1.4; }
       else if (pin.id === "fl" || pin.id === "br") { dy = -Math.max(0, Math.sin(phase)) * liftMax * 0.8; }
       else if (pin.id === "fr" || pin.id === "bl") { dy = -Math.max(0, -Math.sin(phase)) * liftMax * 0.8; }
     } else if (fx === "pet") {
@@ -1085,12 +1085,13 @@ function computeAnimatedPins(rig, fx, frameIdx, totalFrames, ampScaleOpt) {
       else if (pin.id === "chest") { dy = squish * Math.max(1.2, bbox.bh * 0.04); }
       else if (pin.id === "tail") { dy = Math.sin(phase * 4) * Math.max(2.0, bbox.bh * 0.07); dx = -dir * Math.cos(phase * 4) * 1.0; }
     } else if (fx === "sleep") {
-      // Slow peaceful nap: gentle breathing expansion + relaxed head droop
+      // Real crouched nap posture: lower head/torso toward ground + slow deep breathing swell
       const br = Math.sin(phase);
-      if (pin.id === "head") { dy = Math.max(1.2, bbox.bh * 0.04) + br * 0.6; dx = dir * 0.8; }
-      else if (pin.id === "chest") { dy = -br * Math.max(1.1, bbox.bh * 0.032); }
-      else if (pin.id === "pelvis") { dy = -br * Math.max(0.7, bbox.bh * 0.02); }
-      else if (pin.id === "tail") { dy = br * 0.7; }
+      const crouch = Math.max(4.0, bbox.bh * 0.11);
+      if (pin.id === "head") { dy = crouch * 1.25 + br * 1.2; dx = dir * 1.8; }
+      else if (pin.id === "chest") { dy = crouch * 0.85 - br * Math.max(1.6, bbox.bh * 0.042); }
+      else if (pin.id === "pelvis") { dy = crouch * 0.70 - br * Math.max(1.0, bbox.bh * 0.026); }
+      else if (pin.id === "tail") { dy = crouch * 0.65 + br * 1.2; dx = -dir * 1.0; }
     } else if (fx === "breathe") {
       const ex = (Math.sin(phase) * 0.5 + 0.5) * Math.max(1.0, bbox.bh * 0.04);
       if (pin.id === "head" || pin.id === "chest") dy = ex;
@@ -1356,6 +1357,11 @@ function evalRigidMlsInverse(vx, vy, srcPins, dstPins) {
 //    making shoulder/groin seams mathematically watertight (zero tears).
 // 3. Inward leg swing is clamped against the real rest-pose pair gap (|fr.x - fl.x|, |br.x - bl.x|)
 //    with passing-phase vertical clearance so paired paws never crash into a single clump.
+// Rigid-Bone Articulated Limb + Watertight Torso-MLS Renderer
+// Eliminates banana-shearing and melted paws:
+// - Pure constant-angle rigid rotation below a 4px hip-socket blend zone (zero shiftX stretching!)
+// - Pair-gap angle clamping so paired paws never collide
+// - Planted feet on Dance, clean airborne tuck on Hop, real crouched nap on Sleep
 function computeLimbGaitPose(rig, fx, frameIdx, totalFrames, ampScale) {
   const phase = (frameIdx / Math.max(1, totalFrames)) * Math.PI * 2;
   const dir = rig.facesLeft ? -1 : 1;
@@ -1366,24 +1372,21 @@ function computeLimbGaitPose(rig, fx, frameIdx, totalFrames, ampScale) {
   const frontGap = (byId.fl && byId.fr) ? Math.abs(byId.fr.x - byId.fl.x) : rig.bbox.bw * 0.22;
   const backGap = (byId.bl && byId.br) ? Math.abs(byId.br.x - byId.bl.x) : rig.bbox.bw * 0.22;
 
-  // Clamp inward swing toward the paired leg so paws never collide on the same pixels
-  const clampPairShift = (id, rawShiftX, rawAngle) => {
+  const clampPairAngle = (id, rawAngle) => {
     const isFront = (id === "fl" || id === "fr");
     const partner = id === "fl" ? byId.fr : (id === "fr" ? byId.fl : (id === "bl" ? byId.br : byId.bl));
     const self = byId[id];
-    if (!self || !partner) return { shiftX: rawShiftX, angle: rawAngle };
+    if (!self || !partner) return rawAngle;
     const gap = Math.max(4, isFront ? frontGap : backGap);
     const towardPartner = Math.sign(partner.x - self.x) || 1;
-    // Tip horizontal displacement from rotation + linear shift
-    const tipDx = rawShiftX - Math.sin(rawAngle) * legH * 0.85;
+    const tipDx = -Math.sin(rawAngle) * legH;
     if (tipDx * towardPartner > 0) {
-      const maxInward = gap * 0.36;
+      const maxInward = gap * 0.34;
       if (Math.abs(tipDx) > maxInward) {
-        const ratio = maxInward / Math.abs(tipDx);
-        return { shiftX: rawShiftX * ratio, angle: rawAngle * ratio };
+        return rawAngle * (maxInward / Math.abs(tipDx));
       }
     }
-    return { shiftX: rawShiftX, angle: rawAngle };
+    return rawAngle;
   };
 
   const poses = {};
@@ -1393,51 +1396,45 @@ function computeLimbGaitPose(rig, fx, frameIdx, totalFrames, ampScale) {
       const p = phase + off;
       const swing = Math.sin(p);
       const lift = Math.max(0, Math.cos(p));
-      const rawAngle = -dir * swing * 0.24 * ampScale;
-      const rawShiftX = dir * swing * Math.max(1.4, rig.bbox.bw * 0.024) * ampScale;
-      const safe = clampPairShift(id, rawShiftX, rawAngle);
       poses[id] = {
-        angle: safe.angle,
-        liftY: -lift * Math.max(2.2, legH * 0.24) * ampScale,
-        shiftX: safe.shiftX,
+        angle: clampPairAngle(id, -dir * swing * 0.22 * ampScale),
+        liftY: -lift * Math.max(1.8, legH * 0.16) * ampScale,
+        shiftX: 0,
       };
     }
   } else if (fx === "sprint" || fx === "run") {
-    const specs = [["fl", 0.0], ["fr", 0.55], ["bl", Math.PI * 0.90], ["br", Math.PI * 1.25]];
+    const specs = [["fl", 0.0], ["fr", 0.50], ["bl", Math.PI * 0.90], ["br", Math.PI * 1.25]];
     for (const [id, off] of specs) {
       const p = phase + off;
       const swing = Math.sin(p);
       const lift = Math.max(0, Math.cos(p));
-      const rawAngle = -dir * swing * 0.38 * ampScale;
-      const rawShiftX = dir * swing * Math.max(2.2, rig.bbox.bw * 0.040) * ampScale;
-      const safe = clampPairShift(id, rawShiftX, rawAngle);
       poses[id] = {
-        angle: safe.angle,
-        liftY: -lift * Math.max(3.0, legH * 0.32) * ampScale,
-        shiftX: safe.shiftX,
+        angle: clampPairAngle(id, -dir * swing * 0.34 * ampScale),
+        liftY: -lift * Math.max(2.6, legH * 0.24) * ampScale,
+        shiftX: 0,
       };
     }
   } else if (fx === "dance") {
+    // Keep paws planted cleanly on the beat with subtle alternating lift (no ice-skating slide)
     const specs = [["fl", 0], ["br", 0], ["fr", Math.PI], ["bl", Math.PI]];
     for (const [id, off] of specs) {
       const p = phase + off;
       const tap = Math.max(0, Math.sin(p));
-      const safe = clampPairShift(id, Math.sin(phase) * 1.2 * ampScale, dir * Math.sin(p) * 0.18 * ampScale);
       poses[id] = {
-        angle: safe.angle,
-        liftY: -tap * Math.max(2.4, legH * 0.26) * ampScale,
-        shiftX: safe.shiftX,
+        angle: clampPairAngle(id, dir * Math.sin(p) * 0.08 * ampScale),
+        liftY: -tap * Math.max(1.8, legH * 0.18) * ampScale,
+        shiftX: 0,
       };
     }
   } else if (fx === "hop") {
     const u = frameIdx / Math.max(1, totalFrames);
     const air = (u >= 0.24 && u < 0.68) ? Math.sin(((u - 0.24) / 0.44) * Math.PI) : 0;
-    const tuck = air * 0.32 * ampScale;
+    const tuck = air * 0.26 * ampScale;
     for (const id of ["fl", "fr", "bl", "br"]) {
       const isFront = (id === "fl" || id === "fr");
       poses[id] = {
         angle: (isFront ? -dir : dir) * tuck,
-        liftY: -air * Math.max(1.5, rig.bbox.bh * 0.04) * ampScale,
+        liftY: 0,
         shiftX: 0,
       };
     }
@@ -1445,7 +1442,7 @@ function computeLimbGaitPose(rig, fx, frameIdx, totalFrames, ampScale) {
   return poses;
 }
 
-function renderRiggedFrame(rig, fx, frameIdx, totalFrames) {
+function renderRiggedFrame(rig, fx, frameIdx, totalFrames, techOpt) {
   const { grid, epx, w, h, bbox, pins, geo } = rig;
   let ampScale = 1.0;
   if (typeof document !== "undefined") {
@@ -1472,7 +1469,13 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames) {
     else pinDepth[i] = 5;
   }
 
+  let tech = techOpt;
+  if (!tech && typeof document !== "undefined") {
+    const tEl = document.getElementById("gif-tech-select");
+    tech = tEl ? tEl.value : "rigid_3pass";
+  }
   const useArticulatedLimbs =
+    tech !== "geodesic_mls" &&
     (rig.bodyType === "quadruped" || rig.bodyType === "biped") &&
     (fx === "walk" || fx === "sprint" || fx === "run" || fx === "dance" || fx === "hop");
 
@@ -1480,7 +1483,6 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames) {
   const y0 = Math.max(0, bbox.minY), y1 = Math.min(h - 1, bbox.maxY);
   const x0 = Math.max(0, bbox.minX), x1 = Math.min(w - 1, bbox.maxX);
 
-  // Build torso-only pin subset when using articulated limbs so opposing legs never warp the belly
   const bodySrcPins = [];
   const bodyDstPins = [];
   const bodyPinMap = [];
@@ -1546,11 +1548,8 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames) {
   } else {
     const limbPoses = computeLimbGaitPose(rig, fx, frameIdx, totalFrames, ampScale);
     const hipAnchorY = Math.max(bbox.minY + 4, Math.min(rig.hipY - 2, bbox.maxY - Math.max(6, Math.round(bbox.bh * 0.22))));
-    const legSpan = Math.max(6, bbox.maxY - hipAnchorY);
+    const blendZone = 6.0; // 4px joint blend at hip, then 100% rigid bone rotation down to paw!
 
-    // Watertight limb vertex mapping:
-    // At vy <= hipAnchorY: s = 0 -> EXACTLY (vxBody, vyBody), zero seam tear!
-    // Below hipAnchorY: smoothly pivots around the limb's deformed hip socket.
     const drawLimbPass = (targetPinIdx, depth) => {
       const id = pinIds[targetPinIdx];
       const pose = limbPoses[id];
@@ -1559,32 +1558,32 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames) {
       const vyL = new Float32Array((w + 1) * (h + 1));
       const yStart = y0 + Math.max(0, Math.floor((hipAnchorY - step * 2 - y0) / step)) * step;
 
-      // Socket position in deformed torso space (strictly aligned to vxBody's x0/y0/step lattice)
       const sockX = Math.min(x1, x0 + Math.max(0, Math.round((pin.x - x0) / step)) * step);
       const sockY = Math.min(y1, y0 + Math.max(0, Math.round((hipAnchorY - y0) / step)) * step);
       const sockVi = sockY * (w + 1) + sockX;
       const pivX = vxBody[sockVi];
       const pivY = vyBody[sockVi];
 
+      const fullAng = pose ? pose.angle : 0;
+      const fullLift = pose ? pose.liftY : 0;
+
       for (let y = yStart; y <= y1 + step; y += step) {
         const cy = Math.min(h, y);
-        const rawT = Math.max(0, Math.min(1, (cy - hipAnchorY) / legSpan));
-        // Smoothstep ramp: 0 at hipAnchorY (100% locked to torso), smooth bend down to paw
-        const s = rawT * rawT * (3 - 2 * rawT);
-        const ang = pose ? pose.angle * s : 0;
+        // Linear 4px blend at hip socket, then constant 1.0 rigid rotation for the entire lower leg & paw
+        const blend = Math.max(0, Math.min(1, (cy - hipAnchorY) / blendZone));
+        const ang = fullAng * blend;
         const ca = Math.cos(ang), sa = Math.sin(ang);
-        const shX = pose ? pose.shiftX * s : 0;
-        const lY = pose ? pose.liftY * s : 0;
+        const lY = fullLift * blend;
         for (let x = x0; x <= x1 + step; x += step) {
           const cx = Math.min(w, x);
           const vi = cy * (w + 1) + cx;
           const bx = vxBody[vi], by = vyBody[vi];
-          if (s <= 1e-4) {
+          if (blend <= 1e-4) {
             vxL[vi] = bx;
             vyL[vi] = by;
           } else {
             const rx = bx - pivX, ry = by - pivY;
-            vxL[vi] = pivX + rx * ca - ry * sa + shX;
+            vxL[vi] = pivX + rx * ca - ry * sa;
             vyL[vi] = pivY + rx * sa + ry * ca + lY;
           }
         }
@@ -1618,7 +1617,7 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames) {
       if (isLimbPin[pi] === 1) drawLimbPass(pi, 1);
     }
 
-    // Pass 2: Full Torso & Upper Hip Sockets (extends cleanly down to hipAnchorY + step so zero gap can appear)
+    // Pass 2: Full Torso & Upper Hip Sockets
     for (let y = y0; y <= y1; y += step) {
       const yNext = Math.min(h, y + step);
       for (let x = x0; x <= x1; x += step) {
@@ -1654,7 +1653,7 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames) {
 
   // Strict ground-baseline alignment for grounded cycles
   let finalOut = out;
-  if ((fx === "walk" || fx === "breathe" || fx === "wave") && rig.bodyType !== "bird" && rig.bodyType !== "swimmer") {
+  if ((fx === "walk" || fx === "breathe" || fx === "wave" || fx === "sleep") && rig.bodyType !== "bird" && rig.bodyType !== "swimmer") {
     let curFoot = -1;
     for (let y = h - 1; y >= 0 && curFoot === -1; y--) {
       for (let x = 0; x < w; x++) {
@@ -1921,7 +1920,9 @@ function getCachedRiggedFrame(rig, fx, frameIdx, totalFrames) {
   const lockKey = (!lockEl || lockEl.checked) ? "1" : "0";
   const ampEl = typeof document !== "undefined" ? document.getElementById("gif-amp") : null;
   const ampKey = ampEl ? ampEl.value : "1";
-  const key = rig.w + "x" + rig.h + ":" + rig.bodyType + ":" + fx + ":" + totalFrames + ":" + lockKey + ":" + ampKey;
+  const techEl = typeof document !== "undefined" ? document.getElementById("gif-tech-select") : null;
+  const techKey = techEl ? techEl.value : "rigid_3pass";
+  const key = rig.w + "x" + rig.h + ":" + rig.bodyType + ":" + fx + ":" + totalFrames + ":" + lockKey + ":" + ampKey + ":" + techKey;
   if (_gifFrameCacheKey !== key) {
     _gifFrameCacheKey = key;
     _gifFrameCache.clear();
@@ -2597,6 +2598,66 @@ function exportMascotAllFxSheet() {
   } catch (err) {
     console.error("All-FX sheet export error:", err);
     statusEl.textContent = "ERROR EXPORTING ALL-FX SHEET";
+  }
+}
+
+
+function exportMascotCompareSheet() {
+  const statusEl = document.getElementById("gif-status");
+  try {
+    const size = Math.max(64, Math.min(256, Number(document.getElementById("gif-size-select").value) || 128));
+    const petId = document.getElementById("gif-pet-select").value;
+    const fx = document.getElementById("gif-fx-select").value;
+    const techSel = document.getElementById("gif-tech-select");
+    const prevTech = techSel ? techSel.value : "rigid_3pass";
+    const rows = [
+      { id: "rigid_3pass", label: "RIGID 3P" },
+      { id: "geodesic_mls", label: "GEO MLS" },
+    ];
+    const cols = getGifTotalFrames(fx);
+    const labelW = 72;
+
+    const tileC = document.createElement("canvas");
+    tileC.width = size; tileC.height = size;
+    const tctx = tileC.getContext("2d");
+
+    const sheetC = document.createElement("canvas");
+    sheetC.width = labelW + size * cols;
+    sheetC.height = size * rows.length;
+    const sctx = sheetC.getContext("2d");
+    sctx.imageSmoothingEnabled = false;
+
+    for (let r = 0; r < rows.length; r++) {
+      if (techSel) techSel.value = rows[r].id;
+      invalidateGifFrameCache();
+      const ry = r * size;
+      sctx.fillStyle = "rgba(13, 17, 23, 0.90)";
+      sctx.fillRect(0, ry, labelW - 2, size - 2);
+      sctx.fillStyle = r === 0 ? "#7ee8fa" : "#ffd166";
+      sctx.font = "bold 11px monospace";
+      sctx.fillText(rows[r].label, 6, ry + Math.floor(size / 2) + 4);
+      for (let c = 0; c < cols; c++) {
+        drawGifMakerFrame(tctx, size, size, c, cols, false);
+        sctx.drawImage(tileC, labelW + c * size, ry);
+      }
+    }
+    if (techSel) techSel.value = prevTech;
+    invalidateGifFrameCache();
+
+    sheetC.toBlob((blob) => {
+      if (!blob) return;
+      const slug = ((gifCustomRig || gifCustomSheet) && gifCustomName) ? gifCustomName : petId;
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = slug + "-compare-" + fx + "-" + cols + "x2-" + size + "px.png";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2500);
+      statusEl.textContent = "EXPORTED RIG COMPARISON (" + fx.toUpperCase() + ", " + cols + "x2)";
+      if (typeof showToast === "function") showToast("Exported Rigid 3-Pass vs Geodesic MLS comparison sheet");
+    }, "image/png");
+  } catch (err) {
+    console.error("Compare sheet export error:", err);
+    statusEl.textContent = "ERROR EXPORTING COMPARE SHEET";
   }
 }
 

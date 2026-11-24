@@ -586,6 +586,12 @@
             </label>
             <label class="slider-chip">FPS <span id="gif-fps-val">8</span> <input id="gif-fps" type="range" min="4" max="14" value="8" oninput="updateGifPreviewFps()" /></label>
             <label class="slider-chip" title="Animation Motion Intensity">AMP <span id="gif-amp-val">1.0x</span> <input id="gif-amp" type="range" min="0.4" max="1.8" step="0.1" value="1.0" style="width:62px;" oninput="onGifAmpChange()" /></label>
+            <label class="slider-chip" title="Compare deformation techniques live">TECH
+              <select id="gif-tech-select" class="ctrl-input" style="width:118px;padding:3px 6px;" onchange="invalidateGifFrameCache();renderGifPreviewNow()">
+                <option value="rigid_3pass">Rigid-Bone 3P</option>
+                <option value="geodesic_mls">Geodesic MLS</option>
+              </select>
+            </label>
             <label class="slider-chip">RIG
               <select id="gif-body-select" class="ctrl-input" style="width:92px;padding:3px 6px;" onchange="refreshCleanedCustomImg()">
                 <option value="auto">Auto</option>
@@ -623,6 +629,7 @@
             <button class="ctrl-btn" onclick="exportMascotApng()" title="24-bit color + smooth 8-bit alpha Animated PNG">EXPORT .APNG</button>
             <button class="ctrl-btn" onclick="exportMascotSpriteSheet()">EXPORT SHEET (.PNG)</button>
             <button class="ctrl-btn" onclick="exportMascotAllFxSheet()" title="Export 8x5 full contact sheet of Walk, Sprint, Dance, Hop & Sleep">EXPORT ALL FX (.PNG)</button>
+            <button class="ctrl-btn" onclick="exportMascotCompareSheet()" title="Export Rigid-Bone 3P vs Geodesic MLS comparison sheet">COMPARE RIGS (.PNG)</button>
             <button class="ctrl-btn" onclick="exportMascotXmlPack()" title="Download a ready-to-run deskpet.xml pack for the desktop app">EXPORT .XML PACK</button>
             <button class="ctrl-btn" id="gif-clear-btn" style="display:none;" onclick="syncGifMascotSelection()">USE BUILT-IN</button>
           </div>
@@ -1301,7 +1308,7 @@ function loop(now) {
 requestAnimationFrame(loop);
 
 </script>
-<script src="gif_maker.js?v=17">
+<script src="gif_maker.js?v=19">
 // Auto-sync displayed version from GitHub Releases API (cached per session, fallback v0.4.1)
 (function syncLatestVersion() {
   const applyVer = (tag) => {
