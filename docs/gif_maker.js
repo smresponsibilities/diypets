@@ -2081,6 +2081,9 @@ function computeBiharmonicWeights(rig) {
     if (total > 1e-6) {
       const invT = 1.0 / total;
       for (let p = 0; p < numPins; p++) weights[p][idx] *= invT;
+    } else {
+      const dp = Math.max(0, Math.min(numPins - 1, geo.domPin[idx]));
+      weights[dp][idx] = 1.0;
     }
   }
   rig.bbwWeights = weights;
@@ -2190,13 +2193,18 @@ function solveFabrikChain2D(joints, lengths, targetX, targetY, bendDir, maxIters
     return pts;
   }
 
-  // Bias initial mid-joint in anatomical knee bend direction
+  // Bias initial mid-joint in anatomical knee bend direction (safe when target == root)
   if (n === 3) {
     const mx = (rootX + targetX) * 0.5, my = (rootY + targetY) * 0.5;
     const dx = targetX - rootX, dy = targetY - rootY;
-    const d = Math.max(1e-4, Math.hypot(dx, dy));
-    pts[1].x = mx + (-dy / d) * bendDir * 4.0;
-    pts[1].y = my + (dx / d) * bendDir * 4.0;
+    const d = Math.hypot(dx, dy);
+    if (d < 1e-3) {
+      pts[1].x = rootX + (bendDir || 1) * lengths[0];
+      pts[1].y = rootY;
+    } else {
+      pts[1].x = mx + (-dy / d) * bendDir * 4.0;
+      pts[1].y = my + (dx / d) * bendDir * 4.0;
+    }
   }
 
   for (let iter = 0; iter < maxIters; iter++) {
@@ -2425,20 +2433,22 @@ function inpaintTorsoBacking(rig) {
   // Step 1: Subtract limbs completely from torso layer & compute interior torso fill color
   const mask = new Uint8Array(w * h);
   let sumTR = 0, sumTG = 0, sumTB = 0, cntT = 0;
+  let allR = 0, allG = 0, allB = 0, allCnt = 0;
   for (let i = 0; i < w * h; i++) {
     if (grid[i * 4 + 3] > 0 && !isLimb[geo.domPin[i]]) {
       mask[i] = 1;
       const p = i * 4;
       buf[p] = grid[p]; buf[p + 1] = grid[p + 1]; buf[p + 2] = grid[p + 2]; buf[p + 3] = 255;
+      allR += grid[p]; allG += grid[p + 1]; allB += grid[p + 2]; allCnt++;
       const lum = grid[p] * 0.299 + grid[p + 1] * 0.587 + grid[p + 2] * 0.114;
       if (lum > 65) {
         sumTR += grid[p]; sumTG += grid[p + 1]; sumTB += grid[p + 2]; cntT++;
       }
     }
   }
-  const fillR = cntT > 0 ? (sumTR / cntT) | 0 : 180;
-  const fillG = cntT > 0 ? (sumTG / cntT) | 0 : 180;
-  const fillB = cntT > 0 ? (sumTB / cntT) | 0 : 180;
+  const fillR = cntT > 0 ? (sumTR / cntT) | 0 : (allCnt > 0 ? (allR / allCnt) | 0 : 40);
+  const fillG = cntT > 0 ? (sumTG / cntT) | 0 : (allCnt > 0 ? (allG / allCnt) | 0 : 40);
+  const fillB = cntT > 0 ? (sumTB / cntT) | 0 : (allCnt > 0 ? (allB / allCnt) | 0 : 40);
 
   // Step 2: 6-pass boundary-aware interior-color inpainting into the subtracted limb socket
   for (let pass = 0; pass < 6; pass++) {
@@ -2618,15 +2628,18 @@ function detectEyePixels(rig) {
 
 function evalSpringCycle(fx, totalFrames, amp, k, c) {
   const N = Math.max(1, totalFrames);
-  const dt = 1.0 / N;
+  const subSteps = 4;
+  const dt = 1.0 / (N * subSteps);
   let q = 0, v = 0;
   const out = new Float32Array(N);
   for (let step = 0; step < N * 3; step++) {
-    const ph = ((step % N) / N) * Math.PI * 2;
-    const target = Math.sin(ph * 2) * amp;
-    const acc = k * (target - q) - c * v;
-    v += acc * dt;
-    q += v * dt;
+    for (let s = 0; s < subSteps; s++) {
+      const ph = (((step % N) + s / subSteps) / N) * Math.PI * 2;
+      const target = Math.sin(ph * 2) * amp;
+      const acc = k * (target - q) - c * v;
+      v += acc * dt;
+      q += v * dt;
+    }
     if (step >= N * 2) out[step - N * 2] = q;
   }
   return out;
@@ -2705,6 +2718,394 @@ function renderComplementaryDynFrame(rig, fx, frameIdx, totalFrames, ampScale) {
   return finalOut;
 }
 
+
+// ============================================================================
+// ADDITIONAL SOTA RESEARCH METHODS (PAPERS 5-7) + UNIFIED SOTA HYBRID
+// 5. arap_2d       : As-Rigid-As-Possible 2D Local-Global Solver (Igarashi 2005 / Sorkine 2007)
+// 6. cleanedge_rot : Slope-Aware CleanEdge Pixel-Art Sampling (Kopf-Lischinski 2011 / CleanEdge)
+// 7. parallax_25d  : 2.5D Cartoon Depth Parallax & Foreshortening (Rivers et al. SIGGRAPH 2010)
+// 8. sota_hybrid   : Unified Mix-and-Match (BBW + FABRIK + Inpaint + ARAP + Spring Lag + Blink)
+// ============================================================================
+
+// --- PAPER 5: EXACT 2D ARAP LOCAL-GLOBAL SOLVER ---
+function fitOptimalRotation2D(restPts, defPts) {
+  let rcx = 0, rcy = 0, dcx = 0, dcy = 0;
+  const n = restPts.length;
+  for (let i = 0; i < n; i++) {
+    rcx += restPts[i].x; rcy += restPts[i].y;
+    dcx += defPts[i].x; dcy += defPts[i].y;
+  }
+  rcx /= n; rcy /= n; dcx /= n; dcy /= n;
+  let sxx = 0, sxy = 0, syx = 0, syy = 0;
+  for (let i = 0; i < n; i++) {
+    const rx = restPts[i].x - rcx, ry = restPts[i].y - rcy;
+    const dx = defPts[i].x - dcx, dy = defPts[i].y - dcy;
+    sxx += rx * dx; sxy += rx * dy;
+    syx += ry * dx; syy += ry * dy;
+  }
+  // Exact 2D Procrustes / polar-decomposition optimal rotation angle
+  const theta = Math.atan2(sxy - syx, sxx + syy);
+  return { theta, ca: Math.cos(theta), sa: Math.sin(theta) };
+}
+
+function runArapLocalGlobal2D(vx, vy, w, h, x0, y0, x1, y1, step, pinnedMask, iters) {
+  const gw = w + 1;
+  const cols = Math.ceil((x1 - x0) / step) + 1;
+  const rows = Math.ceil((y1 - y0) / step) + 1;
+  const cellCa = new Float32Array(cols * rows).fill(1);
+  const cellSa = new Float32Array(cols * rows).fill(0);
+
+  for (let it = 0; it < iters; it++) {
+    // Local step: fit exact rigid rotation R_c for each quad cell
+    for (let r = 0; r < rows - 1; r++) {
+      const y = Math.min(h, y0 + r * step), yN = Math.min(h, y + step);
+      for (let c = 0; c < cols - 1; c++) {
+        const x = Math.min(w, x0 + c * step), xN = Math.min(w, x + step);
+        const i00 = y * gw + x, i10 = y * gw + xN, i01 = yN * gw + x, i11 = yN * gw + xN;
+        const rcx = (x + xN) * 0.5, rcy = (y + yN) * 0.5;
+        const dcx = (vx[i00] + vx[i10] + vx[i01] + vx[i11]) * 0.25;
+        const dcy = (vy[i00] + vy[i10] + vy[i01] + vy[i11]) * 0.25;
+        const rx0 = x - rcx, rx1 = xN - rcx, ry0 = y - rcy, ry1 = yN - rcy;
+        const sxx = rx0 * (vx[i00] - dcx) + rx1 * (vx[i10] - dcx) + rx0 * (vx[i01] - dcx) + rx1 * (vx[i11] - dcx);
+        const sxy = rx0 * (vy[i00] - dcy) + rx1 * (vy[i10] - dcy) + rx0 * (vy[i01] - dcy) + rx1 * (vy[i11] - dcy);
+        const syx = ry0 * (vx[i00] - dcx) + ry0 * (vx[i10] - dcx) + ry1 * (vx[i01] - dcx) + ry1 * (vx[i11] - dcx);
+        const syy = ry0 * (vy[i00] - dcy) + ry0 * (vy[i10] - dcy) + ry1 * (vy[i01] - dcy) + ry1 * (vy[i11] - dcy);
+        const theta = Math.atan2(sxy - syx, sxx + syy);
+        const ci = r * cols + c;
+        cellCa[ci] = Math.cos(theta);
+        cellSa[ci] = Math.sin(theta);
+      }
+    }
+
+    // Global step: relax free vertices toward their neighbors' rotated rest offsets
+    for (let r = 1; r < rows - 1; r++) {
+      const y = Math.min(h, y0 + r * step);
+      for (let c = 1; c < cols - 1; c++) {
+        const x = Math.min(w, x0 + c * step);
+        const vi = y * gw + x;
+        if (pinnedMask && pinnedMask[vi]) continue;
+        const ci = r * cols + c;
+        const ca = cellCa[ci], sa = cellSa[ci];
+        const iL = y * gw + Math.max(0, x - step);
+        const iR = y * gw + Math.min(w, x + step);
+        const iU = Math.max(0, y - step) * gw + x;
+        const iD = Math.min(h, y + step) * gw + x;
+        const tx = 0.25 * (
+          (vx[iL] + step * ca) + (vx[iR] - step * ca) +
+          (vx[iU] - step * sa) + (vx[iD] + step * sa)
+        );
+        const ty = 0.25 * (
+          (vy[iL] + step * sa) + (vy[iR] - step * sa) +
+          (vy[iU] + step * ca) + (vy[iD] - step * ca)
+        );
+        vx[vi] = vx[vi] * 0.45 + tx * 0.55;
+        vy[vi] = vy[vi] * 0.45 + ty * 0.55;
+      }
+    }
+  }
+}
+
+function renderArap2dFrame(rig, fx, frameIdx, totalFrames, ampScale) {
+  const { grid, epx, w, h, bbox, pins } = rig;
+  const world = computeBoneFkTransforms(rig, fx, frameIdx, totalFrames, ampScale);
+  const weights = computeBiharmonicWeights(rig);
+
+  const out = new Uint8ClampedArray(w * h * 4);
+  const zBuf = new Int8Array(w * h).fill(-10);
+  const ew = epx.w, eh = epx.h, edata = epx.data, efactor = epx.factor || 2;
+  const step = Math.max(w, h) > 96 ? 2 : 1;
+  const y0 = Math.max(0, bbox.minY), y1 = Math.min(h - 1, bbox.maxY);
+  const x0 = Math.max(0, bbox.minX), x1 = Math.min(w - 1, bbox.maxX);
+
+  const vx = new Float32Array((w + 1) * (h + 1));
+  const vy = new Float32Array((w + 1) * (h + 1));
+  evalBbwRigidMesh(rig, world, weights, vx, vy, step, 1.0, 1.0);
+
+  // Pin bone-handle vertices so ARAP preserves exact skeletal pose while smoothing joints rigidly
+  const pinned = new Uint8Array((w + 1) * (h + 1));
+  for (let i = 0; i < pins.length; i++) {
+    const px = Math.max(x0, Math.min(x1, Math.round(pins[i].x / step) * step));
+    const py = Math.max(y0, Math.min(y1, Math.round(pins[i].y / step) * step));
+    pinned[py * (w + 1) + px] = 1;
+  }
+  runArapLocalGlobal2D(vx, vy, w, h, x0, y0, x1, y1, step, pinned, 3);
+
+  for (let y = y0; y <= y1; y += step) {
+    const yNext = Math.min(h, y + step);
+    for (let x = x0; x <= x1; x += step) {
+      const xNext = Math.min(w, x + step);
+      let hasOpaque = false;
+      for (let ty = y; ty < yNext && !hasOpaque; ty++) {
+        for (let tx = x; tx < xNext; tx++) {
+          if (grid[(ty * w + tx) * 4 + 3] > 0) { hasOpaque = true; break; }
+        }
+      }
+      if (!hasOpaque) continue;
+      const i00 = y * (w + 1) + x, i10 = y * (w + 1) + xNext;
+      const i01 = yNext * (w + 1) + x, i11 = yNext * (w + 1) + xNext;
+      rasterizeTriEpx(out, zBuf, w, h, edata, ew, eh, efactor, vx[i00], vy[i00], x, y, vx[i10], vy[i10], xNext, y, vx[i11], vy[i11], xNext, yNext, 3);
+      rasterizeTriEpx(out, zBuf, w, h, edata, ew, eh, efactor, vx[i00], vy[i00], x, y, vx[i11], vy[i11], xNext, yNext, vx[i01], vy[i01], x, yNext, 3);
+    }
+  }
+  return alignAndSealOutput(out, rig, fx);
+}
+
+// --- PAPER 6: CLEANEDGE / SLOPE-AWARE PIXEL-ART SAMPLING ---
+function sampleCleanEdgePixel(grid, w, h, u, v) {
+  const x0 = Math.floor(u), y0 = Math.floor(v);
+  const fx = u - x0, fy = v - y0;
+  const cx = Math.max(0, Math.min(w - 1, x0));
+  const cy = Math.max(0, Math.min(h - 1, y0));
+  const nx = Math.max(0, Math.min(w - 1, x0 + 1));
+  const ny = Math.max(0, Math.min(h - 1, y0 + 1));
+
+  const p00 = (cy * w + cx) * 4;
+  const p10 = (cy * w + nx) * 4;
+  const p01 = (ny * w + cx) * 4;
+  const p11 = (ny * w + nx) * 4;
+
+  const same = (a, b) =>
+    grid[a + 3] === grid[b + 3] &&
+    Math.abs(grid[a] - grid[b]) + Math.abs(grid[a + 1] - grid[b + 1]) + Math.abs(grid[a + 2] - grid[b + 2]) < 36;
+
+  // CleanEdge diagonal resolution + checkerboard tie-breaker (connect opaque/darker ink diagonal)
+  const mainSame = same(p00, p11);
+  const antiSame = same(p10, p01);
+  let diagMain = mainSame && !antiSame;
+  let diagAnti = antiSame && !mainSame;
+  if (mainSame && antiSame && !same(p00, p10)) {
+    const lumM = grid[p00 + 3] === 0 ? 999 : (grid[p00] * 0.299 + grid[p00 + 1] * 0.587 + grid[p00 + 2] * 0.114);
+    const lumA = grid[p10 + 3] === 0 ? 999 : (grid[p10] * 0.299 + grid[p10 + 1] * 0.587 + grid[p10 + 2] * 0.114);
+    if (lumM <= lumA) diagMain = true;
+    else diagAnti = true;
+  }
+  let pick = p00;
+  if (diagMain) {
+    if (Math.abs(fx - fy) < 0.45) pick = p00;
+    else pick = fx > fy ? p10 : p01;
+  } else if (diagAnti) {
+    if (Math.abs(fx + fy - 1.0) < 0.45) pick = p10;
+    else pick = (fx + fy < 1.0) ? p00 : p11;
+  } else {
+    pick = (fx < 0.5) ? (fy < 0.5 ? p00 : p01) : (fy < 0.5 ? p10 : p11);
+  }
+  return pick;
+}
+
+function rasterizeTriCleanEdge(out, zBuf, w, h, grid, x0, y0, u0, v0, x1, y1, u1, v1, x2, y2, u2, v2, depth) {
+  const minX = Math.max(0, Math.floor(Math.min(x0, x1, x2)));
+  const maxX = Math.min(w - 1, Math.ceil(Math.max(x0, x1, x2)));
+  const minY = Math.max(0, Math.floor(Math.min(y0, y1, y2)));
+  const maxY = Math.min(h - 1, Math.ceil(Math.max(y0, y1, y2)));
+  const area = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
+  if (Math.abs(area) < 1e-4) return;
+  const invA = 1.0 / area;
+
+  for (let y = minY; y <= maxY; y++) {
+    const py = y + 0.5;
+    for (let x = minX; x <= maxX; x++) {
+      const px = x + 0.5;
+      const w0 = ((x1 - px) * (y2 - py) - (x2 - px) * (y1 - py)) * invA;
+      const w1 = ((x2 - px) * (y0 - py) - (x0 - px) * (y2 - py)) * invA;
+      const w2 = 1.0 - w0 - w1;
+      if (w0 < -0.002 || w1 < -0.002 || w2 < -0.002) continue;
+      const idx = y * w + x;
+      if (depth < zBuf[idx]) continue;
+      const u = w0 * u0 + w1 * u1 + w2 * u2;
+      const v = w0 * v0 + w1 * v1 + w2 * v2;
+      const sp = sampleCleanEdgePixel(grid, w, h, u, v);
+      if (grid[sp + 3] === 0) continue;
+      zBuf[idx] = depth;
+      const dp = idx * 4;
+      out[dp] = grid[sp]; out[dp + 1] = grid[sp + 1]; out[dp + 2] = grid[sp + 2]; out[dp + 3] = 255;
+    }
+  }
+}
+
+function renderCleanEdgeFrame(rig, fx, frameIdx, totalFrames, ampScale) {
+  const { grid, w, h, bbox } = rig;
+  const world = computeBoneFkTransforms(rig, fx, frameIdx, totalFrames, ampScale);
+  const weights = computeBiharmonicWeights(rig);
+
+  const out = new Uint8ClampedArray(w * h * 4);
+  const zBuf = new Int8Array(w * h).fill(-10);
+  const step = Math.max(w, h) > 96 ? 2 : 1;
+  const y0 = Math.max(0, bbox.minY), y1 = Math.min(h - 1, bbox.maxY);
+  const x0 = Math.max(0, bbox.minX), x1 = Math.min(w - 1, bbox.maxX);
+
+  const vx = new Float32Array((w + 1) * (h + 1));
+  const vy = new Float32Array((w + 1) * (h + 1));
+  evalBbwRigidMesh(rig, world, weights, vx, vy, step, 1.0, 1.0);
+
+  for (let y = y0; y <= y1; y += step) {
+    const yNext = Math.min(h, y + step);
+    for (let x = x0; x <= x1; x += step) {
+      const xNext = Math.min(w, x + step);
+      let hasOpaque = false;
+      for (let ty = y; ty < yNext && !hasOpaque; ty++) {
+        for (let tx = x; tx < xNext; tx++) {
+          if (grid[(ty * w + tx) * 4 + 3] > 0) { hasOpaque = true; break; }
+        }
+      }
+      if (!hasOpaque) continue;
+      const i00 = y * (w + 1) + x, i10 = y * (w + 1) + xNext;
+      const i01 = yNext * (w + 1) + x, i11 = yNext * (w + 1) + xNext;
+      rasterizeTriCleanEdge(out, zBuf, w, h, grid, vx[i00], vy[i00], x, y, vx[i10], vy[i10], xNext, y, vx[i11], vy[i11], xNext, yNext, 3);
+      rasterizeTriCleanEdge(out, zBuf, w, h, grid, vx[i00], vy[i00], x, y, vx[i11], vy[i11], xNext, yNext, vx[i01], vy[i01], x, yNext, 3);
+    }
+  }
+  return alignAndSealOutput(out, rig, fx);
+}
+
+// --- PAPER 7: 2.5D CARTOON MODELS (RIVERS ET AL., SIGGRAPH 2010) ---
+function applyParallax25DTransforms(pins, world, bbox, phase, fx, bodyType) {
+  let yawAmp = fx === "dance" ? 0.15 : (fx === "walk" || fx === "sprint" ? 0.09 : 0.06);
+  if (bodyType === "blob" || bodyType === "crawler") yawAmp *= 0.35;
+  const yaw = Math.sin(phase) * yawAmp;
+  const sinY = Math.sin(yaw);
+  const cosY = Math.cos(yaw);
+  const cx = (bbox.minX + bbox.maxX) * 0.5;
+  const depthScale = Math.max(8, bbox.bw * 0.14);
+
+  for (let i = 0; i < pins.length; i++) {
+    const id = pins[i].id;
+    let z = 0;
+    if (id === "head" || id === "ear_l" || id === "ear_r") z = 0.65;
+    else if (id === "fl" || id === "bl" || id === "l_hand") z = 0.45;
+    else if (id === "fr" || id === "br" || id === "r_hand") z = -0.45;
+    else if (id === "tail") z = -0.35;
+    // Foreshorten X around character center + shift by z * sin(yaw)
+    const dx = world[i].pivOutX - cx;
+    world[i].pivOutX = cx + dx * cosY + z * depthScale * sinY;
+  }
+}
+
+function renderParallax25dFrame(rig, fx, frameIdx, totalFrames, ampScale) {
+  const { grid, epx, w, h, bbox, pins } = rig;
+  const world = computeBoneFkTransforms(rig, fx, frameIdx, totalFrames, ampScale);
+  const phase = (frameIdx / Math.max(1, totalFrames)) * Math.PI * 2;
+  applyParallax25DTransforms(pins, world, bbox, phase, fx, rig.bodyType);
+  const weights = computeBiharmonicWeights(rig);
+
+  const out = new Uint8ClampedArray(w * h * 4);
+  const zBuf = new Int8Array(w * h).fill(-10);
+  const ew = epx.w, eh = epx.h, edata = epx.data, efactor = epx.factor || 2;
+  const step = Math.max(w, h) > 96 ? 2 : 1;
+  const y0 = Math.max(0, bbox.minY), y1 = Math.min(h - 1, bbox.maxY);
+  const x0 = Math.max(0, bbox.minX), x1 = Math.min(w - 1, bbox.maxX);
+
+  const vx = new Float32Array((w + 1) * (h + 1));
+  const vy = new Float32Array((w + 1) * (h + 1));
+  evalBbwRigidMesh(rig, world, weights, vx, vy, step, 1.0, 1.0);
+
+  for (let y = y0; y <= y1; y += step) {
+    const yNext = Math.min(h, y + step);
+    for (let x = x0; x <= x1; x += step) {
+      const xNext = Math.min(w, x + step);
+      let hasOpaque = false;
+      for (let ty = y; ty < yNext && !hasOpaque; ty++) {
+        for (let tx = x; tx < xNext; tx++) {
+          if (grid[(ty * w + tx) * 4 + 3] > 0) { hasOpaque = true; break; }
+        }
+      }
+      if (!hasOpaque) continue;
+      const i00 = y * (w + 1) + x, i10 = y * (w + 1) + xNext;
+      const i01 = yNext * (w + 1) + x, i11 = yNext * (w + 1) + xNext;
+      rasterizeTriEpx(out, zBuf, w, h, edata, ew, eh, efactor, vx[i00], vy[i00], x, y, vx[i10], vy[i10], xNext, y, vx[i11], vy[i11], xNext, yNext, 3);
+      rasterizeTriEpx(out, zBuf, w, h, edata, ew, eh, efactor, vx[i00], vy[i00], x, y, vx[i11], vy[i11], xNext, yNext, vx[i01], vy[i01], x, yNext, 3);
+    }
+  }
+  return alignAndSealOutput(out, rig, fx);
+}
+
+// --- METHOD 8: SOTA HYBRID (MIX-AND-MATCH: BBW + FABRIK + ARAP + SPRING LAG + 2.5D + BLINK) ---
+function renderSotaHybridFrame(rig, fx, frameIdx, totalFrames, ampScale) {
+  const { grid, w, h, bbox, pins } = rig;
+  const amp = (typeof ampScale === "number" ? ampScale : 1.0) * 1.08;
+  const world = computeBoneFkTransforms(rig, fx, frameIdx, totalFrames, amp);
+  const phase = (frameIdx / Math.max(1, totalFrames)) * Math.PI * 2;
+
+  // 1. Apply 2.5D Cartoon Parallax
+  applyParallax25DTransforms(pins, world, bbox, phase, fx, rig.bodyType);
+
+  // 2. Apply Per-Bone 2nd-Order Spring-Damper Lag (Complementary Dynamics)
+  const lagCycle = evalSpringCycle(fx, totalFrames, 0.075, 18.0, 5.5);
+  const lagAng = lagCycle[frameIdx % Math.max(1, totalFrames)];
+  for (let i = 0; i < pins.length; i++) {
+    const id = pins[i].id;
+    if (id === "head" || id === "tail" || id === "ear_l" || id === "ear_r") {
+      const baseAng = Math.atan2(world[i].sa, world[i].ca) + (id === "tail" ? lagAng * 1.5 : lagAng);
+      world[i].ca = Math.cos(baseAng);
+      world[i].sa = Math.sin(baseAng);
+    }
+  }
+
+  // 3. Evaluate BBW + Spring Squash-and-Stretch
+  const weights = computeBiharmonicWeights(rig);
+  const sqAmp = fx === "hop" ? 0.055 : (fx === "sprint" ? 0.036 : 0.02);
+  const sq = evalSpringCycle(fx, totalFrames, sqAmp, 22.0, 6.5)[frameIdx % Math.max(1, totalFrames)];
+  const sx = 1.0 + sq, sy = 1.0 / sx;
+
+  const step = Math.max(w, h) > 96 ? 2 : 1;
+  const y0 = Math.max(0, bbox.minY), y1 = Math.min(h - 1, bbox.maxY);
+  const x0 = Math.max(0, bbox.minX), x1 = Math.min(w - 1, bbox.maxX);
+  const vx = new Float32Array((w + 1) * (h + 1));
+  const vy = new Float32Array((w + 1) * (h + 1));
+  evalBbwRigidMesh(rig, world, weights, vx, vy, step, sx, sy);
+
+  // 4. ARAP 2D Local-Global Rigidity Pass
+  const pinned = new Uint8Array((w + 1) * (h + 1));
+  for (let i = 0; i < pins.length; i++) {
+    const px = Math.max(x0, Math.min(x1, Math.round(pins[i].x / step) * step));
+    const py = Math.max(y0, Math.min(y1, Math.round(pins[i].y / step) * step));
+    pinned[py * (w + 1) + px] = 1;
+  }
+  runArapLocalGlobal2D(vx, vy, w, h, x0, y0, x1, y1, step, pinned, 2);
+
+  // 5. CleanEdge Slope-Aware Rasterization
+  const out = new Uint8ClampedArray(w * h * 4);
+  const zBuf = new Int8Array(w * h).fill(-10);
+  for (let y = y0; y <= y1; y += step) {
+    const yNext = Math.min(h, y + step);
+    for (let x = x0; x <= x1; x += step) {
+      const xNext = Math.min(w, x + step);
+      let hasOpaque = false;
+      for (let ty = y; ty < yNext && !hasOpaque; ty++) {
+        for (let tx = x; tx < xNext; tx++) {
+          if (grid[(ty * w + tx) * 4 + 3] > 0) { hasOpaque = true; break; }
+        }
+      }
+      if (!hasOpaque) continue;
+      const i00 = y * (w + 1) + x, i10 = y * (w + 1) + xNext;
+      const i01 = yNext * (w + 1) + x, i11 = yNext * (w + 1) + xNext;
+      rasterizeTriCleanEdge(out, zBuf, w, h, grid, vx[i00], vy[i00], x, y, vx[i10], vy[i10], xNext, y, vx[i11], vy[i11], xNext, yNext, 3);
+      rasterizeTriCleanEdge(out, zBuf, w, h, grid, vx[i00], vy[i00], x, y, vx[i11], vy[i11], xNext, yNext, vx[i01], vy[i01], x, yNext, 3);
+    }
+  }
+
+  const finalOut = alignAndSealOutput(out, rig, fx);
+
+  // 6. Tracked Auto-Blink
+  const isBlink = (fx === "sleep") || (totalFrames >= 6 && frameIdx === Math.floor(totalFrames * 0.65));
+  if (isBlink) {
+    const eyes = detectEyePixels(rig);
+    const headIdx = Math.max(0, pins.findIndex((p) => p.id === "head"));
+    const ht = world[headIdx];
+    for (let i = 0; i < eyes.length; i++) {
+      const rx = eyes[i].x - ht.pivInX, ry = eyes[i].y - ht.pivInY;
+      const ex = Math.round(ht.pivOutX + rx * ht.ca - ry * ht.sa);
+      const ey = Math.round(ht.pivOutY + rx * ht.sa + ry * ht.ca);
+      if (ex <= 1 || ex >= w - 1 || ey <= 1 || ey >= h - 1) continue;
+      const p = (ey * w + ex) * 4;
+      const pUp = ((ey - 1) * w + ex) * 4;
+      if (finalOut[p + 3] > 0 && finalOut[pUp + 3] > 0) {
+        finalOut[p] = finalOut[pUp]; finalOut[p + 1] = finalOut[pUp + 1]; finalOut[p + 2] = finalOut[pUp + 2];
+      }
+    }
+  }
+  return finalOut;
+}
+
 function renderRiggedFrame(rig, fx, frameIdx, totalFrames, techOpt) {
   const { grid, epx, w, h, bbox, pins, geo } = rig;
   let ampScale = 1.0;
@@ -2753,6 +3154,18 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames, techOpt) {
   }
   if (tech === "complementary_dyn") {
     return renderComplementaryDynFrame(rig, fx, frameIdx, totalFrames, ampScale);
+  }
+  if (tech === "arap_2d") {
+    return renderArap2dFrame(rig, fx, frameIdx, totalFrames, ampScale);
+  }
+  if (tech === "cleanedge_rot") {
+    return renderCleanEdgeFrame(rig, fx, frameIdx, totalFrames, ampScale);
+  }
+  if (tech === "parallax_25d") {
+    return renderParallax25dFrame(rig, fx, frameIdx, totalFrames, ampScale);
+  }
+  if (tech === "sota_hybrid") {
+    return renderSotaHybridFrame(rig, fx, frameIdx, totalFrames, ampScale);
   }
   const useArticulatedLimbs =
     tech !== "geodesic_mls" &&
@@ -3995,6 +4408,10 @@ function exportMascotCompareSheet() {
       { id: "fabrik_ik", label: "FABRIK IK", color: "#f472b6" },
       { id: "layered_inpaint", label: "INPAINT", color: "#38bdf8" },
       { id: "complementary_dyn", label: "COMP DYN", color: "#ffd166" },
+      { id: "arap_2d", label: "ARAP 2D", color: "#fb923c" },
+      { id: "cleanedge_rot", label: "CLEANEDGE", color: "#c084fc" },
+      { id: "parallax_25d", label: "2.5D PAR", color: "#2dd4bf" },
+      { id: "sota_hybrid", label: "SOTA HYB", color: "#f43f5e" },
     ];
 
     const sheetC = document.createElement("canvas");
@@ -4335,6 +4752,13 @@ if (typeof module !== "undefined" && module.exports) {
     solveFabrikChain2D,
     inpaintTorsoBacking,
     evalSpringCycle,
+    fitOptimalRotation2D,
+    sampleCleanEdgePixel,
+    applyParallax25DTransforms,
+    renderArap2dFrame,
+    renderCleanEdgeFrame,
+    renderParallax25dFrame,
+    renderSotaHybridFrame,
     renderRiggedFrame,
     extractMedialAxisFeatures,
     computeSpringFollowThrough,

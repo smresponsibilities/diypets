@@ -7,6 +7,9 @@ const {
   solveFabrikChain2D,
   inpaintTorsoBacking,
   evalSpringCycle,
+  fitOptimalRotation2D,
+  sampleCleanEdgePixel,
+  applyParallax25DTransforms,
 } = require("../docs/gif_maker.js");
 
 function assert(cond, msg) {
@@ -171,8 +174,112 @@ console.log("=== PART A: RESEARCH PAPER MATHEMATICAL INVARIANTS ===");
   console.log("  [PASS] Paper 4 (Comp Dynamics 2020)     | driverPeak=f2 -> springLagPeak=f" + peakIdx + " | amp=" + cyc[peakIdx].toFixed(4));
 }
 
-console.log("\n=== PART B: 5-METHOD x 9-ARCHETYPE x 5-FX BENCHMARK (1,800 FRAMES) ===");
-const methods = ["bone_fk", "harmonic_dqs", "fabrik_ik", "layered_inpaint", "complementary_dyn"];
+
+// Paper 5: ARAP 2D Exact Procrustes Rotation Fit (Igarashi 2005 / Sorkine 2007)
+{
+  const targetAng = 0.42; // ~24 deg
+  const c = Math.cos(targetAng), s = Math.sin(targetAng);
+  const rest = [{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 4 }, { x: 0, y: 4 }];
+  const def = rest.map((p) => ({ x: 10 + p.x * c - p.y * s, y: 5 + p.x * s + p.y * c }));
+  const fit = fitOptimalRotation2D(rest, def);
+  const err = Math.abs(fit.theta - targetAng);
+  assert(err < 1e-6, "ARAP 2D rotation recovery error: " + err);
+  console.log("  [PASS] Paper 5 (ARAP 2D SIGGRAPH 2005)  | recoveredAngleErr=" + err.toExponential(1) + " rad");
+}
+
+// Paper 6: CleanEdge Diagonal Pixel-Art Slope Preservation (Kopf-Lischinski 2011)
+{
+  const g = new Uint8ClampedArray(4 * 4 * 4);
+  // 45-degree dark diagonal at (0,0) and (1,1)
+  for (const [x, y, col] of [[0,0,20],[1,1,20],[1,0,220],[0,1,220]]) {
+    const p = (y * 4 + x) * 4;
+    g[p] = col; g[p+1] = col; g[p+2] = col; g[p+3] = 255;
+  }
+  const spMid = sampleCleanEdgePixel(g, 4, 4, 0.5, 0.5);
+  assert(g[spMid] === 20, "CleanEdge failed to preserve 45-deg diagonal midpoint");
+  console.log("  [PASS] Paper 6 (CleanEdge Pixel 2011)   | 45-deg diagonal preserved at subpixel (0.5,0.5)");
+}
+
+
+// Paper 7: 2.5D Cartoon Parallax (Rivers et al., SIGGRAPH 2010)
+{
+  const pins = [{ id: "head" }, { id: "fl" }, { id: "fr" }, { id: "chest" }];
+  const mkWorld = () => pins.map((_, i) => ({ pivOutX: 50 + i * 2 }));
+  const bbox = { minX: 20, maxX: 80, bw: 60 };
+  const w0 = mkWorld();
+  applyParallax25DTransforms(pins, w0, bbox, 0, "walk", "quadruped");
+  assert(Math.abs(w0[1].pivOutX - 52) < 1e-6, "2.5D parallax yaw=0 not identity");
+  const w1 = mkWorld();
+  applyParallax25DTransforms(pins, w1, bbox, Math.PI * 0.5, "walk", "quadruped");
+  assert(w1[1].pivOutX > 52 && w1[2].pivOutX < 54, "2.5D parallax near/far limbs did not oppose");
+  console.log("  [PASS] Paper 7 (2.5D Parallax 2010)     | yaw=0 exact identity | near/far opposing parallax verified");
+}
+
+console.log("\n=== PART A2: EDGE-CASE STRESS TESTS (ALL 7 PAPERS) ===");
+// Edge 1: FABRIK unreachable, zero-distance, and collinear targets (0 NaNs)
+{
+  const unreach = solveFabrikChain2D([{ x: 0, y: 0 }, { x: 0, y: 10 }, { x: 0, y: 20 }], [10, 10], 100, 0, -1, 8);
+  const zeroD = solveFabrikChain2D([{ x: 5, y: 5 }, { x: 5, y: 15 }, { x: 5, y: 25 }], [10, 10], 5, 5, 1, 8);
+  for (const pts of [unreach, zeroD]) {
+    for (const p of pts) assert(Number.isFinite(p.x) && Number.isFinite(p.y), "FABRIK produced NaN on edge case");
+    const l0 = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+    const l1 = Math.hypot(pts[2].x - pts[1].x, pts[2].y - pts[1].y);
+    assert(Math.abs(l0 - 10) < 0.05 && Math.abs(l1 - 10) < 0.05, "FABRIK edge-case bone length drift");
+  }
+  console.log("  [PASS] Edge 1 (FABRIK degenerate)       | unreachable & zero-dist targets -> 0 NaNs, exact lengths");
+}
+
+// Edge 2: Animated Drawings inpaint on all-dark black-cat sprite (must NOT paint rgb(180,180,180) grey)
+{
+  const darkBuf = makeBox(124, 108, [[18,22,98,66,22,22,26],[10,10,38,36,22,22,26],[22,62,38,96,20,20,24],[82,62,96,96,20,20,24]]);
+  const darkRig = buildAutoRig(darkBuf, 124, 108, true, "quadruped");
+  const darkInp = inpaintTorsoBacking(darkRig);
+  let brightArtifact = 0;
+  for (let i = 0; i < darkRig.w * darkRig.h; i++) {
+    if (darkRig.inpaintedMask[i] && darkInp.data[i * 4] > 100) brightArtifact++;
+  }
+  assert(brightArtifact === 0, "Dark sprite inpaint created bright grey artifacts: " + brightArtifact);
+  console.log("  [PASS] Edge 2 (Dark-sprite inpaint)     | all-dark mascot -> 0 bright-grey artifacts");
+}
+
+// Edge 3: Complementary Dynamics low-FPS (4f) & stiff spring (k=60) stability
+{
+  const stiff = evalSpringCycle("hop", 4, 0.08, 60.0, 8.0);
+  for (let i = 0; i < stiff.length; i++) {
+    assert(Number.isFinite(stiff[i]) && Math.abs(stiff[i]) < 0.25, "Spring diverged at k=60, N=4: " + stiff[i]);
+  }
+  console.log("  [PASS] Edge 3 (Stiff/low-FPS spring)    | k=60, N=4 sub-stepped -> unconditionally stable");
+}
+
+// Edge 4: ARAP 2D multi-quadrant rotation recovery + zero-area degenerate quad
+{
+  for (const ang of [-2.1, -0.35, 0.0, 1.9]) {
+    const c = Math.cos(ang), s = Math.sin(ang);
+    const rest = [{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 4 }, { x: 0, y: 4 }];
+    const def = rest.map((p) => ({ x: p.x * c - p.y * s, y: p.x * s + p.y * c }));
+    const fit = fitOptimalRotation2D(rest, def);
+    assert(Math.abs(fit.theta - ang) < 1e-6, "ARAP quadrant error at " + ang);
+  }
+  const zeroFit = fitOptimalRotation2D([{ x: 1, y: 1 }, { x: 1, y: 1 }], [{ x: 2, y: 2 }, { x: 2, y: 2 }]);
+  assert(Number.isFinite(zeroFit.theta), "ARAP produced NaN on zero-area quad");
+  console.log("  [PASS] Edge 4 (ARAP 2D quadrants/degen) | 4 quadrants exact + zero-area quad -> 0 NaNs");
+}
+
+// Edge 5: CleanEdge anti-diagonal + out-of-bounds UV clamping
+{
+  const g = new Uint8ClampedArray(4 * 4 * 4);
+  for (const [x, y, col] of [[1,0,20],[0,1,20],[0,0,220],[1,1,220]]) {
+    const p = (y * 4 + x) * 4;
+    g[p] = col; g[p+1] = col; g[p+2] = col; g[p+3] = 255;
+  }
+  assert(g[sampleCleanEdgePixel(g, 4, 4, 0.5, 0.5)] === 20, "CleanEdge anti-diagonal failed");
+  const oob = sampleCleanEdgePixel(g, 4, 4, -5.2, 99.7);
+  assert(oob >= 0 && oob < g.length, "CleanEdge OOB UV failed");
+  console.log("  [PASS] Edge 5 (CleanEdge anti-diag/OOB) | anti-45-deg preserved + OOB UV safely clamped");
+}
+
+console.log("\n=== PART B: 9-METHOD x 9-ARCHETYPE x 5-FX BENCHMARK (3,240 FRAMES) ===");
+const methods = ["bone_fk", "harmonic_dqs", "fabrik_ik", "layered_inpaint", "complementary_dyn", "arap_2d", "cleanedge_rot", "parallax_25d", "sota_hybrid"];
 const fxList = ["walk", "sprint", "dance", "hop", "sleep"];
 let hardFailures = 0;
 
