@@ -84,7 +84,21 @@ function analyzeFrame(rgba, w, h) {
       }
     }
   }
-  return { comps, tinySpecks, opaquePx, lowestY, pinholes };
+  let minX = w, maxX = -1, minY = h, maxY = -1, perim = 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (rgba[i * 4 + 3] === 0) continue;
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+      const isEdge =
+        x === 0 || x === w - 1 || y === 0 || y === h - 1 ||
+        rgba[(i - 1) * 4 + 3] === 0 || rgba[(i + 1) * 4 + 3] === 0 ||
+        rgba[(i - w) * 4 + 3] === 0 || rgba[(i + w) * 4 + 3] === 0;
+      if (isEdge) perim++;
+    }
+  }
+  return { comps, tinySpecks, opaquePx, lowestY, pinholes, minX, maxX, minY, maxY, perim };
 }
 
 const archetypes = [
@@ -285,7 +299,7 @@ let hardFailures = 0;
 
 for (const m of methods) {
   let grandMotion = 0, minAreaRatio = 9, maxAreaRatio = 0, totalFrames = 0;
-  let tears = 0, specks = 0, holes = 0, areaWarns = [];
+  let tears = 0, specks = 0, holes = 0, spikes = 0, perimWarns = 0, frozenLegs = 0, areaWarns = [];
   const t0 = performance.now();
 
   for (const a of archetypes) {
@@ -307,20 +321,48 @@ for (const m of methods) {
         if (ratio < 0.84 || ratio > 1.18) {
           areaWarns.push(a.name + "/" + fx + "/f" + fi + "=" + ratio.toFixed(2) + "x");
         }
+        // Gate 8: Spike / Protrusion detector (no pixel > 13px outside rest bbox on grounded walk/sleep)
+        if (fx === "walk" || fx === "sleep") {
+          const padL = restStats.minX - st.minX;
+          const padR = st.maxX - restStats.maxX;
+          const padT = restStats.minY - st.minY;
+          const padB = st.maxY - restStats.maxY;
+          if (Math.max(padL, padR, padT, padB) > 13) spikes++;
+        }
+        // Gate 10: Perimeter-spike detector (catches stretched needles / jaggedness)
+        if (st.perim / Math.max(1, restStats.perim) > 1.26) perimWarns++;
+
         const diff = buildFrameDiffRgba(rig.grid, f, rig.w, rig.h);
         if (diff.movedPx > maxMoved) maxMoved = diff.movedPx;
+      }
+      // Gate 9: Lower-body (leg) motion authority on quadruped walk (catches frozen/wobbly legs)
+      if (a.mode === "quadruped" && fx === "walk") {
+        const legY0 = Math.floor(rig.bbox.minY + rig.bbox.bh * 0.65);
+        let peakLegMoved = 0;
+        for (let fi = 0; fi < 8; fi++) {
+          const f = renderRiggedFrame(rig, fx, fi, 8, m);
+          let legMoved = 0;
+          for (let y = legY0; y < rig.h; y++) {
+            for (let x = 0; x < rig.w; x++) {
+              const p = (y * rig.w + x) * 4;
+              if ((rig.grid[p + 3] > 0) !== (f[p + 3] > 0)) legMoved++;
+            }
+          }
+          if (legMoved > peakLegMoved) peakLegMoved = legMoved;
+        }
+        if (peakLegMoved < 120) frozenLegs++;
       }
       grandMotion += maxMoved;
     }
   }
 
   const msPerFrame = (performance.now() - t0) / totalFrames;
-  const ok = tears === 0 && specks === 0 && holes === 0 && areaWarns.length === 0;
+  const ok = tears === 0 && specks === 0 && holes === 0 && spikes === 0 && perimWarns === 0 && frozenLegs === 0 && areaWarns.length === 0;
   if (!ok && m !== "bone_fk") hardFailures++;
   const tag = ok ? "[PASS]" : "[WARN]";
   console.log(
     "  " + tag + " " + m.padEnd(18) +
-    " | tears=" + tears + " specks=" + specks + " holes=" + holes +
+    " | tears=" + tears + " holes=" + holes + " spikes=" + spikes + " perim=" + perimWarns + " frzLeg=" + frozenLegs +
     " | area=" + minAreaRatio.toFixed(2) + ".." + maxAreaRatio.toFixed(2) + "x" +
     " | avgPeak=" + Math.round(grandMotion / 45) + "px" +
     " | " + msPerFrame.toFixed(2) + "ms/f" +

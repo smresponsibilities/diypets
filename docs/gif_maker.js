@@ -2074,10 +2074,16 @@ function computeBiharmonicWeights(rig) {
     }
   }
 
+  // Power-sharpen BBW weights (gamma = 2.6) so legs retain full stride authority while sockets stay smooth
   for (let idx = 0; idx < n; idx++) {
     if (grid[idx * 4 + 3] === 0) continue;
     let total = 0;
-    for (let p = 0; p < numPins; p++) total += weights[p][idx];
+    for (let p = 0; p < numPins; p++) {
+      const v = weights[p][idx];
+      const sv = v > 1e-5 ? Math.pow(v, 2.6) : 0;
+      weights[p][idx] = sv;
+      total += sv;
+    }
     if (total > 1e-6) {
       const invT = 1.0 / total;
       for (let p = 0; p < numPins; p++) weights[p][idx] *= invT;
@@ -2259,8 +2265,8 @@ function renderFabrikIkFrame(rig, fx, frameIdx, totalFrames, ampScale) {
       const l1 = legLen * 0.52, l2 = legLen * 0.50;
 
       const u = (uBase + ((id === "fl" || id === "br") ? 0.0 : 0.5)) % 1.0;
-      const stride = (fx === "sprint" || fx === "run" ? 0.34 : 0.25) * legLen * amp;
-      const lift = (fx === "sprint" || fx === "run" ? 0.30 : 0.20) * legLen * amp;
+      const stride = Math.min(7.5, (fx === "sprint" || fx === "run" ? 0.24 : 0.18) * legLen * amp);
+      const lift = Math.min(5.0, (fx === "sprint" || fx === "run" ? 0.18 : 0.12) * legLen * amp);
 
       let swingX = 0, liftY = 0;
       if (u < 0.6) {
@@ -2291,11 +2297,27 @@ function renderFabrikIkFrame(rig, fx, frameIdx, totalFrames, ampScale) {
       const poseThigh = Math.atan2(poseChain[1].y - poseChain[0].y, poseChain[1].x - poseChain[0].x);
       const poseShin = Math.atan2(poseChain[2].y - poseChain[1].y, poseChain[2].x - poseChain[1].x);
 
+      let dThigh = poseThigh - restThigh;
+      let dShin = poseShin - restShin;
+      // Wrap angle deltas to [-pi, pi] and clamp knee flexion to prevent stubby-leg spikes
+      while (dThigh > Math.PI) dThigh -= Math.PI * 2;
+      while (dThigh < -Math.PI) dThigh += Math.PI * 2;
+      while (dShin > Math.PI) dShin -= Math.PI * 2;
+      while (dShin < -Math.PI) dShin += Math.PI * 2;
+      dThigh = Math.max(-0.38, Math.min(0.38, dThigh));
+      dShin = Math.max(dThigh - 0.35, Math.min(dThigh + 0.35, dShin));
+
+      // Recompute welded knee output from clamped dThigh so thigh & shin can never separate
+      const kRx = restChain[1].x - restChain[0].x;
+      const kRy = restChain[1].y - restChain[0].y;
+      const weldedKxOut = poseChain[0].x + kRx * Math.cos(dThigh) - kRy * Math.sin(dThigh);
+      const weldedKyOut = poseChain[0].y + kRx * Math.sin(dThigh) + kRy * Math.cos(dThigh);
+
       ikMap.set(i, {
         hxIn: restChain[0].x, hyIn: restChain[0].y, kxIn: restChain[1].x, kyIn: restChain[1].y,
-        hxOut: poseChain[0].x, hyOut: poseChain[0].y, kxOut: poseChain[1].x, kyOut: poseChain[1].y,
-        dThigh: poseThigh - restThigh,
-        dShin: poseShin - restShin,
+        hxOut: poseChain[0].x, hyOut: poseChain[0].y, kxOut: weldedKxOut, kyOut: weldedKyOut,
+        dThigh,
+        dShin,
         l1,
       });
     }
