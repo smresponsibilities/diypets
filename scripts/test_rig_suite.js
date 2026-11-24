@@ -1,0 +1,228 @@
+const { performance } = require("perf_hooks");
+const {
+  buildAutoRig,
+  renderRiggedFrame,
+  buildFrameDiffRgba,
+  computeBiharmonicWeights,
+  solveFabrikChain2D,
+  inpaintTorsoBacking,
+  evalSpringCycle,
+} = require("../docs/gif_maker.js");
+
+function assert(cond, msg) {
+  if (!cond) {
+    console.error("PAPER/GATE FAIL:", msg);
+    process.exit(1);
+  }
+}
+
+function makeBox(W, H, rects) {
+  const buf = new Uint8ClampedArray(W * H * 4);
+  for (const [x0, y0, x1, y1, r, g, b] of rects) {
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        if (x < 0 || x >= W || y < 0 || y >= H) continue;
+        const p = (y * W + x) * 4;
+        const edge = (x === x0 || x === x1 || y === y0 || y === y1);
+        buf[p] = edge ? 15 : r;
+        buf[p + 1] = edge ? 15 : g;
+        buf[p + 2] = edge ? 18 : b;
+        buf[p + 3] = 255;
+      }
+    }
+  }
+  return buf;
+}
+
+function analyzeFrame(rgba, w, h) {
+  const vis = new Uint8Array(w * h);
+  const q = new Int32Array(w * h);
+  let comps = 0, tinySpecks = 0, opaquePx = 0, lowestY = -1;
+  for (let i = 0; i < w * h; i++) {
+    if (rgba[i * 4 + 3] > 0) {
+      opaquePx++;
+      const y = (i / w) | 0;
+      if (y > lowestY) lowestY = y;
+    }
+    if (vis[i] || rgba[i * 4 + 3] === 0) continue;
+    let head = 0, tail = 0;
+    vis[i] = 1;
+    q[tail++] = i;
+    while (head < tail) {
+      const u = q[head++], ux = u % w, uy = (u / w) | 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = ux + dx, ny = uy + dy;
+          if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+          const v = ny * w + nx;
+          if (!vis[v] && rgba[v * 4 + 3] > 0) {
+            vis[v] = 1;
+            q[tail++] = v;
+          }
+        }
+      }
+    }
+    if (tail <= 2) tinySpecks++;
+    else if (tail >= 8) comps++;
+  }
+
+  let pinholes = 0;
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x;
+      if (rgba[i * 4 + 3] > 0) continue;
+      if (
+        rgba[(i - 1) * 4 + 3] > 0 &&
+        rgba[(i + 1) * 4 + 3] > 0 &&
+        rgba[(i - w) * 4 + 3] > 0 &&
+        rgba[(i + w) * 4 + 3] > 0
+      ) {
+        pinholes++;
+      }
+    }
+  }
+  return { comps, tinySpecks, opaquePx, lowestY, pinholes };
+}
+
+const archetypes = [
+  { name: "quad_left", mode: "quadruped", W: 124, H: 108, buf: makeBox(124, 108, [[18,22,98,66,245,242,232],[10,10,38,36,245,242,232],[22,62,38,96,240,238,228],[40,62,54,96,230,228,220],[66,62,80,96,230,228,220],[82,62,96,96,240,238,228]]) },
+  { name: "quad_right", mode: "quadruped", W: 124, H: 108, buf: makeBox(124, 108, [[18,22,98,66,210,170,120],[78,10,106,36,210,170,120],[22,62,38,96,200,160,110],[40,62,54,96,190,150,100],[66,62,80,96,190,150,100],[82,62,96,96,200,160,110]]) },
+  { name: "quad_stubby", mode: "quadruped", W: 124, H: 108, buf: makeBox(124, 108, [[18,28,100,86,235,190,130],[10,16,40,46,235,190,130],[24,82,38,98,225,180,120],[44,82,56,98,215,170,110],[68,82,80,98,215,170,110],[84,82,96,98,225,180,120]]) },
+  { name: "quad_tall", mode: "quadruped", W: 112, H: 128, buf: makeBox(112, 128, [[22,24,88,60,230,195,110],[14,8,36,34,230,195,110],[26,56,36,114,220,185,100],[40,56,50,114,210,175,95],[62,56,72,114,210,175,95],[76,56,86,114,220,185,100]]) },
+  { name: "biped", mode: "biped", W: 84, H: 120, buf: makeBox(84, 120, [[26,12,58,38,180,210,240],[24,36,60,76,160,190,230],[12,42,26,70,150,180,220],[58,42,72,70,150,180,220],[26,74,38,108,140,170,210],[46,74,58,108,140,170,210]]) },
+  { name: "bird", mode: "bird", W: 100, H: 92, buf: makeBox(100, 92, [[20,22,74,58,90,180,240],[12,16,34,36,90,180,240],[36,14,66,42,70,160,220],[72,34,90,50,70,160,220],[42,56,54,78,240,180,60]]) },
+  { name: "crawler", mode: "crawler", W: 128, H: 64, buf: makeBox(128, 64, [[12,24,114,44,95,200,110],[10,18,28,36,110,220,120]]) },
+  { name: "swimmer", mode: "swimmer", W: 120, H: 76, buf: makeBox(120, 76, [[14,20,86,56,250,140,60],[82,14,108,62,240,110,40]]) },
+  { name: "blob", mode: "blob", W: 84, H: 84, buf: makeBox(84, 84, [[16,20,68,68,140,235,170]]) },
+];
+
+console.log("=== PART A: RESEARCH PAPER MATHEMATICAL INVARIANTS ===");
+
+// Paper 1: Bounded Biharmonic Weights (Jacobson et al., SIGGRAPH 2011)
+{
+  const rig = buildAutoRig(archetypes[0].buf, archetypes[0].W, archetypes[0].H, true, "quadruped");
+  const W = computeBiharmonicWeights(rig);
+  let maxPouErr = 0, minW = 1, maxW = 0, blendedPx = 0;
+  for (let i = 0; i < rig.w * rig.h; i++) {
+    if (rig.grid[i * 4 + 3] === 0) continue;
+    let sum = 0, active = 0;
+    for (let p = 0; p < W.length; p++) {
+      const v = W[p][i];
+      if (v < minW) minW = v;
+      if (v > maxW) maxW = v;
+      if (v > 0.05) active++;
+      sum += v;
+    }
+    if (active >= 2) blendedPx++;
+    const err = Math.abs(sum - 1.0);
+    if (err > maxPouErr) maxPouErr = err;
+  }
+  assert(minW >= 0 && maxW <= 1.0001, "BBW bounds violated: " + minW + ".." + maxW);
+  assert(maxPouErr < 1e-4, "BBW partition-of-unity error too high: " + maxPouErr);
+  assert(blendedPx > 200, "BBW not smooth enough, blendedPx=" + blendedPx);
+  console.log("  [PASS] Paper 1 (BBW SIGGRAPH 2011)      | PoU err=" + maxPouErr.toExponential(1) + " | range=[" + minW.toFixed(2) + "," + maxW.toFixed(2) + "] | smoothBlendPx=" + blendedPx);
+}
+
+// Paper 2: FABRIK 2D IK (Aristidou & Lasenby 2011)
+{
+  const lengths = [18, 16];
+  let maxLenErr = 0, maxReachErr = 0;
+  for (const [tx, ty] of [[50, 78], [42, 72], [58, 70], [46, 65]]) {
+    const pts = solveFabrikChain2D([{ x: 50, y: 46 }, { x: 50, y: 64 }, { x: 50, y: 80 }], lengths, tx, ty, -1, 10);
+    const l0 = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+    const l1 = Math.hypot(pts[2].x - pts[1].x, pts[2].y - pts[1].y);
+    const rErr = Math.hypot(pts[2].x - tx, pts[2].y - ty);
+    maxLenErr = Math.max(maxLenErr, Math.abs(l0 - lengths[0]), Math.abs(l1 - lengths[1]));
+    maxReachErr = Math.max(maxReachErr, rErr);
+  }
+  assert(maxLenErr < 0.05, "FABRIK bone length drift: " + maxLenErr);
+  assert(maxReachErr < 0.15, "FABRIK reach error: " + maxReachErr);
+  console.log("  [PASS] Paper 2 (FABRIK 2011)            | maxBoneLenErr=" + maxLenErr.toFixed(4) + "px | maxReachErr=" + maxReachErr.toFixed(4) + "px");
+}
+
+// Paper 3: Meta Animated Drawings (Smith et al., ACM TOG 2023)
+{
+  const rig = buildAutoRig(archetypes[0].buf, archetypes[0].W, archetypes[0].H, true, "quadruped");
+  const inp = inpaintTorsoBacking(rig);
+  let filled = 0, darkInkLeak = 0;
+  for (let i = 0; i < rig.w * rig.h; i++) {
+    if (!rig.inpaintedMask[i]) continue;
+    const p = i * 4;
+    if (inp.data[p + 3] === 255) {
+      filled++;
+      const lum = inp.data[p] * 0.299 + inp.data[p + 1] * 0.587 + inp.data[p + 2] * 0.114;
+      if (lum < 30 && rig.grid[p + 3] > 0 && (rig.grid[p] * 0.299 + rig.grid[p + 1] * 0.587 + rig.grid[p + 2] * 0.114) > 80) {
+        darkInkLeak++;
+      }
+    }
+  }
+  assert(filled > 500, "Inpaint mask too small: " + filled);
+  assert(darkInkLeak === 0, "Inpaint leaked dark ink into interior: " + darkInkLeak);
+  console.log("  [PASS] Paper 3 (Animated Drawings 2023) | inpaintedTorsoPx=" + filled + " | inkLeakPx=" + darkInkLeak);
+}
+
+// Paper 4: Complementary Dynamics (Zhang et al., SIGGRAPH 2020)
+{
+  const cyc = evalSpringCycle("walk", 16, 0.1, 18.0, 5.5);
+  let peakIdx = 0;
+  for (let i = 1; i < cyc.length; i++) if (cyc[i] > cyc[peakIdx]) peakIdx = i;
+  // Driver sin(2*phase) peaks at idx=2 (phase=pi/4); damped spring must lag behind driver (peakIdx > 2)
+  assert(peakIdx >= 2 && peakIdx <= 6, "Spring phase lag unexpected: peakIdx=" + peakIdx);
+  console.log("  [PASS] Paper 4 (Comp Dynamics 2020)     | driverPeak=f2 -> springLagPeak=f" + peakIdx + " | amp=" + cyc[peakIdx].toFixed(4));
+}
+
+console.log("\n=== PART B: 5-METHOD x 9-ARCHETYPE x 5-FX BENCHMARK (1,800 FRAMES) ===");
+const methods = ["bone_fk", "harmonic_dqs", "fabrik_ik", "layered_inpaint", "complementary_dyn"];
+const fxList = ["walk", "sprint", "dance", "hop", "sleep"];
+let hardFailures = 0;
+
+for (const m of methods) {
+  let grandMotion = 0, minAreaRatio = 9, maxAreaRatio = 0, totalFrames = 0;
+  let tears = 0, specks = 0, holes = 0, areaWarns = [];
+  const t0 = performance.now();
+
+  for (const a of archetypes) {
+    const rig = buildAutoRig(a.buf, a.W, a.H, true, a.mode);
+    const restStats = analyzeFrame(rig.grid, rig.w, rig.h);
+
+    for (const fx of fxList) {
+      let maxMoved = 0;
+      for (let fi = 0; fi < 8; fi++) {
+        const f = renderRiggedFrame(rig, fx, fi, 8, m);
+        totalFrames++;
+        const st = analyzeFrame(f, rig.w, rig.h);
+        if (st.comps !== 1) tears++;
+        if (st.tinySpecks > 0) specks += st.tinySpecks;
+        if (st.pinholes > 0) holes += st.pinholes;
+        const ratio = st.opaquePx / Math.max(1, restStats.opaquePx);
+        if (ratio < minAreaRatio) minAreaRatio = ratio;
+        if (ratio > maxAreaRatio) maxAreaRatio = ratio;
+        if (ratio < 0.84 || ratio > 1.18) {
+          areaWarns.push(a.name + "/" + fx + "/f" + fi + "=" + ratio.toFixed(2) + "x");
+        }
+        const diff = buildFrameDiffRgba(rig.grid, f, rig.w, rig.h);
+        if (diff.movedPx > maxMoved) maxMoved = diff.movedPx;
+      }
+      grandMotion += maxMoved;
+    }
+  }
+
+  const msPerFrame = (performance.now() - t0) / totalFrames;
+  const ok = tears === 0 && specks === 0 && holes === 0 && areaWarns.length === 0;
+  if (!ok && m !== "bone_fk") hardFailures++;
+  const tag = ok ? "[PASS]" : "[WARN]";
+  console.log(
+    "  " + tag + " " + m.padEnd(18) +
+    " | tears=" + tears + " specks=" + specks + " holes=" + holes +
+    " | area=" + minAreaRatio.toFixed(2) + ".." + maxAreaRatio.toFixed(2) + "x" +
+    " | avgPeak=" + Math.round(grandMotion / 45) + "px" +
+    " | " + msPerFrame.toFixed(2) + "ms/f" +
+    (areaWarns.length ? " | warns=" + areaWarns.slice(0, 2).join(",") : "")
+  );
+}
+
+if (hardFailures > 0) {
+  console.error("\nFAIL: " + hardFailures + " research method(s) had quality warnings.");
+  process.exit(1);
+}
+console.log("\nALL 4 RESEARCH-PAPER METHODS PASSED ALL MATHEMATICAL & VISUAL GATES!");

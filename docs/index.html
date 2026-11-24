@@ -589,6 +589,10 @@
             <label class="slider-chip" title="Compare deformation techniques live">TECH
               <select id="gif-tech-select" class="ctrl-input" style="width:118px;padding:3px 6px;" onchange="invalidateGifFrameCache();renderGifPreviewNow()">
                 <option value="bone_fk" selected>Bone-FK (Unified)</option>
+                <option value="harmonic_dqs">Harmonic DQS</option>
+                <option value="fabrik_ik">FABRIK 2-Bone IK</option>
+                <option value="layered_inpaint">Layered Inpaint</option>
+                <option value="complementary_dyn">Complementary Dyn</option>
                 <option value="rigid_3pass">Rigid-Bone 3P</option>
                 <option value="geodesic_mls">Geodesic MLS</option>
               </select>
@@ -1309,7 +1313,7 @@ function loop(now) {
 requestAnimationFrame(loop);
 
 </script>
-<script src="gif_maker.js?v=22">
+<script src="gif_maker.js?v=25">
 // Auto-sync displayed version from GitHub Releases API (cached per session, fallback v0.4.1)
 (function syncLatestVersion() {
   const applyVer = (tag) => {

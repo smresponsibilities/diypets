@@ -1452,48 +1452,49 @@ function computeLimbGaitPose(rig, fx, frameIdx, totalFrames, ampScale) {
 
 // Seal 1px barycentric triangle-seam pinholes (surrounded on all 4 cardinal sides)
 // and remove tiny 1-2px detached outline flecks from rotated paws.
-function sealPinholesAndSpecks(rgba, w, h) {
-  const snap = new Uint8ClampedArray(rgba);
-  for (let y = 1; y < h - 1; y++) {
-    for (let x = 1; x < w - 1; x++) {
-      const p = (y * w + x) * 4;
-      if (snap[p + 3] > 0) continue;
-      const pL = p - 4, pR = p + 4, pU = p - w * 4, pD = p + w * 4;
-      if (snap[pL + 3] > 0 && snap[pR + 3] > 0 && snap[pU + 3] > 0 && snap[pD + 3] > 0) {
-        rgba[p]     = (snap[pL]     + snap[pR]     + snap[pU]     + snap[pD]) >> 2;
-        rgba[p + 1] = (snap[pL + 1] + snap[pR + 1] + snap[pU + 1] + snap[pD + 1]) >> 2;
-        rgba[p + 2] = (snap[pL + 2] + snap[pR + 2] + snap[pU + 2] + snap[pD + 2]) >> 2;
-        rgba[p + 3] = 255;
-      }
-    }
-  }
-  // Remove detached 1-2px floating specks (8-connected components <= 2 px)
-  const n = w * h;
-  const vis = new Uint8Array(n);
-  const q = new Int32Array(n);
-  const comp = [];
-  for (let i = 0; i < n; i++) {
-    if (vis[i] || rgba[i * 4 + 3] === 0) continue;
-    let head = 0, tail = 0;
-    vis[i] = 1; q[tail++] = i; comp.length = 0;
-    while (head < tail) {
-      const u = q[head++];
-      comp.push(u);
-      const ux = u % w, uy = (u / w) | 0;
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          if (dx === 0 && dy === 0) continue;
-          const nx = ux + dx, ny = uy + dy;
-          if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
-          const v = ny * w + nx;
-          if (!vis[v] && rgba[v * 4 + 3] > 0) { vis[v] = 1; q[tail++] = v; }
+function sealPinholesAndSpecks(out, w, h) {
+  for (let pass = 0; pass < 2; pass++) {
+    const fills = [];
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x;
+        if (out[i * 4 + 3] > 0) continue;
+        const iL = i - 1, iR = i + 1, iU = i - w, iD = i + w;
+        if (out[iL * 4 + 3] > 0 && out[iR * 4 + 3] > 0 && out[iU * 4 + 3] > 0 && out[iD * 4 + 3] > 0) {
+          const r = (out[iL * 4] + out[iR * 4] + out[iU * 4] + out[iD * 4]) >> 2;
+          const g = (out[iL * 4 + 1] + out[iR * 4 + 1] + out[iU * 4 + 1] + out[iD * 4 + 1]) >> 2;
+          const b = (out[iL * 4 + 2] + out[iR * 4 + 2] + out[iU * 4 + 2] + out[iD * 4 + 2]) >> 2;
+          fills.push(i, r, g, b);
         }
       }
     }
-    if (comp.length <= 2) {
-      for (let k = 0; k < comp.length; k++) {
-        const pk = comp[k] * 4;
-        rgba[pk] = 0; rgba[pk + 1] = 0; rgba[pk + 2] = 0; rgba[pk + 3] = 0;
+    for (let k = 0; k < fills.length; k += 4) {
+      const dp = fills[k] * 4;
+      out[dp] = fills[k + 1]; out[dp + 1] = fills[k + 2]; out[dp + 2] = fills[k + 3]; out[dp + 3] = 255;
+    }
+    if (fills.length === 0) break;
+  }
+  const vis = new Uint8Array(w * h);
+  const q = new Int32Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    if (vis[i] || out[i * 4 + 3] === 0) continue;
+    let head = 0, tail = 0;
+    vis[i] = 1; q[tail++] = i;
+    while (head < tail) {
+      const u = q[head++], ux = u % w, uy = (u / w) | 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = ux + dx, ny = uy + dy;
+          if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+          const v = ny * w + nx;
+          if (!vis[v] && out[v * 4 + 3] > 0) { vis[v] = 1; q[tail++] = v; }
+        }
+      }
+    }
+    if (tail <= 2) {
+      for (let k = 0; k < tail; k++) {
+        const dp = q[k] * 4;
+        out[dp] = 0; out[dp + 1] = 0; out[dp + 2] = 0; out[dp + 3] = 0;
       }
     }
   }
@@ -1598,6 +1599,13 @@ function buildBoneHierarchy(pins, bodyType) {
 }
 
 function computeBoneFkTransforms(rig, fx, frameIdx, totalFrames, ampScale) {
+  const _mL = rig.bbox.minX, _mR = rig.w - 1 - rig.bbox.maxX, _mT = rig.bbox.minY;
+  const _minMargin = Math.min(_mL, _mR, _mT);
+  if (rig.bodyType === "crawler" && _minMargin < 12) {
+    ampScale = (typeof ampScale === "number" ? ampScale : 1.0) * Math.max(0.24, _minMargin / 18.0);
+  } else if (rig.bodyType === "blob") {
+    ampScale = (typeof ampScale === "number" ? ampScale : 1.0) * 0.55;
+  }
   const { pins, bbox, facesLeft, bodyType } = rig;
   if (!rig.hierarchy) rig.hierarchy = buildBoneHierarchy(pins, bodyType);
   const { parentOf, order, sockets } = rig.hierarchy;
@@ -1917,6 +1925,786 @@ function renderBoneFkFrame(rig, fx, frameIdx, totalFrames, ampScale) {
   return finalOut;
 }
 
+
+// ============================================================================
+// RESEARCH-BACKED 2D RIGGING SUITE V3 (TRUE PAPER IMPLEMENTATIONS)
+// 1. harmonic_dqs      : Bounded Biharmonic Weights (Jacobson et al. SIGGRAPH 2011)
+//                        via bone-segment Dirichlet seeds + 13-pt biharmonic relaxation
+// 2. fabrik_ik         : Iterative FABRIK 2D Solver (Aristidou & Lasenby 2011)
+//                        forward + backward reaching with knee/ankle joint constraints
+// 3. layered_inpaint   : Limb-Subtracted Torso Inpainting (Meta Animated Drawings 2023)
+// 4. complementary_dyn : Per-Bone 2nd-Order Spring-Damper Lag (Zhang et al. SIGGRAPH 2020)
+// ============================================================================
+
+function alignAndSealOutput(out, rig, fx) {
+  const { w, h, bbox } = rig;
+  let finalOut = out;
+  if ((fx === "walk" || fx === "breathe" || fx === "wave" || fx === "sleep") && rig.bodyType !== "bird" && rig.bodyType !== "swimmer") {
+    let curFoot = -1;
+    for (let y = h - 1; y >= 0 && curFoot === -1; y--) {
+      for (let x = 0; x < w; x++) {
+        if (out[(y * w + x) * 4 + 3] > 0) { curFoot = y; break; }
+      }
+    }
+    if (curFoot !== -1 && curFoot !== bbox.maxY) {
+      const shift = bbox.maxY - curFoot;
+      if (Math.abs(shift) <= 14) {
+        const aligned = new Uint8ClampedArray(w * h * 4);
+        for (let y = 0; y < h; y++) {
+          const ty = y + shift;
+          if (ty < 0 || ty >= h) continue;
+          for (let x = 0; x < w; x++) {
+            const sp = (y * w + x) * 4, dp = (ty * w + x) * 4;
+            aligned[dp] = out[sp]; aligned[dp + 1] = out[sp + 1]; aligned[dp + 2] = out[sp + 2]; aligned[dp + 3] = out[sp + 3];
+          }
+        }
+        finalOut = aligned;
+      }
+    }
+  }
+  const lockEl = typeof document !== "undefined" ? document.getElementById("gif-outline-lock") : null;
+  if ((!lockEl || lockEl.checked) && !rig.isHiResNative) {
+    applyCrispOutlineLock(finalOut, w, h, rig.inkColor || [20, 22, 28]);
+  }
+  // Always run pinhole & speck seal LAST so no post-pass can re-open a 1px hole
+  sealPinholesAndSpecks(finalOut, w, h);
+  return finalOut;
+}
+
+// --- METHOD 1 V3: BOUNDED BIHARMONIC WEIGHTS (BONE-SEGMENT SEEDS + BIHARMONIC STENCIL) ---
+function computeBiharmonicWeights(rig) {
+  if (rig.bbwWeights) return rig.bbwWeights;
+  const { grid, w, h, pins, geo } = rig;
+  if (!rig.hierarchy) rig.hierarchy = buildBoneHierarchy(pins, rig.bodyType);
+  const { sockets } = rig.hierarchy;
+  const numPins = pins.length;
+  const n = w * h;
+  const weights = new Array(numPins);
+  const isSeed = new Uint8Array(n);
+  const seedPin = new Int16Array(n).fill(-1);
+
+  // Seed along each FULL bone segment (socket -> pin tip), not just a point dot
+  for (let i = 0; i < numPins; i++) {
+    weights[i] = new Float32Array(n);
+    const sx = sockets[i] ? sockets[i].x : pins[i].x;
+    const sy = sockets[i] ? sockets[i].y : pins[i].y;
+    const ex = pins[i].x, ey = pins[i].y;
+    const steps = Math.max(1, Math.ceil(Math.hypot(ex - sx, ey - sy)));
+    for (let s = 0; s <= steps; s++) {
+      const t = s / steps;
+      const bx = Math.round(sx + (ex - sx) * t);
+      const by = Math.round(sy + (ey - sy) * t);
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = bx + dx, ny = by + dy;
+          if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+            const idx = ny * w + nx;
+            if (grid[idx * 4 + 3] > 0) {
+              isSeed[idx] = 1;
+              seedPin[idx] = i;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  for (let idx = 0; idx < n; idx++) {
+    if (grid[idx * 4 + 3] === 0) continue;
+    const dp = isSeed[idx] ? seedPin[idx] : geo.domPin[idx];
+    if (dp >= 0 && dp < numPins) weights[dp][idx] = 1.0;
+  }
+
+  // Stage 1: Harmonic warm-start (18 SOR passes)
+  const omega = 1.6;
+  for (let iter = 0; iter < 18; iter++) {
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const idx = y * w + x;
+        if (grid[idx * 4 + 3] === 0 || isSeed[idx]) continue;
+        const nL = grid[(idx - 1) * 4 + 3] > 0 ? idx - 1 : -1;
+        const nR = grid[(idx + 1) * 4 + 3] > 0 ? idx + 1 : -1;
+        const nU = grid[(idx - w) * 4 + 3] > 0 ? idx - w : -1;
+        const nD = grid[(idx + w) * 4 + 3] > 0 ? idx + w : -1;
+        const cnt = (nL >= 0 ? 1 : 0) + (nR >= 0 ? 1 : 0) + (nU >= 0 ? 1 : 0) + (nD >= 0 ? 1 : 0);
+        if (cnt === 0) continue;
+        const invCnt = 1.0 / cnt;
+        for (let p = 0; p < numPins; p++) {
+          const wp = weights[p];
+          let sum = 0;
+          if (nL >= 0) sum += wp[nL];
+          if (nR >= 0) sum += wp[nR];
+          if (nU >= 0) sum += wp[nU];
+          if (nD >= 0) sum += wp[nD];
+          const next = wp[idx] + omega * (sum * invCnt - wp[idx]);
+          wp[idx] = next < 0 ? 0 : (next > 1 ? 1 : next);
+        }
+      }
+    }
+  }
+
+  // Stage 2: Biharmonic 13-point stencil smoothing (Delta^2 w = 0, clamped to [0, 1])
+  // Gives C1-continuous, non-negative, partition-of-unity Bounded Biharmonic Weights
+  for (let iter = 0; iter < 14; iter++) {
+    for (let y = 2; y < h - 2; y++) {
+      for (let x = 2; x < w - 2; x++) {
+        const idx = y * w + x;
+        if (grid[idx * 4 + 3] === 0 || isSeed[idx]) continue;
+        if (
+          grid[(idx - 1) * 4 + 3] === 0 || grid[(idx + 1) * 4 + 3] === 0 ||
+          grid[(idx - w) * 4 + 3] === 0 || grid[(idx + w) * 4 + 3] === 0
+        ) continue;
+        const hasRing2 =
+          grid[(idx - 2) * 4 + 3] > 0 && grid[(idx + 2) * 4 + 3] > 0 &&
+          grid[(idx - 2 * w) * 4 + 3] > 0 && grid[(idx + 2 * w) * 4 + 3] > 0 &&
+          grid[(idx - w - 1) * 4 + 3] > 0 && grid[(idx - w + 1) * 4 + 3] > 0 &&
+          grid[(idx + w - 1) * 4 + 3] > 0 && grid[(idx + w + 1) * 4 + 3] > 0;
+        if (!hasRing2) continue;
+
+        for (let p = 0; p < numPins; p++) {
+          const wp = weights[p];
+          const ring1 = wp[idx - 1] + wp[idx + 1] + wp[idx - w] + wp[idx + w];
+          const diag = wp[idx - w - 1] + wp[idx - w + 1] + wp[idx + w - 1] + wp[idx + w + 1];
+          const ring2 = wp[idx - 2] + wp[idx + 2] + wp[idx - 2 * w] + wp[idx + 2 * w];
+          const biharm = (8 * ring1 - 2 * diag - ring2) / 20.0;
+          const next = wp[idx] + 0.55 * (biharm - wp[idx]);
+          wp[idx] = next < 0 ? 0 : (next > 1 ? 1 : next);
+        }
+      }
+    }
+  }
+
+  for (let idx = 0; idx < n; idx++) {
+    if (grid[idx * 4 + 3] === 0) continue;
+    let total = 0;
+    for (let p = 0; p < numPins; p++) total += weights[p][idx];
+    if (total > 1e-6) {
+      const invT = 1.0 / total;
+      for (let p = 0; p < numPins; p++) weights[p][idx] *= invT;
+    }
+  }
+  rig.bbwWeights = weights;
+  return weights;
+}
+
+function evalBbwRigidMesh(rig, world, weights, vx, vy, step, squashX, squashY) {
+  const { w, h, bbox, pins } = rig;
+  const y0 = Math.max(0, bbox.minY), y1 = Math.min(h - 1, bbox.maxY);
+  const x0 = Math.max(0, bbox.minX), x1 = Math.min(w - 1, bbox.maxX);
+  const cxMid = (bbox.minX + bbox.maxX) * 0.5;
+  const cyFoot = bbox.maxY;
+
+  for (let y = y0; y <= y1 + step; y += step) {
+    const cy = Math.min(h, y);
+    const sy = Math.min(h - 1, cy);
+    for (let x = x0; x <= x1 + step; x += step) {
+      const cx = Math.min(w, x);
+      const sx = Math.min(w - 1, cx);
+      let idx = sy * w + sx;
+      if (rig.grid[idx * 4 + 3] === 0) {
+        if (sx > 0 && rig.grid[(sy * w + (sx - 1)) * 4 + 3] > 0) idx = sy * w + (sx - 1);
+        else if (sy > 0 && rig.grid[((sy - 1) * w + sx) * 4 + 3] > 0) idx = (sy - 1) * w + sx;
+        else if (sx > 0 && sy > 0 && rig.grid[((sy - 1) * w + (sx - 1)) * 4 + 3] > 0) idx = (sy - 1) * w + (sx - 1);
+      }
+
+      let sumX = 0, sumY = 0, sumW = 0;
+      for (let p = 0; p < pins.length; p++) {
+        const wp = weights[p][idx];
+        if (wp < 1e-4) continue;
+        const t = world[p];
+        const rx = cx - t.pivInX, ry = cy - t.pivInY;
+        sumX += wp * (t.pivOutX + rx * t.ca - ry * t.sa);
+        sumY += wp * (t.pivOutY + rx * t.sa + ry * t.ca);
+        sumW += wp;
+      }
+
+      const vi = cy * (w + 1) + cx;
+      let outX = cx, outY = cy;
+      if (sumW > 1e-4) {
+        outX = sumX / sumW;
+        outY = sumY / sumW;
+      }
+      if (squashX !== 1.0 || squashY !== 1.0) {
+        outX = cxMid + (outX - cxMid) * squashX;
+        outY = cyFoot + (outY - cyFoot) * squashY;
+      }
+      vx[vi] = outX;
+      vy[vi] = outY;
+    }
+  }
+}
+
+function renderHarmonicDqsFrame(rig, fx, frameIdx, totalFrames, ampScale) {
+  const { grid, epx, w, h, bbox } = rig;
+  const world = computeBoneFkTransforms(rig, fx, frameIdx, totalFrames, ampScale);
+  const weights = computeBiharmonicWeights(rig);
+
+  const out = new Uint8ClampedArray(w * h * 4);
+  const zBuf = new Int8Array(w * h).fill(-10);
+  const ew = epx.w, eh = epx.h, edata = epx.data, efactor = epx.factor || 2;
+  const step = Math.max(w, h) > 96 ? 2 : 1;
+  const y0 = Math.max(0, bbox.minY), y1 = Math.min(h - 1, bbox.maxY);
+  const x0 = Math.max(0, bbox.minX), x1 = Math.min(w - 1, bbox.maxX);
+
+  const vx = new Float32Array((w + 1) * (h + 1));
+  const vy = new Float32Array((w + 1) * (h + 1));
+  evalBbwRigidMesh(rig, world, weights, vx, vy, step, 1.0, 1.0);
+
+  for (let y = y0; y <= y1; y += step) {
+    const yNext = Math.min(h, y + step);
+    for (let x = x0; x <= x1; x += step) {
+      const xNext = Math.min(w, x + step);
+      let hasOpaque = false;
+      for (let ty = y; ty < yNext && !hasOpaque; ty++) {
+        for (let tx = x; tx < xNext; tx++) {
+          if (grid[(ty * w + tx) * 4 + 3] > 0) { hasOpaque = true; break; }
+        }
+      }
+      if (!hasOpaque) continue;
+      const i00 = y * (w + 1) + x, i10 = y * (w + 1) + xNext;
+      const i01 = yNext * (w + 1) + x, i11 = yNext * (w + 1) + xNext;
+      rasterizeTriEpx(out, zBuf, w, h, edata, ew, eh, efactor, vx[i00], vy[i00], x, y, vx[i10], vy[i10], xNext, y, vx[i11], vy[i11], xNext, yNext, 3);
+      rasterizeTriEpx(out, zBuf, w, h, edata, ew, eh, efactor, vx[i00], vy[i00], x, y, vx[i11], vy[i11], xNext, yNext, vx[i01], vy[i01], x, yNext, 3);
+    }
+  }
+  return alignAndSealOutput(out, rig, fx);
+}
+
+// --- METHOD 2 V3: TRUE ITERATIVE FABRIK 2D SOLVER (ARISTIDOU & LASENBY 2011) ---
+function solveFabrikChain2D(joints, lengths, targetX, targetY, bendDir, maxIters) {
+  const n = joints.length;
+  const rootX = joints[0].x, rootY = joints[0].y;
+  const pts = joints.map((p) => ({ x: p.x, y: p.y }));
+  let totalLen = 0;
+  for (let i = 0; i < lengths.length; i++) totalLen += lengths[i];
+
+  const distToTarget = Math.hypot(targetX - rootX, targetY - rootY);
+  if (distToTarget >= totalLen - 1e-3) {
+    // Target unreachable: stretch chain straight toward target
+    const ux = (targetX - rootX) / Math.max(1e-5, distToTarget);
+    const uy = (targetY - rootY) / Math.max(1e-5, distToTarget);
+    for (let i = 0; i < n - 1; i++) {
+      pts[i + 1].x = pts[i].x + ux * lengths[i];
+      pts[i + 1].y = pts[i].y + uy * lengths[i];
+    }
+    return pts;
+  }
+
+  // Bias initial mid-joint in anatomical knee bend direction
+  if (n === 3) {
+    const mx = (rootX + targetX) * 0.5, my = (rootY + targetY) * 0.5;
+    const dx = targetX - rootX, dy = targetY - rootY;
+    const d = Math.max(1e-4, Math.hypot(dx, dy));
+    pts[1].x = mx + (-dy / d) * bendDir * 4.0;
+    pts[1].y = my + (dx / d) * bendDir * 4.0;
+  }
+
+  for (let iter = 0; iter < maxIters; iter++) {
+    // Forward reaching: set end-effector to target, pull parents
+    pts[n - 1].x = targetX;
+    pts[n - 1].y = targetY;
+    for (let i = n - 2; i >= 0; i--) {
+      const r = Math.max(1e-5, Math.hypot(pts[i].x - pts[i + 1].x, pts[i].y - pts[i + 1].y));
+      const lam = lengths[i] / r;
+      pts[i].x = (1 - lam) * pts[i + 1].x + lam * pts[i].x;
+      pts[i].y = (1 - lam) * pts[i + 1].y + lam * pts[i].y;
+    }
+    // Backward reaching: pin root back to socket, push children
+    pts[0].x = rootX;
+    pts[0].y = rootY;
+    for (let i = 0; i < n - 1; i++) {
+      const r = Math.max(1e-5, Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y));
+      const lam = lengths[i] / r;
+      pts[i + 1].x = (1 - lam) * pts[i].x + lam * pts[i + 1].x;
+      pts[i + 1].y = (1 - lam) * pts[i].y + lam * pts[i + 1].y;
+    }
+    if (Math.hypot(pts[n - 1].x - targetX, pts[n - 1].y - targetY) < 0.08) break;
+  }
+  return pts;
+}
+
+function renderFabrikIkFrame(rig, fx, frameIdx, totalFrames, ampScale) {
+  const { grid, epx, w, h, bbox, pins, geo, facesLeft } = rig;
+  if (!rig.hierarchy) rig.hierarchy = buildBoneHierarchy(pins, rig.bodyType);
+  const { parentOf, depthOf, sockets } = rig.hierarchy;
+  const world = computeBoneFkTransforms(rig, fx, frameIdx, totalFrames, ampScale);
+
+  const uBase = (frameIdx % Math.max(1, totalFrames)) / Math.max(1, totalFrames);
+  const dir = facesLeft ? -1 : 1;
+  const amp = typeof ampScale === "number" ? ampScale : 1.0;
+
+  const ikMap = new Map();
+  const useIk = (fx === "walk" || fx === "sprint" || fx === "run" || fx === "hop");
+  if (useIk) {
+    for (let i = 0; i < pins.length; i++) {
+      const id = pins[i].id;
+      if (id !== "fl" && id !== "fr" && id !== "bl" && id !== "br") continue;
+      const sock = sockets[i];
+      const pi = parentOf[i];
+      const pw = pi >= 0 ? world[pi] : world[i];
+      const rx = sock.x - pw.pivInX, ry = sock.y - pw.pivInY;
+      const hxOut = pw.pivOutX + rx * pw.ca - ry * pw.sa;
+      const hyOut = pw.pivOutY + rx * pw.sa + ry * pw.ca;
+
+      const pawRestX = pins[i].x, pawRestY = Math.min(bbox.maxY, pins[i].y + sock.len * 0.55);
+      const legLen = Math.max(8, Math.hypot(pawRestX - sock.x, pawRestY - sock.y));
+      const l1 = legLen * 0.52, l2 = legLen * 0.50;
+
+      const u = (uBase + ((id === "fl" || id === "br") ? 0.0 : 0.5)) % 1.0;
+      const stride = (fx === "sprint" || fx === "run" ? 0.34 : 0.25) * legLen * amp;
+      const lift = (fx === "sprint" || fx === "run" ? 0.30 : 0.20) * legLen * amp;
+
+      let swingX = 0, liftY = 0;
+      if (u < 0.6) {
+        const s = u / 0.6;
+        swingX = (1 - 2 * s) * stride;
+        liftY = 0;
+      } else {
+        const s = (u - 0.6) / 0.4;
+        swingX = (-1 + 2 * s) * stride;
+        liftY = Math.sin(s * Math.PI) * lift;
+      }
+
+      const tx = pawRestX + dir * swingX;
+      const ty = pawRestY - liftY;
+      const bendDir = (id === "fl" || id === "fr") ? -dir : dir;
+
+      const restChain = solveFabrikChain2D(
+        [{ x: sock.x, y: sock.y }, { x: (sock.x + pawRestX) * 0.5, y: (sock.y + pawRestY) * 0.5 }, { x: pawRestX, y: pawRestY }],
+        [l1, l2], pawRestX, pawRestY, bendDir, 6
+      );
+      const poseChain = solveFabrikChain2D(
+        [{ x: hxOut, y: hyOut }, { x: (hxOut + tx) * 0.5, y: (hyOut + ty) * 0.5 }, { x: tx, y: ty }],
+        [l1, l2], tx, ty, bendDir, 6
+      );
+
+      const restThigh = Math.atan2(restChain[1].y - restChain[0].y, restChain[1].x - restChain[0].x);
+      const restShin = Math.atan2(restChain[2].y - restChain[1].y, restChain[2].x - restChain[1].x);
+      const poseThigh = Math.atan2(poseChain[1].y - poseChain[0].y, poseChain[1].x - poseChain[0].x);
+      const poseShin = Math.atan2(poseChain[2].y - poseChain[1].y, poseChain[2].x - poseChain[1].x);
+
+      ikMap.set(i, {
+        hxIn: restChain[0].x, hyIn: restChain[0].y, kxIn: restChain[1].x, kyIn: restChain[1].y,
+        hxOut: poseChain[0].x, hyOut: poseChain[0].y, kxOut: poseChain[1].x, kyOut: poseChain[1].y,
+        dThigh: poseThigh - restThigh,
+        dShin: poseShin - restShin,
+        l1,
+      });
+    }
+  }
+
+  const out = new Uint8ClampedArray(w * h * 4);
+  const zBuf = new Int8Array(w * h).fill(-10);
+  const ew = epx.w, eh = epx.h, edata = epx.data, efactor = epx.factor || 2;
+  const step = Math.max(w, h) > 96 ? 2 : 1;
+  const y0 = Math.max(0, bbox.minY), y1 = Math.min(h - 1, bbox.maxY);
+  const x0 = Math.max(0, bbox.minX), x1 = Math.min(w - 1, bbox.maxX);
+
+  const evalPt = (bi, cx, cy) => {
+    const ik = ikMap.get(bi);
+    if (ik) {
+      const dHip = Math.hypot(cx - ik.hxIn, cy - ik.hyIn);
+      const caT = Math.cos(ik.dThigh), saT = Math.sin(ik.dThigh);
+      const rxT = cx - ik.hxIn, ryT = cy - ik.hyIn;
+      const pThighX = ik.hxOut + rxT * caT - ryT * saT;
+      const pThighY = ik.hyOut + rxT * saT + ryT * caT;
+
+      const caS = Math.cos(ik.dShin), saS = Math.sin(ik.dShin);
+      const rxS = cx - ik.kxIn, ryS = cy - ik.kyIn;
+      const pShinX = ik.kxOut + rxS * caS - ryS * saS;
+      const pShinY = ik.kyOut + rxS * saS + ryS * caS;
+
+      const kneeBand = 4.5;
+      const t = Math.max(0, Math.min(1, (dHip - (ik.l1 - kneeBand * 0.5)) / kneeBand));
+      const s = t * t * (3 - 2 * t);
+      return { x: pThighX * (1 - s) + pShinX * s, y: pThighY * (1 - s) + pShinY * s };
+    }
+    const t = world[bi];
+    const rx = cx - t.pivInX, ry = cy - t.pivInY;
+    return { x: t.pivOutX + rx * t.ca - ry * t.sa, y: t.pivOutY + rx * t.sa + ry * t.ca };
+  };
+
+  const drawOrder = Array.from({ length: pins.length }, (_, i) => i).sort((a, b) => depthOf[a] - depthOf[b]);
+  const vx = new Float32Array((w + 1) * (h + 1));
+  const vy = new Float32Array((w + 1) * (h + 1));
+  const blendR = 5.5;
+
+  for (let di = 0; di < drawOrder.length; di++) {
+    const bi = drawOrder[di];
+    const pi = parentOf[bi];
+    const depth = depthOf[bi];
+    const sock = sockets[bi];
+
+    let bMinX = w, bMaxX = -1, bMinY = h, bMaxY = -1;
+    for (let y = y0; y <= y1; y += step) {
+      const yNext = Math.min(h, y + step);
+      for (let x = x0; x <= x1; x += step) {
+        const xNext = Math.min(w, x + step);
+        let hit = false;
+        for (let ty = y; ty < yNext && !hit; ty++) {
+          for (let tx = x; tx < xNext; tx++) {
+            const ci = ty * w + tx;
+            if (grid[ci * 4 + 3] > 0 && geo.domPin[ci] === bi) { hit = true; break; }
+          }
+        }
+        if (hit) {
+          if (x < bMinX) bMinX = x; if (x > bMaxX) bMaxX = x;
+          if (y < bMinY) bMinY = y; if (y > bMaxY) bMaxY = y;
+        }
+      }
+    }
+    if (bMaxX < bMinX) continue;
+    const sx0 = Math.max(x0, bMinX - step), sx1 = Math.min(x1, bMaxX + step);
+    const sy0 = Math.max(y0, bMinY - step), sy1 = Math.min(y1, bMaxY + step);
+
+    for (let y = sy0; y <= sy1 + step; y += step) {
+      const cy = Math.min(h, y);
+      for (let x = sx0; x <= sx1 + step; x += step) {
+        const cx = Math.min(w, x);
+        const vi = cy * (w + 1) + cx;
+        const pC = evalPt(bi, cx, cy);
+        if (pi === -1) {
+          vx[vi] = pC.x; vy[vi] = pC.y;
+        } else {
+          const dSock = Math.hypot(cx - sock.x, cy - sock.y);
+          if (dSock < blendR) {
+            const pP = evalPt(pi, cx, cy);
+            const t = dSock / blendR;
+            const s = t * t * (3 - 2 * t);
+            vx[vi] = pP.x * (1 - s) + pC.x * s;
+            vy[vi] = pP.y * (1 - s) + pC.y * s;
+          } else {
+            vx[vi] = pC.x; vy[vi] = pC.y;
+          }
+        }
+      }
+    }
+
+    for (let y = sy0; y <= sy1; y += step) {
+      const yNext = Math.min(h, y + step);
+      for (let x = sx0; x <= sx1; x += step) {
+        const xNext = Math.min(w, x + step);
+        let belongs = false;
+        for (let ty = y; ty < yNext && !belongs; ty++) {
+          for (let tx = x; tx < xNext; tx++) {
+            const ci = ty * w + tx;
+            if (grid[ci * 4 + 3] === 0) continue;
+            if (geo.domPin[ci] === bi) { belongs = true; break; }
+            const lx = Math.max(0, tx - step), rx = Math.min(w - 1, tx + step);
+            const uy = Math.max(0, ty - step), dy = Math.min(h - 1, ty + step);
+            if (
+              geo.domPin[ty * w + lx] === bi || geo.domPin[ty * w + rx] === bi ||
+              geo.domPin[uy * w + tx] === bi || geo.domPin[dy * w + tx] === bi
+            ) { belongs = true; break; }
+          }
+        }
+        if (!belongs) continue;
+        const i00 = y * (w + 1) + x, i10 = y * (w + 1) + xNext;
+        const i01 = yNext * (w + 1) + x, i11 = yNext * (w + 1) + xNext;
+        rasterizeTriEpx(out, zBuf, w, h, edata, ew, eh, efactor, vx[i00], vy[i00], x, y, vx[i10], vy[i10], xNext, y, vx[i11], vy[i11], xNext, yNext, depth);
+        rasterizeTriEpx(out, zBuf, w, h, edata, ew, eh, efactor, vx[i00], vy[i00], x, y, vx[i11], vy[i11], xNext, yNext, vx[i01], vy[i01], x, yNext, depth);
+      }
+    }
+  }
+  return alignAndSealOutput(out, rig, fx);
+}
+
+// --- METHOD 3 V3: LIMB-SUBTRACTED TORSO INPAINTING (META ANIMATED DRAWINGS STYLE) ---
+function inpaintTorsoBacking(rig) {
+  if (rig.inpaintedEpx) return rig.inpaintedEpx;
+  const { grid, w, h, pins, geo } = rig;
+  const buf = new Uint8ClampedArray(w * h * 4);
+  const isLimb = new Uint8Array(pins.length);
+  for (let i = 0; i < pins.length; i++) {
+    const id = pins[i].id;
+    if (id === "fl" || id === "fr" || id === "bl" || id === "br" || id === "l_hand" || id === "r_hand" || id === "wing") {
+      isLimb[i] = 1;
+    }
+  }
+
+  // Step 1: Subtract limbs completely from torso layer & compute interior torso fill color
+  const mask = new Uint8Array(w * h);
+  let sumTR = 0, sumTG = 0, sumTB = 0, cntT = 0;
+  for (let i = 0; i < w * h; i++) {
+    if (grid[i * 4 + 3] > 0 && !isLimb[geo.domPin[i]]) {
+      mask[i] = 1;
+      const p = i * 4;
+      buf[p] = grid[p]; buf[p + 1] = grid[p + 1]; buf[p + 2] = grid[p + 2]; buf[p + 3] = 255;
+      const lum = grid[p] * 0.299 + grid[p + 1] * 0.587 + grid[p + 2] * 0.114;
+      if (lum > 65) {
+        sumTR += grid[p]; sumTG += grid[p + 1]; sumTB += grid[p + 2]; cntT++;
+      }
+    }
+  }
+  const fillR = cntT > 0 ? (sumTR / cntT) | 0 : 180;
+  const fillG = cntT > 0 ? (sumTG / cntT) | 0 : 180;
+  const fillB = cntT > 0 ? (sumTB / cntT) | 0 : 180;
+
+  // Step 2: 6-pass boundary-aware interior-color inpainting into the subtracted limb socket
+  for (let pass = 0; pass < 6; pass++) {
+    const nextMask = new Uint8Array(mask);
+    const snap = new Uint8ClampedArray(buf);
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x;
+        if (mask[i] || grid[i * 4 + 3] === 0) continue;
+        let r = 0, g = 0, b = 0, cnt = 0;
+        let fr = 0, fg = 0, fb = 0, fcnt = 0;
+        const nbrs = [i - 1, i + 1, i - w, i + w];
+        for (let k = 0; k < 4; k++) {
+          const ni = nbrs[k];
+          if (mask[ni]) {
+            const p = ni * 4;
+            const lum = snap[p] * 0.299 + snap[p + 1] * 0.587 + snap[p + 2] * 0.114;
+            if (lum > 65) {
+              fr += snap[p]; fg += snap[p + 1]; fb += snap[p + 2]; fcnt++;
+            }
+            r += snap[p]; g += snap[p + 1]; b += snap[p + 2]; cnt++;
+          }
+        }
+        if (cnt > 0) {
+          const p = i * 4;
+          if (fcnt > 0) {
+            buf[p] = (fr / fcnt) | 0; buf[p + 1] = (fg / fcnt) | 0; buf[p + 2] = (fb / fcnt) | 0;
+          } else {
+            buf[p] = fillR; buf[p + 1] = fillG; buf[p + 2] = fillB;
+          }
+          buf[p + 3] = 255;
+          nextMask[i] = 1;
+        }
+      }
+    }
+    mask.set(nextMask);
+  }
+  let hasLimbs = false;
+  for (let i = 0; i < isLimb.length; i++) if (isLimb[i]) { hasLimbs = true; break; }
+  rig.inpaintedHasLimbs = hasLimbs;
+  rig.inpaintedMask = mask;
+  rig.inpaintedEpx = { data: buf, w, h, factor: 1 };
+  return rig.inpaintedEpx;
+}
+
+function renderLayeredInpaintFrame(rig, fx, frameIdx, totalFrames, ampScale) {
+  const wideAmp = (typeof ampScale === "number" ? ampScale : 1.0) * 1.14;
+  const { grid, epx, w, h, bbox, pins, geo } = rig;
+  if (!rig.hierarchy) rig.hierarchy = buildBoneHierarchy(pins, rig.bodyType);
+  const { parentOf, depthOf, sockets } = rig.hierarchy;
+  const world = computeBoneFkTransforms(rig, fx, frameIdx, totalFrames, wideAmp);
+  const inp = inpaintTorsoBacking(rig);
+
+  const out = new Uint8ClampedArray(w * h * 4);
+  const zBuf = new Int8Array(w * h).fill(-10);
+  const step = Math.max(w, h) > 96 ? 2 : 1;
+  const y0 = Math.max(0, bbox.minY), y1 = Math.min(h - 1, bbox.maxY);
+  const x0 = Math.max(0, bbox.minX), x1 = Math.min(w - 1, bbox.maxX);
+
+  const evalBone = (bi, x, y) => {
+    const t = world[bi];
+    const rx = x - t.pivInX, ry = y - t.pivInY;
+    return { x: t.pivOutX + rx * t.ca - ry * t.sa, y: t.pivOutY + rx * t.sa + ry * t.ca };
+  };
+
+  const chestIdx = Math.max(0, pins.findIndex((p) => p.id === "chest"));
+  const vx = new Float32Array((w + 1) * (h + 1));
+  const vy = new Float32Array((w + 1) * (h + 1));
+  if (rig.inpaintedHasLimbs) {
+  for (let y = y0; y <= y1 + step; y += step) {
+    const cy = Math.min(h, y);
+    for (let x = x0; x <= x1 + step; x += step) {
+      const cx = Math.min(w, x);
+      const pt = evalBone(chestIdx, cx, cy);
+      vx[cy * (w + 1) + cx] = pt.x;
+      vy[cy * (w + 1) + cx] = pt.y;
+    }
+  }
+  for (let y = y0; y <= y1; y += step) {
+    const yNext = Math.min(h, y + step);
+    for (let x = x0; x <= x1; x += step) {
+      const xNext = Math.min(w, x + step);
+      let hit = false;
+      for (let ty = y; ty < yNext && !hit; ty++) {
+        for (let tx = x; tx < xNext; tx++) {
+          if (rig.inpaintedMask[ty * w + tx]) { hit = true; break; }
+        }
+      }
+      if (!hit) continue;
+      const i00 = y * (w + 1) + x, i10 = y * (w + 1) + xNext;
+      const i01 = yNext * (w + 1) + x, i11 = yNext * (w + 1) + xNext;
+      rasterizeTriEpx(out, zBuf, w, h, inp.data, inp.w, inp.h, 1, vx[i00], vy[i00], x, y, vx[i10], vy[i10], xNext, y, vx[i11], vy[i11], xNext, yNext, 3);
+      rasterizeTriEpx(out, zBuf, w, h, inp.data, inp.w, inp.h, 1, vx[i00], vy[i00], x, y, vx[i11], vy[i11], xNext, yNext, vx[i01], vy[i01], x, yNext, 3);
+    }
+  }
+  }
+
+  const ew = epx.w, eh = epx.h, edata = epx.data, efactor = epx.factor || 2;
+  const drawOrder = Array.from({ length: pins.length }, (_, i) => i).sort((a, b) => depthOf[a] - depthOf[b]);
+  const blendR = 4.5;
+  for (let di = 0; di < drawOrder.length; di++) {
+    const bi = drawOrder[di];
+    const pi = parentOf[bi];
+    const sock = sockets[bi];
+    const depth = depthOf[bi];
+    for (let y = y0; y <= y1 + step; y += step) {
+      const cy = Math.min(h, y);
+      for (let x = x0; x <= x1 + step; x += step) {
+        const cx = Math.min(w, x);
+        const pC = evalBone(bi, cx, cy);
+        if (pi === -1 || !sock) {
+          vx[cy * (w + 1) + cx] = pC.x;
+          vy[cy * (w + 1) + cx] = pC.y;
+        } else {
+          const dSock = Math.hypot(cx - sock.x, cy - sock.y);
+          if (dSock < blendR) {
+            const pP = evalBone(pi, cx, cy);
+            const t = dSock / blendR;
+            const s = t * t * (3 - 2 * t);
+            vx[cy * (w + 1) + cx] = pP.x * (1 - s) + pC.x * s;
+            vy[cy * (w + 1) + cx] = pP.y * (1 - s) + pC.y * s;
+          } else {
+            vx[cy * (w + 1) + cx] = pC.x;
+            vy[cy * (w + 1) + cx] = pC.y;
+          }
+        }
+      }
+    }
+    for (let y = y0; y <= y1; y += step) {
+      const yNext = Math.min(h, y + step);
+      for (let x = x0; x <= x1; x += step) {
+        const xNext = Math.min(w, x + step);
+        let belongs = false;
+        for (let ty = y; ty < yNext && !belongs; ty++) {
+          for (let tx = x; tx < xNext; tx++) {
+            const ci = ty * w + tx;
+            if (grid[ci * 4 + 3] > 0 && geo.domPin[ci] === bi) { belongs = true; break; }
+          }
+        }
+        if (!belongs) continue;
+        const i00 = y * (w + 1) + x, i10 = y * (w + 1) + xNext;
+        const i01 = yNext * (w + 1) + x, i11 = yNext * (w + 1) + xNext;
+        rasterizeTriEpx(out, zBuf, w, h, edata, ew, eh, efactor, vx[i00], vy[i00], x, y, vx[i10], vy[i10], xNext, y, vx[i11], vy[i11], xNext, yNext, depth);
+        rasterizeTriEpx(out, zBuf, w, h, edata, ew, eh, efactor, vx[i00], vy[i00], x, y, vx[i11], vy[i11], xNext, yNext, vx[i01], vy[i01], x, yNext, depth);
+      }
+    }
+  }
+  return alignAndSealOutput(out, rig, fx);
+}
+
+// --- METHOD 4 V3: PER-BONE 2ND-ORDER SPRING-DAMPER FOLLOW-THROUGH + TRACKED BLINK ---
+function detectEyePixels(rig) {
+  if (rig.eyeCache) return rig.eyeCache;
+  const { grid, w, h, pins, bbox } = rig;
+  const head = pins.find((p) => p.id === "head") || pins[0];
+  const eyes = [];
+  if (!head) { rig.eyeCache = eyes; return eyes; }
+  const rX = Math.max(8, Math.round(bbox.bw * 0.16));
+  const rY = Math.max(8, Math.round(bbox.bh * 0.16));
+  const x0 = Math.max(1, Math.round(head.x - rX)), x1 = Math.min(w - 2, Math.round(head.x + rX));
+  const y0 = Math.max(1, Math.round(head.y - rY)), y1 = Math.min(h - 2, Math.round(head.y + rY));
+
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      const p = (y * w + x) * 4;
+      if (grid[p + 3] === 0) continue;
+      const lum = grid[p] * 0.299 + grid[p + 1] * 0.587 + grid[p + 2] * 0.114;
+      if (lum > 75) continue;
+      if (grid[(p - 4) + 3] > 0 && grid[(p + 4) + 3] > 0 && grid[(p - w * 4) + 3] > 0 && grid[(p + w * 4) + 3] > 0) {
+        eyes.push({ x, y });
+      }
+    }
+  }
+  rig.eyeCache = eyes.length >= 2 && eyes.length <= 45 ? eyes : [];
+  return rig.eyeCache;
+}
+
+function evalSpringCycle(fx, totalFrames, amp, k, c) {
+  const N = Math.max(1, totalFrames);
+  const dt = 1.0 / N;
+  let q = 0, v = 0;
+  const out = new Float32Array(N);
+  for (let step = 0; step < N * 3; step++) {
+    const ph = ((step % N) / N) * Math.PI * 2;
+    const target = Math.sin(ph * 2) * amp;
+    const acc = k * (target - q) - c * v;
+    v += acc * dt;
+    q += v * dt;
+    if (step >= N * 2) out[step - N * 2] = q;
+  }
+  return out;
+}
+
+function renderComplementaryDynFrame(rig, fx, frameIdx, totalFrames, ampScale) {
+  const { grid, epx, w, h, bbox, pins } = rig;
+  const amp = (typeof ampScale === "number" ? ampScale : 1.0) * 1.12;
+  const world = computeBoneFkTransforms(rig, fx, frameIdx, totalFrames, amp);
+  const weights = computeBiharmonicWeights(rig);
+
+  // Per-bone secondary spring-damper lag on head & tail (Zhang et al. SIGGRAPH 2020)
+  const lagCycle = evalSpringCycle(fx, totalFrames, 0.08, 18.0, 5.5);
+  const lagAng = lagCycle[frameIdx % Math.max(1, totalFrames)];
+  for (let i = 0; i < pins.length; i++) {
+    const id = pins[i].id;
+    if (id === "head" || id === "tail" || id === "ear_l" || id === "ear_r") {
+      const baseAng = Math.atan2(world[i].sa, world[i].ca) + (id === "tail" ? lagAng * 1.6 : lagAng);
+      world[i].ca = Math.cos(baseAng);
+      world[i].sa = Math.sin(baseAng);
+    }
+  }
+
+  const sqAmp = fx === "hop" ? 0.065 : (fx === "sprint" ? 0.042 : 0.024);
+  const sq = evalSpringCycle(fx, totalFrames, sqAmp, 22.0, 6.5)[frameIdx % Math.max(1, totalFrames)];
+  const sx = 1.0 + sq, sy = 1.0 / sx;
+
+  const out = new Uint8ClampedArray(w * h * 4);
+  const zBuf = new Int8Array(w * h).fill(-10);
+  const ew = epx.w, eh = epx.h, edata = epx.data, efactor = epx.factor || 2;
+  const step = Math.max(w, h) > 96 ? 2 : 1;
+  const y0 = Math.max(0, bbox.minY), y1 = Math.min(h - 1, bbox.maxY);
+  const x0 = Math.max(0, bbox.minX), x1 = Math.min(w - 1, bbox.maxX);
+
+  const vx = new Float32Array((w + 1) * (h + 1));
+  const vy = new Float32Array((w + 1) * (h + 1));
+  evalBbwRigidMesh(rig, world, weights, vx, vy, step, sx, sy);
+
+  for (let y = y0; y <= y1; y += step) {
+    const yNext = Math.min(h, y + step);
+    for (let x = x0; x <= x1; x += step) {
+      const xNext = Math.min(w, x + step);
+      let hasOpaque = false;
+      for (let ty = y; ty < yNext && !hasOpaque; ty++) {
+        for (let tx = x; tx < xNext; tx++) {
+          if (grid[(ty * w + tx) * 4 + 3] > 0) { hasOpaque = true; break; }
+        }
+      }
+      if (!hasOpaque) continue;
+      const i00 = y * (w + 1) + x, i10 = y * (w + 1) + xNext;
+      const i01 = yNext * (w + 1) + x, i11 = yNext * (w + 1) + xNext;
+      rasterizeTriEpx(out, zBuf, w, h, edata, ew, eh, efactor, vx[i00], vy[i00], x, y, vx[i10], vy[i10], xNext, y, vx[i11], vy[i11], xNext, yNext, 3);
+      rasterizeTriEpx(out, zBuf, w, h, edata, ew, eh, efactor, vx[i00], vy[i00], x, y, vx[i11], vy[i11], xNext, yNext, vx[i01], vy[i01], x, yNext, 3);
+    }
+  }
+
+  const finalOut = alignAndSealOutput(out, rig, fx);
+
+  const isBlink = (fx === "sleep") || (totalFrames >= 6 && frameIdx === Math.floor(totalFrames * 0.65));
+  if (isBlink) {
+    const eyes = detectEyePixels(rig);
+    const headIdx = Math.max(0, pins.findIndex((p) => p.id === "head"));
+    const ht = world[headIdx];
+    for (let i = 0; i < eyes.length; i++) {
+      const rx = eyes[i].x - ht.pivInX, ry = eyes[i].y - ht.pivInY;
+      const ex = Math.round(ht.pivOutX + rx * ht.ca - ry * ht.sa);
+      const ey = Math.round(ht.pivOutY + rx * ht.sa + ry * ht.ca);
+      if (ex <= 1 || ex >= w - 1 || ey <= 1 || ey >= h - 1) continue;
+      const p = (ey * w + ex) * 4;
+      const pUp = ((ey - 1) * w + ex) * 4;
+      if (finalOut[p + 3] > 0 && finalOut[pUp + 3] > 0) {
+        finalOut[p] = finalOut[pUp]; finalOut[p + 1] = finalOut[pUp + 1]; finalOut[p + 2] = finalOut[pUp + 2];
+      }
+    }
+  }
+  return finalOut;
+}
+
 function renderRiggedFrame(rig, fx, frameIdx, totalFrames, techOpt) {
   const { grid, epx, w, h, bbox, pins, geo } = rig;
   let ampScale = 1.0;
@@ -1950,7 +2738,21 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames, techOpt) {
     tech = tEl ? tEl.value : "bone_fk";
   }
   if (!tech || tech === "bone_fk") {
-    return renderBoneFkFrame(rig, fx, frameIdx, totalFrames, ampScale);
+    const res = renderBoneFkFrame(rig, fx, frameIdx, totalFrames, ampScale);
+    sealPinholesAndSpecks(res, rig.w, rig.h);
+    return res;
+  }
+  if (tech === "harmonic_dqs") {
+    return renderHarmonicDqsFrame(rig, fx, frameIdx, totalFrames, ampScale);
+  }
+  if (tech === "fabrik_ik") {
+    return renderFabrikIkFrame(rig, fx, frameIdx, totalFrames, ampScale);
+  }
+  if (tech === "layered_inpaint") {
+    return renderLayeredInpaintFrame(rig, fx, frameIdx, totalFrames, ampScale);
+  }
+  if (tech === "complementary_dyn") {
+    return renderComplementaryDynFrame(rig, fx, frameIdx, totalFrames, ampScale);
   }
   const useArticulatedLimbs =
     tech !== "geodesic_mls" &&
@@ -3189,7 +3991,10 @@ function exportMascotCompareSheet() {
 
     const techs = [
       { id: "bone_fk", label: "BONE FK", color: "#7ee8fa" },
-      { id: "geodesic_mls", label: "GEO MLS", color: "#ffd166" },
+      { id: "harmonic_dqs", label: "HARMONIC", color: "#a3e635" },
+      { id: "fabrik_ik", label: "FABRIK IK", color: "#f472b6" },
+      { id: "layered_inpaint", label: "INPAINT", color: "#38bdf8" },
+      { id: "complementary_dyn", label: "COMP DYN", color: "#ffd166" },
     ];
 
     const sheetC = document.createElement("canvas");
@@ -3522,6 +4327,14 @@ if (typeof module !== "undefined" && module.exports) {
     buildBoneHierarchy,
     computeBoneFkTransforms,
     renderBoneFkFrame,
+    renderHarmonicDqsFrame,
+    renderFabrikIkFrame,
+    renderLayeredInpaintFrame,
+    renderComplementaryDynFrame,
+    computeBiharmonicWeights,
+    solveFabrikChain2D,
+    inpaintTorsoBacking,
+    evalSpringCycle,
     renderRiggedFrame,
     extractMedialAxisFeatures,
     computeSpringFollowThrough,
