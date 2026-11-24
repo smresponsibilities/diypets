@@ -284,7 +284,7 @@ function extractPaddedNativeGrid(rgba, w, h) {
       }
     }
   }
-  return { grid, w: outW, h: outH, nativeW: nw, nativeH: nh, block };
+  return { grid, w: outW, h: outH, nativeW: nw, nativeH: nh, blockScale: block, block  };
 }
 
 // 2x EPX (Eric's Pixel Expansion / Scale2x) — classic RotSprite pre-pass so 1px dark outlines
@@ -503,8 +503,9 @@ function findColumnMassCenter(grid, w, x0, x1, y0, y1, fallbackX, fallbackY) {
 
 function buildAutoRig(rawRgba, rawW, rawH, cleanBg, modeHint) {
   const cleaned = cleanBg ? cleanRgbaPixels(rawRgba, rawW, rawH) : new Uint8ClampedArray(rawRgba);
-  const { grid, w, h, nativeW, nativeH } = extractPaddedNativeGrid(cleaned, rawW, rawH);
-  const epx = upscale2xEpx(grid, w, h);
+  const { grid, w, h, nativeW, nativeH, blockScale = 1 } = extractPaddedNativeGrid(cleaned, rawW, rawH);
+  const isHiResNative = (blockScale === 1 && Math.max(nativeW, nativeH) >= 90);
+  const epx = isHiResNative ? { data: grid, w, h, factor: 1 } : Object.assign(upscale2xEpx(grid, w, h), { factor: 2 });
   const bbox = findBbox(grid, w, h);
   const inkColor = detectDarkInk(grid, w, h);
 
@@ -677,7 +678,7 @@ function buildAutoRig(rawRgba, rawW, rawH, cleanBg, modeHint) {
   }
 
   const geo = computeGeodesicSkinning(grid, w, h, pins);
-  return { grid, epx, w, h, nativeW, nativeH, bbox, hipY, facesLeft, bodyType, maxRuns, pins, inkColor, geo };
+  return { grid, epx, w, h, nativeW, nativeH, isHiResNative, bbox, hipY, facesLeft, bodyType, maxRuns, pins, inkColor, geo };
 }
 
 // FIXED FORWARD GAIT PHYSICS:
@@ -927,7 +928,7 @@ function evalRigidMlsForward(vx, vy, srcPins, dstPins, wRow, wOffset) {
   return { x: qxStar + frx * scale, y: qyStar + fry * scale };
 }
 
-function rasterizeTriEpx(out, zBuf, w, h, epxData, ew, eh, ax, ay, au, av, bx, by, bu, bv, cx, cy, cu, cv, depth) {
+function rasterizeTriEpx(out, zBuf, w, h, epxData, ew, eh, factor, ax, ay, au, av, bx, by, bu, bv, cx, cy, cu, cv, depth) {
   const minX = Math.max(0, Math.floor(Math.min(ax, bx, cx)));
   const maxX = Math.min(w - 1, Math.ceil(Math.max(ax, bx, cx)));
   const minY = Math.max(0, Math.floor(Math.min(ay, by, cy)));
@@ -948,8 +949,8 @@ function rasterizeTriEpx(out, zBuf, w, h, epxData, ew, eh, ax, ay, au, av, bx, b
       if (depth < zBuf[dstIdx]) continue;
       const u = l1 * au + l2 * bu + l3 * cu;
       const v = l1 * av + l2 * bv + l3 * cv;
-      const ex = Math.max(0, Math.min(ew - 1, Math.round(u * 2)));
-      const ey = Math.max(0, Math.min(eh - 1, Math.round(v * 2)));
+      const ex = Math.max(0, Math.min(ew - 1, Math.round(u * factor)));
+      const ey = Math.max(0, Math.min(eh - 1, Math.round(v * factor)));
       const sp = (ey * ew + ex) * 4;
       if (epxData[sp + 3] === 0) continue;
       const dp = dstIdx * 4;
@@ -1002,7 +1003,7 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames) {
   const dstPins = computeAnimatedPins(rig, fx, frameIdx, totalFrames);
   const out = new Uint8ClampedArray(w * h * 4);
   const zBuf = new Int8Array(w * h).fill(-10);
-  const ew = epx.w, eh = epx.h, edata = epx.data;
+  const ew = epx.w, eh = epx.h, edata = epx.data, efactor = epx.factor || 2;
 
   // Depth priority by dominant pin: far legs (fr/bl) behind torso/head, near legs (fl/br) in front!
   const pinDepth = new Int8Array(pins.length);
@@ -1016,46 +1017,57 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames) {
     else pinDepth[i] = 5; // near legs (fl, br)
   }
 
-  // Forward-map every vertex in the padded sprite bbox using precomputed geodesic weights
+  // Forward-map mesh vertices (step=2 on large native sprites for instant speed while sampling 100% full-res pixels)
+  const step = Math.max(w, h) > 96 ? 2 : 1;
   const vxArr = new Float32Array((w + 1) * (h + 1));
   const vyArr = new Float32Array((w + 1) * (h + 1));
   const y0 = Math.max(0, bbox.minY), y1 = Math.min(h - 1, bbox.maxY);
   const x0 = Math.max(0, bbox.minX), x1 = Math.min(w - 1, bbox.maxX);
 
-  for (let y = y0; y <= y1 + 1; y++) {
-    const sy = Math.min(h - 1, y);
-    for (let x = x0; x <= x1 + 1; x++) {
-      const sx = Math.min(w - 1, x);
+  for (let y = y0; y <= y1 + step; y += step) {
+    const cy = Math.min(h, y);
+    const sy = Math.min(h - 1, cy);
+    for (let x = x0; x <= x1 + step; x += step) {
+      const cx = Math.min(w, x);
+      const sx = Math.min(w - 1, cx);
       const cellIdx = sy * w + sx;
-      const p = evalRigidMlsForward(x, y, pins, dstPins, geo.weights, cellIdx * geo.numPins);
-      const vi = y * (w + 1) + x;
+      const p = evalRigidMlsForward(cx, cy, pins, dstPins, geo.weights, cellIdx * geo.numPins);
+      const vi = cy * (w + 1) + cx;
       vxArr[vi] = p.x;
       vyArr[vi] = p.y;
     }
   }
 
-  // Rasterize each opaque rest cell as a 2-triangle quad onto destination grid
-  for (let y = y0; y <= y1; y++) {
-    for (let x = x0; x <= x1; x++) {
-      const cellIdx = y * w + x;
-      if (grid[cellIdx * 4 + 3] === 0) continue;
-      const depth = pinDepth[geo.domPin[cellIdx]];
+  for (let y = y0; y <= y1; y += step) {
+    const yNext = Math.min(h, y + step);
+    for (let x = x0; x <= x1; x += step) {
+      const xNext = Math.min(w, x + step);
+      let hasOpaque = false;
+      let sampleIdx = y * w + x;
+      for (let ty = y; ty < yNext && !hasOpaque; ty++) {
+        for (let tx = x; tx < xNext; tx++) {
+          const ci = ty * w + tx;
+          if (grid[ci * 4 + 3] > 0) { hasOpaque = true; sampleIdx = ci; break; }
+        }
+      }
+      if (!hasOpaque) continue;
+      const depth = pinDepth[geo.domPin[sampleIdx]];
       const i00 = y * (w + 1) + x;
-      const i10 = i00 + 1;
-      const i01 = i00 + (w + 1);
-      const i11 = i01 + 1;
+      const i10 = y * (w + 1) + xNext;
+      const i01 = yNext * (w + 1) + x;
+      const i11 = yNext * (w + 1) + xNext;
       rasterizeTriEpx(
-        out, zBuf, w, h, edata, ew, eh,
+        out, zBuf, w, h, edata, ew, eh, efactor,
         vxArr[i00], vyArr[i00], x, y,
-        vxArr[i10], vyArr[i10], x + 1, y,
-        vxArr[i11], vyArr[i11], x + 1, y + 1,
+        vxArr[i10], vyArr[i10], xNext, y,
+        vxArr[i11], vyArr[i11], xNext, yNext,
         depth
       );
       rasterizeTriEpx(
-        out, zBuf, w, h, edata, ew, eh,
+        out, zBuf, w, h, edata, ew, eh, efactor,
         vxArr[i00], vyArr[i00], x, y,
-        vxArr[i11], vyArr[i11], x + 1, y + 1,
-        vxArr[i01], vyArr[i01], x, y + 1,
+        vxArr[i11], vyArr[i11], xNext, yNext,
+        vxArr[i01], vyArr[i01], x, yNext,
         depth
       );
     }
@@ -1088,7 +1100,7 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames) {
   }
 
   const lockEl = typeof document !== "undefined" ? document.getElementById("gif-outline-lock") : null;
-  if (!lockEl || lockEl.checked) {
+  if ((!lockEl || lockEl.checked) && !rig.isHiResNative) {
     applyCrispOutlineLock(finalOut, w, h, rig.inkColor || [20, 22, 28]);
   }
   return finalOut;
