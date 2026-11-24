@@ -1423,6 +1423,28 @@ impl StudioApp {
                     self.costume_dirty = true;
                     self.toasts.info("Cleaned grey fringe & floating specks");
                 }
+                if ui
+                    .button("Repair 1px Outline")
+                    .on_hover_text("Repair broken 1px dark silhouette outlines on exposed bright edges")
+                    .clicked()
+                    && let Some(cur) = self.costume_frames.get(self.costume_selected).cloned()
+                {
+                    self.push_costume_undo();
+                    self.costume_frames[self.costume_selected] = diypets::pixel_core::repair_silhouette_outline(&cur);
+                    self.costume_dirty = true;
+                    self.toasts.info("Repaired 1px silhouette outline");
+                }
+                if ui
+                    .button("Align All Feet")
+                    .on_hover_text("Lock all costume frames to a uniform bottom foot baseline (zero walk jitter)")
+                    .clicked()
+                    && self.costume_frames.len() > 1
+                {
+                    self.push_costume_undo();
+                    self.costume_frames = diypets::pixel_core::align_foot_baseline(&self.costume_frames);
+                    self.costume_dirty = true;
+                    self.toasts.info("Aligned all frames to shared foot baseline");
+                }
             });
         ui.add_space(4.0);
 

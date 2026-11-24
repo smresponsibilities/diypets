@@ -450,6 +450,102 @@ pub fn clean_fringe_and_specks(img: &RgbaImage) -> RgbaImage {
     out
 }
 
+/// Repair broken 1px dark silhouette outlines on bright exposed edge pixels using the sprite's
+/// own darkest boundary ink color (prevents outline erosion after rotation, scaling, or rigging).
+pub fn repair_silhouette_outline(img: &RgbaImage) -> RgbaImage {
+    let (w, h) = img.dimensions();
+    let mut out = img.clone();
+    if w < 3 || h < 3 {
+        return out;
+    }
+
+    // Detect the sprite's darkest exterior boundary ink color
+    let mut ink = [20u8, 22, 28];
+    let mut best_lum = 95.0f32;
+    for y in 1..(h - 1) {
+        for x in 1..(w - 1) {
+            let p = img.get_pixel(x, y);
+            if p[3] == 0 {
+                continue;
+            }
+            let touches_empty = img.get_pixel(x - 1, y)[3] == 0
+                || img.get_pixel(x + 1, y)[3] == 0
+                || img.get_pixel(x, y - 1)[3] == 0
+                || img.get_pixel(x, y + 1)[3] == 0;
+            if touches_empty {
+                let lum = p[0] as f32 * 0.299 + p[1] as f32 * 0.587 + p[2] as f32 * 0.114;
+                if lum < best_lum {
+                    best_lum = lum;
+                    ink = [p[0], p[1], p[2]];
+                }
+            }
+        }
+    }
+
+    for y in 1..(h - 1) {
+        for x in 1..(w - 1) {
+            if img.get_pixel(x, y)[3] > 0 {
+                continue;
+            }
+            let nbrs = [
+                img.get_pixel(x - 1, y),
+                img.get_pixel(x + 1, y),
+                img.get_pixel(x, y - 1),
+                img.get_pixel(x, y + 1),
+            ];
+            let has_bright_neighbor = nbrs.iter().any(|p| {
+                p[3] > 0
+                    && (p[0] as f32 * 0.299 + p[1] as f32 * 0.587 + p[2] as f32 * 0.114) >= 125.0
+            });
+            if has_bright_neighbor {
+                out.put_pixel(x, y, Rgba([ink[0], ink[1], ink[2], 255]));
+            }
+        }
+    }
+    out
+}
+
+/// Align a sequence of sprite frames to a single shared bottom foot baseline so walk cycles
+/// never vertically jitter when stepping.
+pub fn align_foot_baseline(frames: &[RgbaImage]) -> Vec<RgbaImage> {
+    let mut foot_ys = Vec::with_capacity(frames.len());
+    let mut target_foot = 0u32;
+
+    for fr in frames {
+        let (w, h) = fr.dimensions();
+        let mut fy = 0u32;
+        'outer: for y in (0..h).rev() {
+            for x in 0..w {
+                if fr.get_pixel(x, y)[3] > 24 {
+                    fy = y;
+                    break 'outer;
+                }
+            }
+        }
+        foot_ys.push(fy);
+        target_foot = target_foot.max(fy);
+    }
+
+    let mut out = Vec::with_capacity(frames.len());
+    for i in 0..frames.len() {
+        let fr = &frames[i];
+        let (w, h) = fr.dimensions();
+        let shift = target_foot.saturating_sub(foot_ys[i]);
+        if shift == 0 || shift >= h / 2 {
+            out.push(fr.clone());
+            continue;
+        }
+        let mut shifted = RgbaImage::new(w, h);
+        for y in 0..(h - shift) {
+            for x in 0..w {
+                shifted.put_pixel(x, y + shift, *fr.get_pixel(x, y));
+            }
+        }
+        out.push(shifted);
+    }
+    out
+}
+
 #[cfg(test)]
 mod oklab_adversarial_tests {
     use super::*;
@@ -504,5 +600,30 @@ mod oklab_adversarial_tests {
         assert_eq!(cleaned.get_pixel(1, 1)[3], 0);
         assert_eq!(cleaned.get_pixel(7, 12)[3], 0);
         assert_eq!(cleaned.get_pixel(16, 16)[3], 255);
+    }
+
+    #[test]
+    fn outline_repair_and_foot_baseline_work_cleanly() {
+        let mut a = RgbaImage::new(16, 16);
+        for y in 4..10 {
+            for x in 4..10 {
+                a.put_pixel(x, y, Rgba([245, 245, 245, 255]));
+            }
+        }
+        let outlined = repair_silhouette_outline(&a);
+        // Pixel right outside bright square must now be opaque dark ink
+        assert_eq!(outlined.get_pixel(3, 6)[3], 255);
+        assert!(outlined.get_pixel(3, 6)[0] < 40);
+
+        let mut b = RgbaImage::new(16, 16);
+        for y in 6..14 {
+            for x in 4..10 {
+                b.put_pixel(x, y, Rgba([245, 245, 245, 255]));
+            }
+        }
+        let aligned = align_foot_baseline(&[a, b]);
+        assert_eq!(aligned.len(), 2);
+        // Frame 0 should have shifted down by 4px so its bottom matches Frame 1 (y = 13)
+        assert_eq!(aligned[0].get_pixel(6, 13)[3], 255);
     }
 }

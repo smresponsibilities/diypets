@@ -364,6 +364,8 @@
     display: flex; align-items: center; justify-content: center; overflow: hidden;
   }
   .gif-preview-stage canvas { width: 160px; height: 160px; image-rendering: pixelated; image-rendering: crisp-edges; }
+  .gif-check-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 4px; border: 1px solid var(--border); background: #0d1117; font-size: 11px; letter-spacing: 0.4px; cursor: pointer; user-select: none; }
+  .gif-check-chip input[type="checkbox"] { width: 14px; height: 14px; margin: 0; accent-color: #f59e0b; }
   .gif-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   @media (max-width: 640px) { .gif-maker-grid { grid-template-columns: 1fr; } }
 
@@ -583,8 +585,13 @@
                 <option value="blob">Blob</option>
               </select>
             </label>
-            <label class="slider-chip"><input id="gif-clean-bg" type="checkbox" checked onchange="refreshCleanedCustomImg()" /> CLEAN FRINGE</label>
-            <label class="slider-chip"><input id="gif-show-rig" type="checkbox" /> EDIT PINS (DRAG)</label>
+            <label class="gif-check-chip"><input id="gif-clean-bg" type="checkbox" checked onchange="refreshCleanedCustomImg()" /> CLEAN FRINGE</label>
+            <label class="gif-check-chip"><input id="gif-outline-lock" type="checkbox" checked /> 1PX OUTLINE LOCK</label>
+            <label class="gif-check-chip"><input id="gif-show-rig" type="checkbox" /> EDIT PINS</label>
+            <button class="ctrl-btn" id="gif-play-btn" onclick="toggleGifPlay()" style="padding:4px 8px;">PAUSE</button>
+            <button class="ctrl-btn" onclick="stepGifFrame(-1)" title="Previous frame" style="padding:4px 8px;">&lt;</button>
+            <button class="ctrl-btn" onclick="stepGifFrame(1)" title="Next frame" style="padding:4px 8px;">&gt;</button>
+            <button class="ctrl-btn" onclick="resetGifPins()" title="Reset dragged pins" style="padding:4px 8px;">RESET PINS</button>
           </div>
           <div class="gif-controls">
             <input id="gif-caption" class="ctrl-input" type="text" value="Highland Cow" maxlength="18" placeholder="Card label" style="width:120px;" />
@@ -1271,7 +1278,7 @@ function loop(now) {
 requestAnimationFrame(loop);
 
 </script>
-<script src="gif_maker.js?v=6">
+<script src="gif_maker.js?v=8">
 // Auto-sync displayed version from GitHub Releases API (cached per session, fallback v0.4.1)
 (function syncLatestVersion() {
   const applyVer = (tag) => {

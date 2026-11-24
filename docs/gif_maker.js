@@ -8,6 +8,7 @@ let gifCustomName = "";
 let gifPreviewTick = 0;
 let gifPreviewTimer = null;
 let gifDragPinIdx = -1;
+let gifPaused = false;
 let gifLastCanvasGeom = null;
 
 function isNeutralGrey(r, g, b) {
@@ -242,10 +243,40 @@ function extractPaddedNativeGrid(rgba, w, h) {
   const outH = nh + padTop + padBot;
   const grid = new Uint8ClampedArray(outW * outH * 4);
 
+  // Subpixel Grid Phase-Lock (1D edge-energy autocorrelation):
+  // Find (phaseX, phaseY) maximizing color gradients at cell boundaries so samples land dead-center!
+  let phaseX = 0.5, phaseY = 0.5;
+  if (scaleF >= 2) {
+    const steps = Math.min(8, Math.max(2, Math.round(scaleF)));
+    let bestEx = -1, bestEy = -1;
+    for (let s = 0; s < steps; s++) {
+      const off = s / steps;
+      let ex = 0, ey = 0;
+      for (let x = 1; x < nw; x++) {
+        const bx = Math.min(w - 1, Math.max(1, bb.minX + Math.floor((x + off) * scaleF)));
+        for (let y = 0; y < nh; y += 2) {
+          const by = Math.min(h - 1, bb.minY + Math.floor((y + 0.5) * scaleF));
+          const p0 = (by * w + bx - 1) * 4, p1 = (by * w + bx) * 4;
+          ex += Math.abs(rgba[p0] - rgba[p1]) + Math.abs(rgba[p0 + 1] - rgba[p1 + 1]) + Math.abs(rgba[p0 + 2] - rgba[p1 + 2]) + Math.abs(rgba[p0 + 3] - rgba[p1 + 3]);
+        }
+      }
+      if (s === 0) { bestEx = ex * 1.12; phaseX = 0.5; } else if (ex > bestEx) { bestEx = ex; phaseX = (off + 0.5) % 1.0; }
+      for (let y = 1; y < nh; y++) {
+        const by = Math.min(h - 1, Math.max(1, bb.minY + Math.floor((y + off) * scaleF)));
+        for (let x = 0; x < nw; x += 2) {
+          const bx = Math.min(w - 1, bb.minX + Math.floor((x + 0.5) * scaleF));
+          const p0 = ((by - 1) * w + bx) * 4, p1 = (by * w + bx) * 4;
+          ey += Math.abs(rgba[p0] - rgba[p1]) + Math.abs(rgba[p0 + 1] - rgba[p1 + 1]) + Math.abs(rgba[p0 + 2] - rgba[p1 + 2]) + Math.abs(rgba[p0 + 3] - rgba[p1 + 3]);
+        }
+      }
+      if (s === 0) { bestEy = ey * 1.12; phaseY = 0.5; } else if (ey > bestEy) { bestEy = ey; phaseY = (off + 0.5) % 1.0; }
+    }
+  }
+
   for (let y = 0; y < nh; y++) {
-    const sy = Math.min(h - 1, bb.minY + Math.floor((y + 0.5) * scaleF));
+    const sy = Math.min(h - 1, bb.minY + Math.floor((y + phaseY) * scaleF));
     for (let x = 0; x < nw; x++) {
-      const sx = Math.min(w - 1, bb.minX + Math.floor((x + 0.5) * scaleF));
+      const sx = Math.min(w - 1, bb.minX + Math.floor((x + phaseX) * scaleF));
       const sp = (sy * w + sx) * 4;
       const dp = ((y + padTop) * outW + (x + padSide)) * 4;
       if (rgba[sp + 3] >= 128) {
@@ -407,6 +438,58 @@ function sliceSpriteSheet(rawRgba, w, h, cols, rows, cleanBg, frameSpec) {
   return { frames: tiles, cols, rows, tw, th, activeIndices: parseFrameSelection(frameSpec, tiles.length) };
 }
 
+
+function detectDarkInk(grid, w, h) {
+  let best = [20, 22, 28];
+  let bestLum = 95;
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const idx = y * w + x;
+      const p = idx * 4;
+      if (grid[p + 3] === 0) continue;
+      if (
+        grid[(idx - 1) * 4 + 3] === 0 || grid[(idx + 1) * 4 + 3] === 0 ||
+        grid[(idx - w) * 4 + 3] === 0 || grid[(idx + w) * 4 + 3] === 0
+      ) {
+        const lum = grid[p] * 0.299 + grid[p + 1] * 0.587 + grid[p + 2] * 0.114;
+        if (lum < bestLum) {
+          bestLum = lum;
+          best = [grid[p], grid[p + 1], grid[p + 2]];
+        }
+      }
+    }
+  }
+  return best;
+}
+
+// Repairs 1px outline gaps opened by Rigid MLS warp without thickening existing dark outlines
+function applyCrispOutlineLock(rgba, w, h, ink) {
+  const snap = new Uint8ClampedArray(rgba);
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const idx = y * w + x;
+      const p = idx * 4;
+      if (snap[p + 3] > 0) continue;
+      // Check if an empty pixel borders an exposed BRIGHT interior pixel (lum >= 125)
+      let brightN = 0;
+      const nbrs = [idx - 1, idx + 1, idx - w, idx + w];
+      for (let k = 0; k < 4; k++) {
+        const np = nbrs[k] * 4;
+        if (snap[np + 3] > 0) {
+          const lum = snap[np] * 0.299 + snap[np + 1] * 0.587 + snap[np + 2] * 0.114;
+          if (lum >= 125) brightN++;
+        }
+      }
+      if (brightN >= 1) {
+        rgba[p] = ink[0];
+        rgba[p + 1] = ink[1];
+        rgba[p + 2] = ink[2];
+        rgba[p + 3] = 255;
+      }
+    }
+  }
+}
+
 function findColumnMassCenter(grid, w, x0, x1, y0, y1, fallbackX, fallbackY) {
   let sx = 0, sy = 0, cnt = 0;
   const h = grid.length / (4 * w);
@@ -423,6 +506,7 @@ function buildAutoRig(rawRgba, rawW, rawH, cleanBg, modeHint) {
   const { grid, w, h, nativeW, nativeH } = extractPaddedNativeGrid(cleaned, rawW, rawH);
   const epx = upscale2xEpx(grid, w, h);
   const bbox = findBbox(grid, w, h);
+  const inkColor = detectDarkInk(grid, w, h);
 
   const midX = (bbox.minX + bbox.maxX) * 0.5;
   const topCut = bbox.minY + Math.floor(bbox.bh * 0.45);
@@ -452,7 +536,7 @@ function buildAutoRig(rawRgba, rawW, rawH, cleanBg, modeHint) {
 
   const scanTop = bbox.minY + Math.floor(bbox.bh * 0.58);
   let maxRuns = 1, highestGapY = -1;
-  for (let y = bbox.maxY - 1; y >= scanTop; y--) {
+  for (let y = bbox.maxY; y >= scanTop; y--) {
     let runs = 0, runLen = 0;
     for (let x = bbox.minX; x <= bbox.maxX; x++) {
       if (grid[(y * w + x) * 4 + 3] > 0) { runLen++; }
@@ -463,10 +547,25 @@ function buildAutoRig(rawRgba, rawW, rawH, cleanBg, modeHint) {
     if (runs >= 2) highestGapY = y;
   }
 
+  // Belly-arch fallback: middle-third bottom sits above left/right paw bottoms
+  let leftPawY = bbox.minY, rightPawY = bbox.minY, centerMinBottom = bbox.maxY;
+  const q1 = bbox.minX + Math.floor(bbox.bw * 0.34);
+  const q3 = bbox.minX + Math.floor(bbox.bw * 0.66);
+  for (let x = bbox.minX; x <= bbox.maxX; x++) {
+    let colMax = bbox.minY;
+    for (let y = bbox.maxY; y >= bbox.minY; y--) {
+      if (grid[(y * w + x) * 4 + 3] > 0) { colMax = y; break; }
+    }
+    if (x < q1 && colMax > leftPawY) leftPawY = colMax;
+    else if (x > q3 && colMax > rightPawY) rightPawY = colMax;
+    else if (x >= q1 && x <= q3 && colMax < centerMinBottom) centerMinBottom = colMax;
+  }
+  const hasBellyArch = Math.min(leftPawY, rightPawY) - centerMinBottom >= 1;
+
   let bodyType = modeHint && modeHint !== "auto" ? modeHint : "quadruped";
   if (!modeHint || modeHint === "auto") {
-    if (maxRuns >= 3 || (maxRuns >= 2 && lowerAspect >= 1.12)) bodyType = "quadruped";
-    else if (maxRuns >= 2) bodyType = "biped";
+    if (maxRuns >= 3 || ((maxRuns >= 2 || hasBellyArch) && lowerAspect >= 1.12)) bodyType = "quadruped";
+    else if (maxRuns >= 2 || hasBellyArch) bodyType = "biped";
     else bodyType = "blob";
   }
 
@@ -537,7 +636,8 @@ function buildAutoRig(rawRgba, rawW, rawH, cleanBg, modeHint) {
     );
   }
 
-  return { grid, epx, w, h, nativeW, nativeH, bbox, hipY, facesLeft, bodyType, maxRuns, pins };
+  const geo = computeGeodesicSkinning(grid, w, h, pins);
+  return { grid, epx, w, h, nativeW, nativeH, bbox, hipY, facesLeft, bodyType, maxRuns, pins, inkColor, geo };
 }
 
 // FIXED FORWARD GAIT PHYSICS:
@@ -617,6 +717,165 @@ function computeAnimatedPins(rig, fx, frameIdx, totalFrames) {
   });
 }
 
+
+// Precompute 8-connected Interior Geodesic Weights (Jacobson 2011 / Schaefer 2006)
+// Stepping through opaque silhouette costs 1.0 (or 1.414 diag); crossing transparent air costs 12.0x!
+// This mathematically isolates BL/BR and FL/FR legs across transparent gaps (zero paw stretching).
+function computeGeodesicSkinning(grid, w, h, pins) {
+  const n = w * h;
+  const numPins = pins.length;
+  const weights = new Float32Array(n * numPins);
+  const domPin = new Uint8Array(n);
+  const dists = new Float32Array(n * numPins);
+
+  // Simple binary min-heap for fast Dijkstra on native pixel grid (< 2ms total)
+  const heapIdx = new Int32Array(n * 4);
+  const heapDist = new Float32Array(n * 4);
+
+  const dx8 = [-1, 1, 0, 0, -1, 1, -1, 1];
+  const dy8 = [0, 0, -1, 1, -1, -1, 1, 1];
+  const dc8 = [1.0, 1.0, 1.0, 1.0, 1.4142, 1.4142, 1.4142, 1.4142];
+
+  for (let pi = 0; pi < numPins; pi++) {
+    const base = pi * n;
+    for (let i = 0; i < n; i++) dists[base + i] = 1e9;
+    const sx = Math.max(0, Math.min(w - 1, Math.round(pins[pi].x)));
+    const sy = Math.max(0, Math.min(h - 1, Math.round(pins[pi].y)));
+    const startIdx = sy * w + sx;
+    dists[base + startIdx] = 0;
+    let hSize = 0;
+    const push = (idx, d) => {
+      let cur = hSize++;
+      heapIdx[cur] = idx;
+      heapDist[cur] = d;
+      while (cur > 0) {
+        const par = (cur - 1) >> 1;
+        if (heapDist[par] <= heapDist[cur]) break;
+        const ti = heapIdx[par], td = heapDist[par];
+        heapIdx[par] = heapIdx[cur]; heapDist[par] = heapDist[cur];
+        heapIdx[cur] = ti; heapDist[cur] = td;
+        cur = par;
+      }
+    };
+    const pop = () => {
+      const top = heapIdx[0];
+      hSize--;
+      if (hSize > 0) {
+        heapIdx[0] = heapIdx[hSize];
+        heapDist[0] = heapDist[hSize];
+        let cur = 0;
+        while (true) {
+          const l = cur * 2 + 1, r = l + 1;
+          let sm = cur;
+          if (l < hSize && heapDist[l] < heapDist[sm]) sm = l;
+          if (r < hSize && heapDist[r] < heapDist[sm]) sm = r;
+          if (sm === cur) break;
+          const ti = heapIdx[cur], td = heapDist[cur];
+          heapIdx[cur] = heapIdx[sm]; heapDist[cur] = heapDist[sm];
+          heapIdx[sm] = ti; heapDist[sm] = td;
+          cur = sm;
+        }
+      }
+      return top;
+    };
+
+    push(startIdx, 0);
+    while (hSize > 0) {
+      const u = pop();
+      const du = dists[base + u];
+      const ux = u % w, uy = (u / w) | 0;
+      for (let k = 0; k < 8; k++) {
+        const nx = ux + dx8[k], ny = uy + dy8[k];
+        if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+        const v = ny * w + nx;
+        const isOpaque = grid[v * 4 + 3] > 0;
+        const stepCost = dc8[k] * (isOpaque ? 1.0 : 12.0);
+        const nd = du + stepCost;
+        if (nd < dists[base + v]) {
+          dists[base + v] = nd;
+          push(v, nd);
+        }
+      }
+    }
+  }
+
+  for (let i = 0; i < n; i++) {
+    let wSum = 0, bestW = -1, bestP = 0;
+    for (let pi = 0; pi < numPins; pi++) {
+      const d = dists[pi * n + i];
+      const wi = 1.0 / Math.pow(d + 1.25, 3.5);
+      weights[i * numPins + pi] = wi;
+      wSum += wi;
+      if (wi > bestW) { bestW = wi; bestP = pi; }
+    }
+    const inv = wSum > 0 ? (1.0 / wSum) : (1.0 / numPins);
+    for (let pi = 0; pi < numPins; pi++) weights[i * numPins + pi] *= inv;
+    domPin[i] = bestP;
+  }
+
+  return { weights, domPin, numPins };
+}
+
+function evalRigidMlsForward(vx, vy, srcPins, dstPins, wRow, wOffset) {
+  const n = srcPins.length;
+  let pxStar = 0, pyStar = 0, qxStar = 0, qyStar = 0;
+  for (let i = 0; i < n; i++) {
+    const wi = wRow[wOffset + i];
+    pxStar += wi * srcPins[i].x; pyStar += wi * srcPins[i].y;
+    qxStar += wi * dstPins[i].x; qyStar += wi * dstPins[i].y;
+  }
+  const dvx = vx - pxStar, dvy = vy - pyStar;
+  const dvLen = Math.hypot(dvx, dvy);
+  if (dvLen < 1e-6) return { x: qxStar, y: qyStar };
+
+  let frx = 0, fry = 0;
+  for (let i = 0; i < n; i++) {
+    const wi = wRow[wOffset + i];
+    const phx = srcPins[i].x - pxStar, phy = srcPins[i].y - pyStar;
+    const qhx = dstPins[i].x - qxStar, qhy = dstPins[i].y - qyStar;
+    const dot = phx * dvx + phy * dvy;
+    const cross = phx * dvy - phy * dvx;
+    frx += wi * (qhx * dot - qhy * cross);
+    fry += wi * (qhy * dot + qhx * cross);
+  }
+  const frLen = Math.hypot(frx, fry);
+  if (frLen < 1e-6) return { x: qxStar, y: qyStar };
+  const scale = dvLen / frLen;
+  return { x: qxStar + frx * scale, y: qyStar + fry * scale };
+}
+
+function rasterizeTriEpx(out, zBuf, w, h, epxData, ew, eh, ax, ay, au, av, bx, by, bu, bv, cx, cy, cu, cv, depth) {
+  const minX = Math.max(0, Math.floor(Math.min(ax, bx, cx)));
+  const maxX = Math.min(w - 1, Math.ceil(Math.max(ax, bx, cx)));
+  const minY = Math.max(0, Math.floor(Math.min(ay, by, cy)));
+  const maxY = Math.min(h - 1, Math.ceil(Math.max(ay, by, cy)));
+  const denom = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy);
+  if (Math.abs(denom) < 1e-5) return;
+  const invD = 1.0 / denom;
+
+  for (let py = minY; py <= maxY; py++) {
+    const cyP = py + 0.5;
+    for (let px = minX; px <= maxX; px++) {
+      const cxP = px + 0.5;
+      const l1 = ((by - cy) * (cxP - cx) + (cx - bx) * (cyP - cy)) * invD;
+      const l2 = ((cy - ay) * (cxP - cx) + (ax - cx) * (cyP - cy)) * invD;
+      const l3 = 1.0 - l1 - l2;
+      if (l1 < -0.02 || l2 < -0.02 || l3 < -0.02) continue;
+      const dstIdx = py * w + px;
+      if (depth < zBuf[dstIdx]) continue;
+      const u = l1 * au + l2 * bu + l3 * cu;
+      const v = l1 * av + l2 * bv + l3 * cv;
+      const ex = Math.max(0, Math.min(ew - 1, Math.round(u * 2)));
+      const ey = Math.max(0, Math.min(eh - 1, Math.round(v * 2)));
+      const sp = (ey * ew + ex) * 4;
+      if (epxData[sp + 3] === 0) continue;
+      const dp = dstIdx * 4;
+      out[dp] = epxData[sp]; out[dp + 1] = epxData[sp + 1]; out[dp + 2] = epxData[sp + 2]; out[dp + 3] = 255;
+      zBuf[dstIdx] = depth;
+    }
+  }
+}
+
 function evalRigidMlsInverse(vx, vy, srcPins, dstPins) {
   const n = dstPins.length;
   let wSum = 0, qxStar = 0, qyStar = 0, pxStar = 0, pyStar = 0;
@@ -653,34 +912,73 @@ function evalRigidMlsInverse(vx, vy, srcPins, dstPins) {
   return { x: pxStar + frx * scale, y: pyStar + fry * scale };
 }
 
-// Sample from the 2x EPX upscaled buffer (RotSprite technique) for crisp, unbroken 1px outlines!
+// Geodesic-Weighted Rigid MLS + Depth-Sorted 2x EPX Quad Rasterizer
+// Zero rubber stretching across leg gaps, zero 1px seam holes, true far/near leg depth ordering!
 function renderRiggedFrame(rig, fx, frameIdx, totalFrames) {
-  const { epx, w, h, bbox, pins } = rig;
+  const { grid, epx, w, h, bbox, pins, geo } = rig;
   const dstPins = computeAnimatedPins(rig, fx, frameIdx, totalFrames);
   const out = new Uint8ClampedArray(w * h * 4);
+  const zBuf = new Int8Array(w * h).fill(-10);
   const ew = epx.w, eh = epx.h, edata = epx.data;
 
-  const padX = Math.max(6, Math.ceil(bbox.bw * 0.16));
-  const padTop = Math.max(6, Math.ceil(bbox.bh * 0.26));
-  const y0 = Math.max(0, bbox.minY - padTop);
-  const y1 = Math.min(h - 1, bbox.maxY + 2);
-  const x0 = Math.max(0, bbox.minX - padX);
-  const x1 = Math.min(w - 1, bbox.maxX + padX);
+  // Depth priority by dominant pin: far legs (fr/bl) behind torso/head, near legs (fl/br) in front!
+  const pinDepth = new Int8Array(pins.length);
+  for (let i = 0; i < pins.length; i++) {
+    const id = pins[i].id;
+    if (id === "fr" || id === "bl") pinDepth[i] = 1;
+    else if (id === "tail") pinDepth[i] = 2;
+    else if (id === "chest" || id === "pelvis") pinDepth[i] = 3;
+    else if (id === "head") pinDepth[i] = 4;
+    else pinDepth[i] = 5; // near legs (fl, br)
+  }
 
-  for (let y = y0; y <= y1; y++) {
-    for (let x = x0; x <= x1; x++) {
-      const s = evalRigidMlsInverse(x, y, pins, dstPins);
-      // Sample center of corresponding 2x EPX pixel block
-      const ex = Math.round(s.x * 2);
-      const ey = Math.round(s.y * 2);
-      if (ex < 0 || ex >= ew || ey < 0 || ey >= eh) continue;
-      const sp = (ey * ew + ex) * 4;
-      if (edata[sp + 3] === 0) continue;
-      const dp = (y * w + x) * 4;
-      out[dp] = edata[sp]; out[dp + 1] = edata[sp + 1]; out[dp + 2] = edata[sp + 2]; out[dp + 3] = 255;
+  // Forward-map every vertex in the padded sprite bbox using precomputed geodesic weights
+  const vxArr = new Float32Array((w + 1) * (h + 1));
+  const vyArr = new Float32Array((w + 1) * (h + 1));
+  const y0 = Math.max(0, bbox.minY), y1 = Math.min(h - 1, bbox.maxY);
+  const x0 = Math.max(0, bbox.minX), x1 = Math.min(w - 1, bbox.maxX);
+
+  for (let y = y0; y <= y1 + 1; y++) {
+    const sy = Math.min(h - 1, y);
+    for (let x = x0; x <= x1 + 1; x++) {
+      const sx = Math.min(w - 1, x);
+      const cellIdx = sy * w + sx;
+      const p = evalRigidMlsForward(x, y, pins, dstPins, geo.weights, cellIdx * geo.numPins);
+      const vi = y * (w + 1) + x;
+      vxArr[vi] = p.x;
+      vyArr[vi] = p.y;
     }
   }
 
+  // Rasterize each opaque rest cell as a 2-triangle quad onto destination grid
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      const cellIdx = y * w + x;
+      if (grid[cellIdx * 4 + 3] === 0) continue;
+      const depth = pinDepth[geo.domPin[cellIdx]];
+      const i00 = y * (w + 1) + x;
+      const i10 = i00 + 1;
+      const i01 = i00 + (w + 1);
+      const i11 = i01 + 1;
+      rasterizeTriEpx(
+        out, zBuf, w, h, edata, ew, eh,
+        vxArr[i00], vyArr[i00], x, y,
+        vxArr[i10], vyArr[i10], x + 1, y,
+        vxArr[i11], vyArr[i11], x + 1, y + 1,
+        depth
+      );
+      rasterizeTriEpx(
+        out, zBuf, w, h, edata, ew, eh,
+        vxArr[i00], vyArr[i00], x, y,
+        vxArr[i11], vyArr[i11], x + 1, y + 1,
+        vxArr[i01], vyArr[i01], x, y + 1,
+        depth
+      );
+    }
+  }
+
+  // Strict ground-baseline alignment for grounded cycles
+  let finalOut = out;
   if (fx === "walk" || fx === "breathe" || fx === "wave") {
     let curFoot = -1;
     for (let y = h - 1; y >= 0 && curFoot === -1; y--) {
@@ -700,11 +998,40 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames) {
             aligned[dp] = out[sp]; aligned[dp + 1] = out[sp + 1]; aligned[dp + 2] = out[sp + 2]; aligned[dp + 3] = out[sp + 3];
           }
         }
-        return aligned;
+        finalOut = aligned;
       }
     }
   }
-  return out;
+
+  const lockEl = typeof document !== "undefined" ? document.getElementById("gif-outline-lock") : null;
+  if (!lockEl || lockEl.checked) {
+    applyCrispOutlineLock(finalOut, w, h, rig.inkColor || [20, 22, 28]);
+  }
+  return finalOut;
+}
+
+function toggleGifPlay() {
+  gifPaused = !gifPaused;
+  const b = document.getElementById("gif-play-btn");
+  if (b) b.textContent = gifPaused ? "PLAY" : "PAUSE";
+}
+
+function stepGifFrame(delta) {
+  gifPaused = true;
+  const b = document.getElementById("gif-play-btn");
+  if (b) b.textContent = "PLAY";
+  const prevC = document.getElementById("gif-preview-canvas");
+  if (!prevC) return;
+  const fx = document.getElementById("gif-fx-select").value;
+  const total = getGifTotalFrames(fx);
+  gifPreviewTick = (gifPreviewTick + delta + total) % total;
+  drawGifMakerFrame(prevC.getContext("2d"), prevC.width, prevC.height, gifPreviewTick, total, true);
+}
+
+function resetGifPins() {
+  if (!gifCustomRawImg) return;
+  refreshCleanedCustomImg();
+  if (typeof showToast === "function") showToast("Reset skeleton pins to auto-detected defaults");
 }
 
 function setSheetControlsVisible(show) {
@@ -1201,7 +1528,7 @@ function updateGifPreviewFps() {
     if (!prevC) return;
     const fx = document.getElementById("gif-fx-select").value;
     const total = getGifTotalFrames(fx);
-    gifPreviewTick = (gifPreviewTick + 1) % total;
+    if (!gifPaused) gifPreviewTick = (gifPreviewTick + 1) % total;
     drawGifMakerFrame(prevC.getContext("2d"), prevC.width, prevC.height, gifPreviewTick, total, true);
   }, Math.round(1000 / fps));
 }
@@ -1245,7 +1572,7 @@ if (typeof document !== "undefined") {
       gifCustomRig.pins[gifDragPinIdx].y = Math.max(0, Math.min(gifCustomRig.h - 1, (pt.y - g.oy) * (g.sh / g.dh)));
       drawGifMakerFrame(prevC.getContext("2d"), prevC.width, prevC.height, 0, 8, true);
     });
-    const endDrag = () => { gifDragPinIdx = -1; };
+    const endDrag = () => { if (gifDragPinIdx >= 0 && gifCustomRig) { gifCustomRig.geo = computeGeodesicSkinning(gifCustomRig.grid, gifCustomRig.w, gifCustomRig.h, gifCustomRig.pins); } gifDragPinIdx = -1; };
     prevC.addEventListener("pointerup", endDrag);
     prevC.addEventListener("pointercancel", endDrag);
   }
