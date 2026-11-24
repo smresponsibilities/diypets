@@ -1346,78 +1346,252 @@ function evalRigidMlsInverse(vx, vy, srcPins, dstPins) {
 
 // Geodesic-Weighted Rigid MLS + Depth-Sorted 2x EPX Quad Rasterizer
 // Zero rubber stretching across leg gaps, zero 1px seam holes, true far/near leg depth ordering!
+// 3-Pass Layered Articulated Limb + Geodesic Torso Renderer
+// Solves opposing-leg MLS cancellation on thick-legged sprites:
+//   Pass 1 (Far Limbs: fr, bl) -> Pass 2 (Body: torso/head/tail MLS) -> Pass 3 (Near Limbs: fl, br)
+// Each limb rotates cleanly around its shoulder/hip pivot with zero cross-leg rubber stretching.
+function computeLimbGaitPose(rig, fx, frameIdx, totalFrames, ampScale) {
+  const phase = (frameIdx / Math.max(1, totalFrames)) * Math.PI * 2;
+  const dir = rig.facesLeft ? -1 : 1;
+  const legH = Math.max(8, rig.bbox.maxY - rig.hipY);
+  const poses = {};
+
+  if (fx === "walk") {
+    // Diagonal quadruped/biped gait: FL+BR in phase, FR+BL 180 deg out of phase
+    const pairs = [
+      ["fl", 0], ["br", 0],
+      ["fr", Math.PI], ["bl", Math.PI],
+    ];
+    for (const [id, off] of pairs) {
+      const p = phase + off;
+      const swing = Math.sin(p);
+      const lift = Math.max(0, Math.cos(p));
+      poses[id] = {
+        angle: -dir * swing * 0.30 * ampScale, // ~17 deg forward/back scissor
+        liftY: -lift * Math.max(2.2, legH * 0.24) * ampScale,
+        shiftX: dir * swing * Math.max(1.8, rig.bbox.bw * 0.032) * ampScale,
+      };
+    }
+  } else if (fx === "sprint" || fx === "run") {
+    // Rotary gallop: front legs reach together, hind legs drive together + wide 28-deg arc
+    const airLift = -Math.max(0, Math.sin(phase * 2)) * Math.max(2.0, rig.bbox.bh * 0.055) * ampScale;
+    const specs = [
+      ["fl", 0.0], ["fr", 0.45],
+      ["bl", Math.PI * 0.92], ["br", Math.PI * 1.22],
+    ];
+    for (const [id, off] of specs) {
+      const p = phase + off;
+      const swing = Math.sin(p);
+      const lift = Math.max(0, Math.cos(p));
+      poses[id] = {
+        angle: -dir * swing * 0.48 * ampScale, // ~28 deg gallop extension
+        liftY: airLift - lift * Math.max(3.2, legH * 0.34) * ampScale,
+        shiftX: dir * swing * Math.max(2.8, rig.bbox.bw * 0.052) * ampScale,
+      };
+    }
+  } else if (fx === "dance") {
+    const specs = [["fl", 0], ["br", 0], ["fr", Math.PI], ["bl", Math.PI]];
+    for (const [id, off] of specs) {
+      const p = phase + off;
+      const tap = Math.max(0, Math.sin(p));
+      poses[id] = {
+        angle: dir * Math.sin(p) * 0.22 * ampScale,
+        liftY: -tap * Math.max(2.4, legH * 0.25) * ampScale,
+        shiftX: Math.sin(phase) * 1.4 * ampScale,
+      };
+    }
+  } else if (fx === "hop") {
+    const u = frameIdx / Math.max(1, totalFrames);
+    const air = (u >= 0.24 && u < 0.68) ? Math.sin(((u - 0.24) / 0.44) * Math.PI) : 0;
+    const tuck = air * 0.38 * ampScale;
+    for (const id of ["fl", "fr", "bl", "br"]) {
+      const isFront = (id === "fl" || id === "fr");
+      poses[id] = {
+        angle: (isFront ? -dir : dir) * tuck,
+        liftY: -air * Math.max(1.5, rig.bbox.bh * 0.04) * ampScale,
+        shiftX: 0,
+      };
+    }
+  }
+  return poses;
+}
+
 function renderRiggedFrame(rig, fx, frameIdx, totalFrames) {
   const { grid, epx, w, h, bbox, pins, geo } = rig;
-  const dstPins = computeAnimatedPinsWithSpring(rig, fx, frameIdx, totalFrames);
+  let ampScale = 1.0;
+  if (typeof document !== "undefined") {
+    const ampEl = document.getElementById("gif-amp");
+    if (ampEl) ampScale = Math.max(0.3, Math.min(2.0, parseFloat(ampEl.value) || 1.0));
+  }
+
+  const dstPins = computeAnimatedPinsWithSpring(rig, fx, frameIdx, totalFrames, ampScale);
   const out = new Uint8ClampedArray(w * h * 4);
   const zBuf = new Int8Array(w * h).fill(-10);
   const ew = epx.w, eh = epx.h, edata = epx.data, efactor = epx.factor || 2;
 
-  // Depth priority by dominant pin: far legs (fr/bl) behind torso/head, near legs (fl/br) in front!
   const pinDepth = new Int8Array(pins.length);
+  const pinIds = pins.map((p) => p.id);
+  const isLimbPin = new Uint8Array(pins.length);
   for (let i = 0; i < pins.length; i++) {
-    const id = pins[i].id;
-    if (id === "fr" || id === "bl") pinDepth[i] = 1;
+    const id = pinIds[i];
+    if (id === "fr" || id === "bl") { pinDepth[i] = 1; isLimbPin[i] = 1; }
     else if (id === "tail") pinDepth[i] = 2;
     else if (id === "chest" || id === "pelvis") pinDepth[i] = 3;
     else if (id === "head") pinDepth[i] = 4;
     else if (id === "wing" || id === "l_hand") pinDepth[i] = 6;
-    else pinDepth[i] = 5; // near legs (fl, br)
+    else if (id === "fl" || id === "br") { pinDepth[i] = 5; isLimbPin[i] = 2; }
+    else pinDepth[i] = 5;
   }
 
-  // Forward-map mesh vertices (step=2 on large native sprites for instant speed while sampling 100% full-res pixels)
+  const useArticulatedLimbs =
+    (rig.bodyType === "quadruped" || rig.bodyType === "biped") &&
+    (fx === "walk" || fx === "sprint" || fx === "run" || fx === "dance" || fx === "hop");
+
   const step = Math.max(w, h) > 96 ? 2 : 1;
-  const vxArr = new Float32Array((w + 1) * (h + 1));
-  const vyArr = new Float32Array((w + 1) * (h + 1));
   const y0 = Math.max(0, bbox.minY), y1 = Math.min(h - 1, bbox.maxY);
   const x0 = Math.max(0, bbox.minX), x1 = Math.min(w - 1, bbox.maxX);
 
+  // Precompute torso/body MLS vertex grid (used for body pass AND hip-socket anchor)
+  const vxBody = new Float32Array((w + 1) * (h + 1));
+  const vyBody = new Float32Array((w + 1) * (h + 1));
   for (let y = y0; y <= y1 + step; y += step) {
-    const cy = Math.min(h, y);
-    const sy = Math.min(h - 1, cy);
+    const cy = Math.min(h, y), sy = Math.min(h - 1, cy);
     for (let x = x0; x <= x1 + step; x += step) {
-      const cx = Math.min(w, x);
-      const sx = Math.min(w - 1, cx);
+      const cx = Math.min(w, x), sx = Math.min(w - 1, cx);
       const cellIdx = sy * w + sx;
       const p = evalRigidMlsForward(cx, cy, pins, dstPins, geo.weights, cellIdx * geo.numPins);
       const vi = cy * (w + 1) + cx;
-      vxArr[vi] = p.x;
-      vyArr[vi] = p.y;
+      vxBody[vi] = p.x;
+      vyBody[vi] = p.y;
     }
   }
 
-  for (let y = y0; y <= y1; y += step) {
-    const yNext = Math.min(h, y + step);
-    for (let x = x0; x <= x1; x += step) {
-      const xNext = Math.min(w, x + step);
-      let hasOpaque = false;
-      let sampleIdx = y * w + x;
-      for (let ty = y; ty < yNext && !hasOpaque; ty++) {
-        for (let tx = x; tx < xNext; tx++) {
-          const ci = ty * w + tx;
-          if (grid[ci * 4 + 3] > 0) { hasOpaque = true; sampleIdx = ci; break; }
+  if (!useArticulatedLimbs) {
+    // Non-legged archetypes (crawler, swimmer, bird, blob) or subtle FX (breathe, sleep, pet, wave)
+    for (let y = y0; y <= y1; y += step) {
+      const yNext = Math.min(h, y + step);
+      for (let x = x0; x <= x1; x += step) {
+        const xNext = Math.min(w, x + step);
+        let hasOpaque = false, sampleIdx = y * w + x;
+        for (let ty = y; ty < yNext && !hasOpaque; ty++) {
+          for (let tx = x; tx < xNext; tx++) {
+            const ci = ty * w + tx;
+            if (grid[ci * 4 + 3] > 0) { hasOpaque = true; sampleIdx = ci; break; }
+          }
+        }
+        if (!hasOpaque) continue;
+        const depth = pinDepth[geo.domPin[sampleIdx]];
+        const i00 = y * (w + 1) + x, i10 = y * (w + 1) + xNext;
+        const i01 = yNext * (w + 1) + x, i11 = yNext * (w + 1) + xNext;
+        rasterizeTriEpx(out, zBuf, w, h, edata, ew, eh, efactor, vxBody[i00], vyBody[i00], x, y, vxBody[i10], vyBody[i10], xNext, y, vxBody[i11], vyBody[i11], xNext, yNext, depth);
+        rasterizeTriEpx(out, zBuf, w, h, edata, ew, eh, efactor, vxBody[i00], vyBody[i00], x, y, vxBody[i11], vyBody[i11], xNext, yNext, vxBody[i01], vyBody[i01], x, yNext, depth);
+      }
+    }
+  } else {
+    // 3-PASS LAYERED ARTICULATED RENDERING:
+    // 1. Far Limbs (fr, bl)  2. Body (head, chest, pelvis, tail)  3. Near Limbs (fl, br)
+    const limbPoses = computeLimbGaitPose(rig, fx, frameIdx, totalFrames, ampScale);
+    const hipAnchorY = Math.max(bbox.minY + 4, Math.min(rig.hipY - 3, bbox.maxY - Math.max(6, Math.round(bbox.bh * 0.22))));
+    const legSpan = Math.max(6, bbox.maxY - hipAnchorY);
+
+    // Helper: transform a vertex belonging to a specific limb pin around its shoulder/hip socket
+    const mapLimbVertex = (vx, vy, pinIdx) => {
+      const id = pinIds[pinIdx];
+      const pose = limbPoses[id];
+      const pin = pins[pinIdx];
+      // Base torso motion at the hip socket keeps shoulder/hip 100% attached with zero tear
+      const sx = Math.max(0, Math.min(w - 1, Math.round(pin.x)));
+      const sy = Math.max(0, Math.min(h - 1, Math.round(hipAnchorY)));
+      const anchorP = evalRigidMlsForward(pin.x, hipAnchorY, pins, dstPins, geo.weights, (sy * w + sx) * geo.numPins);
+      const baseDx = anchorP.x - pin.x;
+      const baseDy = anchorP.y - hipAnchorY;
+      if (!pose) return { x: vx + baseDx, y: vy + baseDy };
+
+      const t = Math.max(0, Math.min(1, (vy - hipAnchorY) / legSpan));
+      const ang = pose.angle * (0.25 + 0.75 * t);
+      const ca = Math.cos(ang), sa = Math.sin(ang);
+      const rx = vx - pin.x, ry = vy - hipAnchorY;
+      const rotX = pin.x + rx * ca - ry * sa;
+      const rotY = hipAnchorY + rx * sa + ry * ca;
+      return {
+        x: rotX + baseDx + pose.shiftX * t,
+        y: rotY + baseDy + pose.liftY * t,
+      };
+    };
+
+    const drawLimbPass = (targetPinIdx, depth) => {
+      const vxL = new Float32Array((w + 1) * (h + 1));
+      const vyL = new Float32Array((w + 1) * (h + 1));
+      const yStart = Math.max(y0, Math.floor(hipAnchorY - step * 2));
+      for (let y = yStart; y <= y1 + step; y += step) {
+        const cy = Math.min(h, y);
+        for (let x = x0; x <= x1 + step; x += step) {
+          const cx = Math.min(w, x);
+          const p = mapLimbVertex(cx, cy, targetPinIdx);
+          const vi = cy * (w + 1) + cx;
+          vxL[vi] = p.x;
+          vyL[vi] = p.y;
         }
       }
-      if (!hasOpaque) continue;
-      const depth = pinDepth[geo.domPin[sampleIdx]];
-      const i00 = y * (w + 1) + x;
-      const i10 = y * (w + 1) + xNext;
-      const i01 = yNext * (w + 1) + x;
-      const i11 = yNext * (w + 1) + xNext;
-      rasterizeTriEpx(
-        out, zBuf, w, h, edata, ew, eh, efactor,
-        vxArr[i00], vyArr[i00], x, y,
-        vxArr[i10], vyArr[i10], xNext, y,
-        vxArr[i11], vyArr[i11], xNext, yNext,
-        depth
-      );
-      rasterizeTriEpx(
-        out, zBuf, w, h, edata, ew, eh, efactor,
-        vxArr[i00], vyArr[i00], x, y,
-        vxArr[i11], vyArr[i11], xNext, yNext,
-        vxArr[i01], vyArr[i01], x, yNext,
-        depth
-      );
+      for (let y = yStart; y <= y1; y += step) {
+        const yNext = Math.min(h, y + step);
+        for (let x = x0; x <= x1; x += step) {
+          const xNext = Math.min(w, x + step);
+          let belongs = false;
+          for (let ty = y; ty < yNext && !belongs; ty++) {
+            for (let tx = x; tx < xNext; tx++) {
+              const ci = ty * w + tx;
+              if (grid[ci * 4 + 3] > 0 && geo.domPin[ci] === targetPinIdx && ty >= hipAnchorY - 3) {
+                belongs = true;
+                break;
+              }
+            }
+          }
+          if (!belongs) continue;
+          const i00 = y * (w + 1) + x, i10 = y * (w + 1) + xNext;
+          const i01 = yNext * (w + 1) + x, i11 = yNext * (w + 1) + xNext;
+          rasterizeTriEpx(out, zBuf, w, h, edata, ew, eh, efactor, vxL[i00], vyL[i00], x, y, vxL[i10], vyL[i10], xNext, y, vxL[i11], vyL[i11], xNext, yNext, depth);
+          rasterizeTriEpx(out, zBuf, w, h, edata, ew, eh, efactor, vxL[i00], vyL[i00], x, y, vxL[i11], vyL[i11], xNext, yNext, vxL[i01], vyL[i01], x, yNext, depth);
+        }
+      }
+    };
+
+    // Pass 1: Far limbs (fr, bl)
+    for (let pi = 0; pi < pins.length; pi++) {
+      if (isLimbPin[pi] === 1) drawLimbPass(pi, 1);
+    }
+
+    // Pass 2: Body (torso, head, tail, upper shoulders down to hipAnchorY + 2)
+    for (let y = y0; y <= y1; y += step) {
+      const yNext = Math.min(h, y + step);
+      for (let x = x0; x <= x1; x += step) {
+        const xNext = Math.min(w, x + step);
+        let hasBody = false, sampleIdx = y * w + x;
+        for (let ty = y; ty < yNext && !hasBody; ty++) {
+          for (let tx = x; tx < xNext; tx++) {
+            const ci = ty * w + tx;
+            if (grid[ci * 4 + 3] > 0) {
+              const dp = geo.domPin[ci];
+              if (isLimbPin[dp] === 0 || ty <= hipAnchorY + 1) {
+                hasBody = true;
+                sampleIdx = ci;
+                break;
+              }
+            }
+          }
+        }
+        if (!hasBody) continue;
+        const depth = Math.max(2, Math.min(4, pinDepth[geo.domPin[sampleIdx]]));
+        const i00 = y * (w + 1) + x, i10 = y * (w + 1) + xNext;
+        const i01 = yNext * (w + 1) + x, i11 = yNext * (w + 1) + xNext;
+        rasterizeTriEpx(out, zBuf, w, h, edata, ew, eh, efactor, vxBody[i00], vyBody[i00], x, y, vxBody[i10], vyBody[i10], xNext, y, vxBody[i11], vyBody[i11], xNext, yNext, depth);
+        rasterizeTriEpx(out, zBuf, w, h, edata, ew, eh, efactor, vxBody[i00], vyBody[i00], x, y, vxBody[i11], vyBody[i11], xNext, yNext, vxBody[i01], vyBody[i01], x, yNext, depth);
+      }
+    }
+
+    // Pass 3: Near limbs (fl, br) cleanly in front
+    for (let pi = 0; pi < pins.length; pi++) {
+      if (isLimbPin[pi] === 2) drawLimbPass(pi, 5);
     }
   }
 
@@ -1432,7 +1606,7 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames) {
     }
     if (curFoot !== -1 && curFoot !== bbox.maxY) {
       const shift = bbox.maxY - curFoot;
-      if (Math.abs(shift) <= 4) {
+      if (Math.abs(shift) <= 12) {
         const aligned = new Uint8ClampedArray(w * h * 4);
         for (let y = 0; y < h; y++) {
           const ty = y + shift;
