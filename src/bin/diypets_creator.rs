@@ -6,7 +6,7 @@ use diypets::juice_fx::{
     snap_feet_to_baseline,
 };
 use diypets::pixel_core::{
-    BayerMatrixSize, IndexedPalette, PixelGridSize, apply_bayer_dither,
+    BayerMatrixSize, IndexedPalette, PixelGridSize, apply_bayer_dither, clean_fringe_and_specks,
     cleanup_pixel_perfect_l_doubles, quantize_to_palette, snap_to_native_grid_and_back,
 };
 use diypets::settings::{Settings, local_project_root, user_packs_dir};
@@ -1411,6 +1411,17 @@ impl StudioApp {
                         cleanup_pixel_perfect_l_doubles(&cur);
                     self.costume_dirty = true;
                     self.toasts.info("Cleaned L-corner pixel doubles");
+                }
+                if ui
+                    .button("Clean Fringe & Specks")
+                    .on_hover_text("Remove translucent grey edge halos and floating 1-2px dust specks")
+                    .clicked()
+                    && let Some(cur) = self.costume_frames.get(self.costume_selected).cloned()
+                {
+                    self.push_costume_undo();
+                    self.costume_frames[self.costume_selected] = clean_fringe_and_specks(&cur);
+                    self.costume_dirty = true;
+                    self.toasts.info("Cleaned grey fringe & floating specks");
                 }
             });
         ui.add_space(4.0);

@@ -363,7 +363,7 @@
     background: repeating-conic-gradient(#121824 0% 25%, #1a2232 0% 50%) 50% / 16px 16px;
     display: flex; align-items: center; justify-content: center; overflow: hidden;
   }
-  .gif-preview-stage canvas { width: 148px; height: 148px; image-rendering: pixelated; }
+  .gif-preview-stage canvas { width: 160px; height: 160px; image-rendering: pixelated; image-rendering: crisp-edges; }
   .gif-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   @media (max-width: 640px) { .gif-maker-grid { grid-template-columns: 1fr; } }
 
@@ -525,7 +525,7 @@
     <div class="dex-body">
       <div class="gif-maker-grid">
         <div class="gif-preview-stage" id="gif-drop-zone" title="Drag &amp; drop a PNG, Sprite Sheet, SVG, or deskpet.xml here">
-          <canvas id="gif-preview-canvas" width="128" height="128"></canvas>
+          <canvas id="gif-preview-canvas" width="160" height="160"></canvas>
         </div>
         <div>
           <div class="gif-controls" style="margin-bottom:8px;">
@@ -1271,7 +1271,7 @@ function loop(now) {
 requestAnimationFrame(loop);
 
 </script>
-<script src="gif_maker.js?v=5">
+<script src="gif_maker.js?v=6">
 // Auto-sync displayed version from GitHub Releases API (cached per session, fallback v0.4.1)
 (function syncLatestVersion() {
   const applyVer = (tag) => {

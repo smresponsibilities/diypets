@@ -371,6 +371,85 @@ pub fn oklab_dist_sq(a: [u8; 3], b: [u8; 3]) -> f32 {
     dl * dl + da * da + db * db
 }
 
+/// Remove translucent grey anti-aliased fringe pixels and isolated 1-2px floating air specks
+/// without touching opaque interior fur or crisp 1px dark outlines.
+pub fn clean_fringe_and_specks(img: &RgbaImage) -> RgbaImage {
+    let (w, h) = img.dimensions();
+    let mut out = img.clone();
+    if w == 0 || h == 0 {
+        return out;
+    }
+
+    // Pass 1: Hard alpha matte + strip translucent neutral-grey halos
+    for px in out.pixels_mut() {
+        let a = px[3];
+        if a < 180 {
+            *px = Rgba([0, 0, 0, 0]);
+        } else if a < 250 {
+            let mx = px[0].max(px[1]).max(px[2]);
+            let mn = px[0].min(px[1]).min(px[2]);
+            let lum = (px[0] as u16 + px[1] as u16 + px[2] as u16) / 3;
+            if mx.saturating_sub(mn) <= 16 && (92..=228).contains(&lum) {
+                *px = Rgba([0, 0, 0, 0]);
+            } else {
+                px[3] = 255;
+            }
+        } else {
+            px[3] = 255;
+        }
+    }
+
+    // Pass 2: Remove tiny disconnected floating dust specks (< 0.4% of largest silhouette)
+    let n = (w as usize) * (h as usize);
+    let mut vis = vec![false; n];
+    let mut comps: Vec<Vec<(u32, u32)>> = Vec::new();
+    let mut max_len = 0usize;
+    let mut queue = std::collections::VecDeque::new();
+
+    for y in 0..h {
+        for x in 0..w {
+            let idx = (y * w + x) as usize;
+            if vis[idx] || out.get_pixel(x, y)[3] == 0 {
+                continue;
+            }
+            vis[idx] = true;
+            queue.push_back((x, y));
+            let mut comp = Vec::new();
+            while let Some((cx, cy)) = queue.pop_front() {
+                comp.push((cx, cy));
+                let nbrs = [
+                    (cx.wrapping_sub(1), cy, cx > 0),
+                    (cx + 1, cy, cx + 1 < w),
+                    (cx, cy.wrapping_sub(1), cy > 0),
+                    (cx, cy + 1, cy + 1 < h),
+                ];
+                for (nx, ny, ok) in nbrs {
+                    if !ok {
+                        continue;
+                    }
+                    let nidx = (ny * w + nx) as usize;
+                    if !vis[nidx] && out.get_pixel(nx, ny)[3] > 0 {
+                        vis[nidx] = true;
+                        queue.push_back((nx, ny));
+                    }
+                }
+            }
+            max_len = max_len.max(comp.len());
+            comps.push(comp);
+        }
+    }
+
+    let min_keep = (max_len / 250).max(4);
+    for comp in comps {
+        if comp.len() < min_keep && comp.len() < max_len {
+            for (x, y) in comp {
+                out.put_pixel(x, y, Rgba([0, 0, 0, 0]));
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod oklab_adversarial_tests {
     use super::*;
@@ -409,5 +488,21 @@ mod oklab_adversarial_tests {
         }
         assert!(oklab_dist_sq([120, 80, 200], [120, 80, 200]) < 1e-6);
         assert!(oklab_dist_sq([0, 0, 0], [255, 255, 255]) > 0.9);
+    }
+
+    #[test]
+    fn clean_fringe_removes_specks_and_preserves_body() {
+        let mut img = RgbaImage::new(32, 32);
+        for y in 8..24 {
+            for x in 8..24 {
+                img.put_pixel(x, y, Rgba([240, 240, 240, 255]));
+            }
+        }
+        img.put_pixel(1, 1, Rgba([10, 10, 10, 255])); // stray 1px air speck
+        img.put_pixel(7, 12, Rgba([160, 160, 160, 110])); // translucent grey fringe
+        let cleaned = clean_fringe_and_specks(&img);
+        assert_eq!(cleaned.get_pixel(1, 1)[3], 0);
+        assert_eq!(cleaned.get_pixel(7, 12)[3], 0);
+        assert_eq!(cleaned.get_pixel(16, 16)[3], 255);
     }
 }

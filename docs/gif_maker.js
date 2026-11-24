@@ -671,8 +671,8 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames) {
     for (let x = x0; x <= x1; x++) {
       const s = evalRigidMlsInverse(x, y, pins, dstPins);
       // Sample center of corresponding 2x EPX pixel block
-      const ex = Math.round(s.x * 2 + 0.5);
-      const ey = Math.round(s.y * 2 + 0.5);
+      const ex = Math.round(s.x * 2);
+      const ey = Math.round(s.y * 2);
       if (ex < 0 || ex >= ew || ey < 0 || ey >= eh) continue;
       const sp = (ey * ew + ex) * 4;
       if (edata[sp + 3] === 0) continue;
@@ -878,25 +878,23 @@ function handleGifUpload(ev) {
   ev.target.value = "";
 }
 
-function drawNativeRgbaScaled(targetCtx, rgba, sw, sh, outW, outH, padBottom, storeGeom) {
+function drawNativeRgbaScaled(targetCtx, rgba, sw, sh, outW, outH, padBottom, storeGeom, refW, refH) {
   const off = document.createElement("canvas");
   off.width = sw; off.height = sh;
   off.getContext("2d").putImageData(new ImageData(rgba, sw, sh), 0, 0);
 
-  const availW = Math.max(1, outW - 2);
-  const availH = Math.max(1, outH - padBottom - 2);
-  let dw, dh;
-  if (sw <= availW && sh <= availH) {
-    const intScale = Math.max(1, Math.floor(Math.min(availW / sw, availH / sh)));
-    dw = sw * intScale;
-    dh = sh * intScale;
-  } else {
-    const r = Math.min(availW / sw, availH / sh);
-    dw = Math.max(1, Math.round(sw * r));
-    dh = Math.max(1, Math.round(sh * r));
+  const availW = Math.max(1, outW - 4);
+  const availH = Math.max(1, outH - padBottom - 4);
+  const basisW = refW || sw;
+  const basisH = refH || sh;
+  let intScale = 1;
+  if (basisW <= availW && basisH <= availH) {
+    intScale = Math.max(1, Math.floor(Math.min(availW / basisW, availH / basisH)));
   }
+  const dw = sw * intScale;
+  const dh = sh * intScale;
   const ox = Math.floor((outW - dw) / 2);
-  const oy = Math.max(0, outH - padBottom - dh);
+  const oy = outH - padBottom - dh;
   targetCtx.imageSmoothingEnabled = false;
   targetCtx.drawImage(off, 0, 0, sw, sh, ox, oy, dw, dh);
   if (storeGeom) gifLastCanvasGeom = { ox, oy, dw, dh, sw, sh };
@@ -963,7 +961,7 @@ function drawGifMakerFrame(targetCtx, w, h, frameIdx, totalFrames, allowOverlay)
   }
   if (gifCustomRig) {
     const frameRgba = editPins ? gifCustomRig.grid : renderRiggedFrame(gifCustomRig, fx, frameIdx, totalFrames);
-    drawNativeRgbaScaled(targetCtx, frameRgba, gifCustomRig.w, gifCustomRig.h, w, h, padBottom, allowOverlay);
+    drawNativeRgbaScaled(targetCtx, frameRgba, gifCustomRig.w, gifCustomRig.h, w, h, padBottom, allowOverlay, gifCustomRig.nativeW, gifCustomRig.nativeH);
     if (editPins) drawPinOverlay(targetCtx, gifCustomRig, gifLastCanvasGeom);
     return;
   }
