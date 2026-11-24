@@ -1548,6 +1548,46 @@ impl DeskpetApp {
                 }
             }
         }
+        self.apply_herd_boids_separation(now_ms);
+    }
+
+    fn apply_herd_boids_separation(&mut self, now_ms: u64) {
+        if self.pets.len() < 2 {
+            return;
+        }
+        let snapshot: Vec<(f32, f32, f32, bool)> = self
+            .pets
+            .iter()
+            .map(|p| {
+                let cx = p.state.x + p.state.pet_size as f32 * 0.5;
+                let cy = p.state.y + p.state.ground_height() * 0.5;
+                let active = !p.is_dragging && p.state.current_anim_id != "13";
+                (cx, cy, p.state.pet_size as f32, active)
+            })
+            .collect();
+
+        let (impulses, greetings) = compute_herd_separation(&snapshot);
+        for (pet, dx) in self.pets.iter_mut().zip(impulses) {
+            if dx.abs() > 0.05 {
+                pet.state.x += dx;
+                if dx > 0.6 && pet.state.is_moving_left {
+                    pet.state.is_moving_left = false;
+                } else if dx < -0.6 && !pet.state.is_moving_left {
+                    pet.state.is_moving_left = true;
+                }
+            }
+        }
+
+        for (i, j) in greetings {
+            let can_greet = now_ms.saturating_sub(self.pets[i].last_interact_ms) > 6_000
+                && now_ms.saturating_sub(self.pets[j].last_interact_ms) > 6_000;
+            if can_greet {
+                self.pets[i].heart_until_ms = now_ms + 1_400;
+                self.pets[j].heart_until_ms = now_ms + 1_400;
+                self.pets[i].last_interact_ms = now_ms;
+                self.pets[j].last_interact_ms = now_ms;
+            }
+        }
     }
 }
 
@@ -2649,5 +2689,70 @@ mod layered_style_tests {
 
         let (_, ex_no_top) = sanitize_layered_window_styles(0x00CF_0000, 0x0020_0020, false);
         assert_eq!(ex_no_top & 0x0000_0008, 0);
+    }
+}
+
+/// Compute 1D Boids horizontal separation impulses and close-encounter greeting pairs
+/// for a herd of desktop pets represented as `(center_x, center_y, pet_size, is_active)`.
+fn compute_herd_separation(pets: &[(f32, f32, f32, bool)]) -> (Vec<f32>, Vec<(usize, usize)>) {
+    let n = pets.len();
+    let mut impulses = vec![0.0f32; n];
+    let mut greetings = Vec::new();
+    for i in 0..n {
+        if !pets[i].3 {
+            continue;
+        }
+        for j in (i + 1)..n {
+            if !pets[j].3 {
+                continue;
+            }
+            let dy = (pets[i].1 - pets[j].1).abs();
+            let avg_size = (pets[i].2 + pets[j].2) * 0.5;
+            if dy > avg_size * 0.65 {
+                continue;
+            }
+            let dx = pets[i].0 - pets[j].0;
+            let min_dist = (avg_size * 0.85).max(48.0);
+            if dx.abs() < min_dist {
+                let overlap = (min_dist - dx.abs()) / min_dist;
+                let push = (overlap * 2.5).clamp(0.25, 2.5);
+                let dir = if dx >= 0.0 { 1.0 } else { -1.0 };
+                impulses[i] += dir * push;
+                impulses[j] -= dir * push;
+                if dx.abs() < min_dist * 0.85 {
+                    greetings.push((i, j));
+                }
+            }
+        }
+    }
+    for imp in &mut impulses {
+        *imp = imp.clamp(-3.0, 3.0);
+    }
+    (impulses, greetings)
+}
+
+#[cfg(test)]
+mod herd_boids_tests {
+    use super::compute_herd_separation;
+
+    #[test]
+    fn separation_pushes_overlapping_pets_apart_and_triggers_greeting() {
+        let pets = vec![(100.0, 500.0, 96.0, true), (120.0, 504.0, 96.0, true)];
+        let (impulses, greetings) = compute_herd_separation(&pets);
+        assert!(impulses[0] < 0.0, "left pet should be pushed left");
+        assert!(impulses[1] > 0.0, "right pet should be pushed right");
+        assert_eq!(greetings, vec![(0, 1)]);
+    }
+
+    #[test]
+    fn distant_or_dragged_pets_have_zero_separation() {
+        let pets = vec![
+            (100.0, 500.0, 96.0, true),
+            (400.0, 500.0, 96.0, true),
+            (110.0, 500.0, 96.0, false),
+        ];
+        let (impulses, greetings) = compute_herd_separation(&pets);
+        assert_eq!(impulses, vec![0.0, 0.0, 0.0]);
+        assert!(greetings.is_empty());
     }
 }
