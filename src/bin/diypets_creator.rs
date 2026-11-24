@@ -317,6 +317,8 @@ struct StudioApp {
     costume_canvas_tex: Option<egui::TextureHandle>,
     costume_dirty: bool,
     costume_undo: Vec<Vec<image::RgbaImage>>,
+    costume_redo: Vec<Vec<image::RgbaImage>>,
+    show_shortcuts_modal: bool,
     costume_stroke_active: bool,
     costume_grid_size: PixelGridSize,
     costume_palette: IndexedPalette,
@@ -418,6 +420,8 @@ impl Default for StudioApp {
             costume_canvas_tex: None,
             costume_dirty: true,
             costume_undo: Vec::new(),
+            costume_redo: Vec::new(),
+            show_shortcuts_modal: false,
             costume_stroke_active: false,
             costume_grid_size: PixelGridSize::G32,
             costume_palette: IndexedPalette::Pico8,
@@ -997,6 +1001,31 @@ impl StudioApp {
             self.costume_undo.remove(0);
         }
         self.costume_undo.push(self.costume_frames.clone());
+        self.costume_redo.clear();
+    }
+
+    fn undo_costume(&mut self) {
+        if let Some(prev) = self.costume_undo.pop() {
+            self.costume_redo.push(self.costume_frames.clone());
+            self.costume_frames = prev;
+            if self.costume_selected >= self.costume_frames.len() {
+                self.costume_selected = self.costume_frames.len().saturating_sub(1);
+            }
+            self.costume_dirty = true;
+            self.toasts.info("Undid costume edit");
+        }
+    }
+
+    fn redo_costume(&mut self) {
+        if let Some(next) = self.costume_redo.pop() {
+            self.costume_undo.push(self.costume_frames.clone());
+            self.costume_frames = next;
+            if self.costume_selected >= self.costume_frames.len() {
+                self.costume_selected = self.costume_frames.len().saturating_sub(1);
+            }
+            self.costume_dirty = true;
+            self.toasts.info("Redid costume edit");
+        }
     }
 
     fn capture_costume_from_project(&mut self, replace_all: bool) {
@@ -1123,9 +1152,76 @@ impl StudioApp {
         let Some(img) = self.costume_frames.get_mut(self.costume_selected) else {
             return;
         };
-        let (w, h) = (img.width() as i32, img.height() as i32);
+        let (w, h) = (img.width() as usize, img.height() as usize);
+        if px >= w || py >= h {
+            return;
+        }
+        let active_tool = if erase { Tool::Eraser } else { self.tool };
+
+        match active_tool {
+            Tool::Eyedropper => {
+                let p = *img.get_pixel(px as u32, py as u32);
+                if p[3] > 0 {
+                    self.current_color = rgba_to_c32([p[0], p[1], p[2], 255]);
+                    self.tool = Tool::Brush;
+                    self.toasts.info("Picked color from costume");
+                }
+                return;
+            }
+            Tool::Fill => {
+                let rgba = c32_to_rgba(self.current_color);
+                let fill_col = image::Rgba([rgba[0], rgba[1], rgba[2], 255]);
+                if flood_fill_rgba_image(img, px as u32, py as u32, fill_col) {
+                    if self.mirror_draw_x {
+                        let mx = (w - 1 - px) as u32;
+                        flood_fill_rgba_image(img, mx, py as u32, fill_col);
+                    }
+                    self.costume_dirty = true;
+                }
+                return;
+            }
+            Tool::Recolor => {
+                let target = *img.get_pixel(px as u32, py as u32);
+                let rgba = c32_to_rgba(self.current_color);
+                let fill_col = image::Rgba([rgba[0], rgba[1], rgba[2], 255]);
+                if target[3] > 0 && target != fill_col {
+                    for p in img.pixels_mut() {
+                        if *p == target {
+                            *p = fill_col;
+                        }
+                    }
+                    self.costume_dirty = true;
+                }
+                return;
+            }
+            Tool::Shade => {
+                let radius = (self.brush_size.max(1) as i32 - 1) / 2;
+                let lighten = self.shade_lighten;
+                let mut shade_at = |cx: i32, cy: i32| {
+                    for dy in -radius..=radius {
+                        for dx in -radius..=radius {
+                            let nx = cx + dx;
+                            let ny = cy + dy;
+                            if nx >= 0 && ny >= 0 && nx < w as i32 && ny < h as i32 {
+                                let cur = *img.get_pixel(nx as u32, ny as u32);
+                                let next = shade_pixel([cur[0], cur[1], cur[2], cur[3]], lighten);
+                                img.put_pixel(nx as u32, ny as u32, image::Rgba(next));
+                            }
+                        }
+                    }
+                };
+                shade_at(px as i32, py as i32);
+                if self.mirror_draw_x {
+                    shade_at(w as i32 - 1 - px as i32, py as i32);
+                }
+                self.costume_dirty = true;
+                return;
+            }
+            _ => {}
+        }
+
         let radius = (self.brush_size.max(1) as i32 - 1) / 2;
-        let col = if erase {
+        let col = if active_tool == Tool::Eraser {
             image::Rgba([0, 0, 0, 0])
         } else {
             let rgba = c32_to_rgba(self.current_color);
@@ -1137,7 +1233,7 @@ impl StudioApp {
                 for dx in -radius..=radius {
                     let nx = cx + dx;
                     let ny = cy + dy;
-                    if nx >= 0 && ny >= 0 && nx < w && ny < h {
+                    if nx >= 0 && ny >= 0 && nx < w as i32 && ny < h as i32 {
                         img.put_pixel(nx as u32, ny as u32, col);
                     }
                 }
@@ -1146,7 +1242,7 @@ impl StudioApp {
 
         stamp(px as i32, py as i32);
         if self.mirror_draw_x {
-            stamp(w - 1 - px as i32, py as i32);
+            stamp(w as i32 - 1 - px as i32, py as i32);
         }
         self.costume_dirty = true;
     }
@@ -2540,16 +2636,29 @@ impl eframe::App for StudioApp {
         }
 
         let wants_kb = ctx.egui_wants_keyboard_input();
+        let mut trigger_save_dialog = false;
         ctx.input(|i| {
-            if i.modifiers.command && i.key_pressed(egui::Key::Z) {
-                if i.modifiers.shift {
+            if i.modifiers.command && i.key_pressed(egui::Key::S) {
+                trigger_save_dialog = true;
+            } else if i.modifiers.command && i.key_pressed(egui::Key::Z) {
+                if self.tab == StudioTab::Costumes {
+                    if i.modifiers.shift {
+                        self.redo_costume();
+                    } else {
+                        self.undo_costume();
+                    }
+                } else if i.modifiers.shift {
                     self.redo();
                 } else {
                     self.undo();
                 }
             } else if i.modifiers.command && i.key_pressed(egui::Key::Y) {
-                self.redo();
-            } else if !wants_kb && self.tab == StudioTab::Draw {
+                if self.tab == StudioTab::Costumes {
+                    self.redo_costume();
+                } else {
+                    self.redo();
+                }
+            } else if !wants_kb && matches!(self.tab, StudioTab::Draw | StudioTab::Costumes) {
                 if i.key_pressed(egui::Key::B) {
                     self.tool = Tool::Brush;
                 } else if i.key_pressed(egui::Key::E) {
@@ -2568,14 +2677,68 @@ impl eframe::App for StudioApp {
                     self.tool = Tool::Rect;
                 } else if i.key_pressed(egui::Key::O) {
                     self.tool = Tool::Circle;
-                }
-                if i.key_pressed(egui::Key::M) {
-                    self.tool = Tool::Select;
                 } else if i.key_pressed(egui::Key::M) {
+                    self.tool = Tool::Select;
+                } else if i.key_pressed(egui::Key::X) {
                     self.mirror_draw_x = !self.mirror_draw_x;
+                } else if i.key_pressed(egui::Key::OpenBracket) {
+                    self.brush_size = self.brush_size.saturating_sub(1).max(1);
+                } else if i.key_pressed(egui::Key::CloseBracket) {
+                    self.brush_size = (self.brush_size + 1).min(8);
+                }
+
+                if self.tab == StudioTab::Costumes && !self.costume_frames.is_empty() {
+                    if i.key_pressed(egui::Key::Space) {
+                        self.costume_playing = !self.costume_playing;
+                        self.costume_play_start = Instant::now();
+                    } else if i.key_pressed(egui::Key::Comma) {
+                        self.costume_playing = false;
+                        let n = self.costume_frames.len();
+                        self.costume_selected = (self.costume_selected + n - 1) % n;
+                        self.costume_dirty = true;
+                    } else if i.key_pressed(egui::Key::Period) {
+                        self.costume_playing = false;
+                        let n = self.costume_frames.len();
+                        self.costume_selected = (self.costume_selected + 1) % n;
+                        self.costume_dirty = true;
+                    }
                 }
             }
         });
+        if trigger_save_dialog {
+            self.save_project_dialog();
+        }
+        if self.show_shortcuts_modal {
+            egui::Window::new("Studio Keyboard Shortcuts")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+                .show(&ctx, |ui| {
+                    egui::Grid::new("shortcuts_grid")
+                        .num_columns(2)
+                        .spacing([18.0, 4.0])
+                        .show(ui, |ui| {
+                            for (k, desc) in [
+                                ("B / E / G", "Brush / Eraser / Flood Fill"),
+                                ("H / R / I", "Shade / Recolor / Eyedropper"),
+                                ("L / U / O / M", "Line / Rect / Circle / Select"),
+                                ("X", "Toggle Mirror Draw X"),
+                                ("[ / ]", "Decrease / Increase Brush Size"),
+                                ("Ctrl+Z / Ctrl+Y", "Undo / Redo (Draw & Costumes)"),
+                                ("Ctrl+S", "Save Studio Project"),
+                                ("Space / , / .", "Play / Step Frame (Costumes)"),
+                            ] {
+                                ui.strong(k);
+                                ui.label(desc);
+                                ui.end_row();
+                            }
+                        });
+                    ui.add_space(8.0);
+                    if ui.button("Close").clicked() {
+                        self.show_shortcuts_modal = false;
+                    }
+                });
+        }
 
         // TOP HEADER BAR
         egui::Panel::top("v2_top").show(ui, |ui| {
@@ -2612,6 +2775,9 @@ impl eframe::App for StudioApp {
                 }
                 if ui.button("Open Project").clicked() {
                     self.open_project_dialog();
+                }
+                if ui.button("? Shortcuts").clicked() {
+                    self.show_shortcuts_modal = !self.show_shortcuts_modal;
                 }
                 if ui.button("Save Project").clicked() {
                     self.save_project_dialog();
@@ -3920,6 +4086,44 @@ fn apply_studio_theme(ctx: &egui::Context) {
     ctx.set_style_of(egui::Theme::Light, style);
 }
 
+fn flood_fill_rgba_image(
+    img: &mut image::RgbaImage,
+    sx: u32,
+    sy: u32,
+    fill_col: image::Rgba<u8>,
+) -> bool {
+    let (w, h) = img.dimensions();
+    if sx >= w || sy >= h {
+        return false;
+    }
+    let target = *img.get_pixel(sx, sy);
+    if target == fill_col {
+        return false;
+    }
+    let mut stack = vec![(sx, sy)];
+    let mut changed = false;
+    while let Some((x, y)) = stack.pop() {
+        if *img.get_pixel(x, y) != target {
+            continue;
+        }
+        img.put_pixel(x, y, fill_col);
+        changed = true;
+        if x > 0 {
+            stack.push((x - 1, y));
+        }
+        if x + 1 < w {
+            stack.push((x + 1, y));
+        }
+        if y > 0 {
+            stack.push((x, y - 1));
+        }
+        if y + 1 < h {
+            stack.push((x, y + 1));
+        }
+    }
+    changed
+}
+
 fn main() -> eframe::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     if let Some(res) = try_run_cli(&args) {
@@ -3988,5 +4192,21 @@ mod tests {
         try_run_cli(&args).unwrap().unwrap();
         assert!(out_dir.join("deskpet.xml").is_file());
         assert!(out_dir.join("icon.png").is_file());
+    }
+
+    #[test]
+    fn costume_flood_fill_and_undo_redo_work() {
+        let mut img = image::RgbaImage::new(8, 8);
+        for x in 0..8 {
+            img.put_pixel(x, 4, image::Rgba([0, 0, 0, 255]));
+        }
+        let red = image::Rgba([220, 40, 40, 255]);
+        assert!(flood_fill_rgba_image(&mut img, 1, 1, red));
+        assert_eq!(*img.get_pixel(6, 2), red);
+        assert_eq!(
+            img.get_pixel(6, 6)[3],
+            0,
+            "barrier row must stop flood fill"
+        );
     }
 }
