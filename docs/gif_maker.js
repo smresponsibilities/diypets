@@ -147,63 +147,49 @@ function cleanRgbaPixels(data, w, h) {
 
 // Run-length pixel-block scale detector: finds true pixel size (1..24) on high-res upscaled pixel art
 // WITHOUT artificially crushing an 84x76 sprite down to 42x38!
-function detectNativeBlockScale(rgba, w, h) {
-  const runCounts = new Int32Array(33);
-  const stepY = Math.max(1, Math.floor(h / 96));
-  const stepX = Math.max(1, Math.floor(w / 96));
-
-  for (let y = 0; y < h; y += stepY) {
-    let run = 1;
-    for (let x = 1; x < w; x++) {
-      const p0 = (y * w + x - 1) * 4, p1 = (y * w + x) * 4;
-      const same = Math.abs(rgba[p0] - rgba[p1]) <= 12 &&
-                   Math.abs(rgba[p0 + 1] - rgba[p1 + 1]) <= 12 &&
-                   Math.abs(rgba[p0 + 2] - rgba[p1 + 2]) <= 12 &&
-                   Math.abs(rgba[p0 + 3] - rgba[p1 + 3]) <= 40;
-      if (same) { run++; }
-      else {
-        if (rgba[p0 + 3] > 128 && run >= 2 && run <= 32) runCounts[run]++;
-        run = 1;
+// Strict intra-block uniformity detector:
+// Only reports block scale k > 1 when >= 92% of opaque k x k tiles are flat (true upscaled pixel art).
+// Native-resolution sprites with curved 1-2px outlines or subtle shading return 1 (zero downsampling blur!).
+function detectNativeBlockScale(rgba, w, h, bbOpt) {
+  const bb = bbOpt || findBbox(rgba, w, h);
+  const bw = bb.bw, bh = bb.bh;
+  if (bw < 16 || bh < 16) return 1;
+  const maxK = Math.min(8, Math.floor(Math.min(bw, bh) / 16));
+  for (let k = maxK; k >= 2; k--) {
+    let tiles = 0, flatTiles = 0;
+    const stepX = Math.max(1, Math.floor(bw / (k * 28)));
+    const stepY = Math.max(1, Math.floor(bh / (k * 28)));
+    for (let ty = 0; ty + k <= bh; ty += k * stepY) {
+      for (let tx = 0; tx + k <= bw; tx += k * stepX) {
+        const x0 = bb.minX + tx, y0 = bb.minY + ty;
+        const p0 = (y0 * w + x0) * 4;
+        const a0 = rgba[p0 + 3];
+        if (a0 < 128) continue;
+        tiles++;
+        const r0 = rgba[p0], g0 = rgba[p0 + 1], b0 = rgba[p0 + 2];
+        let flat = true;
+        for (let dy = 0; dy < k && flat; dy++) {
+          for (let dx = 0; dx < k; dx++) {
+            const p = ((y0 + dy) * w + (x0 + dx)) * 4;
+            if (
+              Math.abs(rgba[p + 3] - a0) > 8 ||
+              Math.abs(rgba[p] - r0) > 2 ||
+              Math.abs(rgba[p + 1] - g0) > 2 ||
+              Math.abs(rgba[p + 2] - b0) > 2
+            ) {
+              flat = false;
+              break;
+            }
+          }
+        }
+        if (flat) flatTiles++;
       }
     }
-  }
-  for (let x = 0; x < w; x += stepX) {
-    let run = 1;
-    for (let y = 1; y < h; y++) {
-      const p0 = ((y - 1) * w + x) * 4, p1 = (y * w + x) * 4;
-      const same = Math.abs(rgba[p0] - rgba[p1]) <= 12 &&
-                   Math.abs(rgba[p0 + 1] - rgba[p1 + 1]) <= 12 &&
-                   Math.abs(rgba[p0 + 2] - rgba[p1 + 2]) <= 12 &&
-                   Math.abs(rgba[p0 + 3] - rgba[p1 + 3]) <= 40;
-      if (same) { run++; }
-      else {
-        if (rgba[p0 + 3] > 128 && run >= 2 && run <= 32) runCounts[run]++;
-        run = 1;
-      }
+    if (tiles >= 12 && (flatTiles / tiles) >= 0.92) {
+      return k;
     }
   }
-
-  // Score candidate integer block sizes s in [2..20]: a true block size divides almost all run lengths!
-  let bestS = 1, bestScore = 0;
-  let totalRuns = 0;
-  for (let r = 2; r <= 32; r++) totalRuns += runCounts[r];
-  if (totalRuns >= 12) {
-    for (let s = 2; s <= 20; s++) {
-      if (Math.floor(w / s) < 20 || Math.floor(h / s) < 20) break;
-      let aligned = 0;
-      for (let r = s; r <= 32; r++) {
-        const rem = r % s;
-        if (rem === 0 || rem === 1 || rem === s - 1) aligned += runCounts[r];
-      }
-      const ratio = aligned / totalRuns;
-      // Prefer largest s with high alignment (exact runs of length s also boost confidence)
-      if (ratio >= 0.78 && runCounts[s] >= totalRuns * 0.12 && ratio + s * 0.004 > bestScore) {
-        bestScore = ratio + s * 0.004;
-        bestS = s;
-      }
-    }
-  }
-  return bestS;
+  return 1;
 }
 
 function findBbox(grid, w, h) {
@@ -224,27 +210,32 @@ function findBbox(grid, w, h) {
 // so Hop, Walk, and Run NEVER clip ears, tails, or paws!
 function extractPaddedNativeGrid(rgba, w, h) {
   const bb = findBbox(rgba, w, h);
-  let block = detectNativeBlockScale(rgba, w, h);
-  let nw = Math.max(16, Math.round(bb.bw / block));
-  let nh = Math.max(16, Math.round(bb.bh / block));
-  // Only downscale if native sprite still exceeds 112px (preserves 80-100px detailed pixel art intact!)
-  const maxDim = 112;
-  let scaleF = block;
-  if (Math.max(nw, nh) > maxDim) {
-    scaleF = Math.max(bb.bw, bb.bh) / maxDim;
-    nw = Math.max(16, Math.round(bb.bw / scaleF));
-    nh = Math.max(16, Math.round(bb.bh / scaleF));
+  if (!bb) {
+    return {
+      grid: new Uint8ClampedArray(4),
+      w: 1,
+      h: 1,
+      nativeW: 1,
+      nativeH: 1,
+      scale: 1,
+      blockScale: 1,
+      padTop: 0,
+      padSide: 0,
+    };
   }
 
-  const padTop = Math.max(6, Math.ceil(nh * 0.28));
-  const padSide = Math.max(6, Math.ceil(nw * 0.16));
-  const padBot = 2;
-  const outW = nw + padSide * 2;
-  const outH = nh + padTop + padBot;
-  const grid = new Uint8ClampedArray(outW * outH * 4);
+  const rawBlock = detectNativeBlockScale(rgba, w, h, bb);
+  const maxDim = 160;
+  let scaleF = rawBlock;
+  let nw = Math.max(1, Math.round(bb.bw / scaleF));
+  let nh = Math.max(1, Math.round(bb.bh / scaleF));
+  if (Math.max(nw, nh) > maxDim) {
+    scaleF = Math.max(bb.bw, bb.bh) / maxDim;
+    nw = Math.max(1, Math.round(bb.bw / scaleF));
+    nh = Math.max(1, Math.round(bb.bh / scaleF));
+  }
 
-  // Subpixel Grid Phase-Lock (1D edge-energy autocorrelation):
-  // Find (phaseX, phaseY) maximizing color gradients at cell boundaries so samples land dead-center!
+  // Subpixel Grid Phase-Lock: require non-default phase to beat 0.5 center by >= 12%
   let phaseX = 0.5, phaseY = 0.5;
   if (scaleF >= 2) {
     const steps = Math.min(8, Math.max(2, Math.round(scaleF)));
@@ -260,7 +251,9 @@ function extractPaddedNativeGrid(rgba, w, h) {
           ex += Math.abs(rgba[p0] - rgba[p1]) + Math.abs(rgba[p0 + 1] - rgba[p1 + 1]) + Math.abs(rgba[p0 + 2] - rgba[p1 + 2]) + Math.abs(rgba[p0 + 3] - rgba[p1 + 3]);
         }
       }
-      if (s === 0) { bestEx = ex * 1.12; phaseX = 0.5; } else if (ex > bestEx) { bestEx = ex; phaseX = (off + 0.5) % 1.0; }
+      if (s === 0) { bestEx = ex * 1.12; phaseX = 0.5; }
+      else if (ex > bestEx) { bestEx = ex; phaseX = (off + 0.5) % 1.0; }
+
       for (let y = 1; y < nh; y++) {
         const by = Math.min(h - 1, Math.max(1, bb.minY + Math.floor((y + off) * scaleF)));
         for (let x = 0; x < nw; x += 2) {
@@ -269,9 +262,16 @@ function extractPaddedNativeGrid(rgba, w, h) {
           ey += Math.abs(rgba[p0] - rgba[p1]) + Math.abs(rgba[p0 + 1] - rgba[p1 + 1]) + Math.abs(rgba[p0 + 2] - rgba[p1 + 2]) + Math.abs(rgba[p0 + 3] - rgba[p1 + 3]);
         }
       }
-      if (s === 0) { bestEy = ey * 1.12; phaseY = 0.5; } else if (ey > bestEy) { bestEy = ey; phaseY = (off + 0.5) % 1.0; }
+      if (s === 0) { bestEy = ey * 1.12; phaseY = 0.5; }
+      else if (ey > bestEy) { bestEy = ey; phaseY = (off + 0.5) % 1.0; }
     }
   }
+
+  const padSide = Math.max(4, Math.min(14, Math.ceil(nw * 0.10)));
+  const padTop = Math.max(4, Math.min(18, Math.ceil(nh * 0.12)));
+  const outW = nw + padSide * 2;
+  const outH = nh + padTop;
+  const grid = new Uint8ClampedArray(outW * outH * 4);
 
   for (let y = 0; y < nh; y++) {
     const sy = Math.min(h - 1, bb.minY + Math.floor((y + phaseY) * scaleF));
@@ -280,15 +280,26 @@ function extractPaddedNativeGrid(rgba, w, h) {
       const sp = (sy * w + sx) * 4;
       const dp = ((y + padTop) * outW + (x + padSide)) * 4;
       if (rgba[sp + 3] >= 128) {
-        grid[dp] = rgba[sp]; grid[dp + 1] = rgba[sp + 1]; grid[dp + 2] = rgba[sp + 2]; grid[dp + 3] = 255;
+        grid[dp] = rgba[sp];
+        grid[dp + 1] = rgba[sp + 1];
+        grid[dp + 2] = rgba[sp + 2];
+        grid[dp + 3] = 255;
       }
     }
   }
-  return { grid, w: outW, h: outH, nativeW: nw, nativeH: nh, blockScale: block, block  };
-}
 
-// 2x EPX (Eric's Pixel Expansion / Scale2x) — classic RotSprite pre-pass so 1px dark outlines
-// stay crisp and unbroken under smooth Rigid MLS deformation!
+  return {
+    grid,
+    w: outW,
+    h: outH,
+    nativeW: nw,
+    nativeH: nh,
+    scale: scaleF,
+    blockScale: rawBlock,
+    padTop,
+    padSide,
+  };
+}
 function upscale2xEpx(src, w, h) {
   const dw = w * 2, dh = h * 2;
   const dst = new Uint8ClampedArray(dw * dh * 4);
@@ -1301,54 +1312,33 @@ function handleGifUpload(ev) {
   ev.target.value = "";
 }
 
-function drawNativeRgbaScaled(targetCtx, rgba, sw, sh, outW, outH, padBottom, storeGeom, refW, refH) {
+function computeSafeDrawRect(sw, sh, outW, outH, padBottom) {
+  const availW = Math.max(1, outW - 4);
+  const availH = Math.max(1, outH - padBottom - 4);
+  let dw, dh;
+  if (sw <= availW && sh <= availH) {
+    const intScale = Math.max(1, Math.floor(Math.min(availW / sw, availH / sh)));
+    dw = sw * intScale;
+    dh = sh * intScale;
+  } else {
+    const r = Math.min(availW / sw, availH / sh);
+    dw = Math.max(1, Math.floor(sw * r));
+    dh = Math.max(1, Math.floor(sh * r));
+  }
+  const ox = Math.max(0, Math.floor((outW - dw) / 2));
+  const oy = Math.max(0, outH - padBottom - dh);
+  return { ox, oy, dw, dh };
+}
+
+function drawNativeRgbaScaled(targetCtx, rgba, sw, sh, outW, outH, padBottom, storeGeom) {
   const off = document.createElement("canvas");
   off.width = sw; off.height = sh;
   off.getContext("2d").putImageData(new ImageData(rgba, sw, sh), 0, 0);
 
-  const availW = Math.max(1, outW - 4);
-  const availH = Math.max(1, outH - padBottom - 4);
-  const basisW = refW || sw;
-  const basisH = refH || sh;
-  let intScale = 1;
-  if (basisW <= availW && basisH <= availH) {
-    intScale = Math.max(1, Math.floor(Math.min(availW / basisW, availH / basisH)));
-  }
-  const dw = sw * intScale;
-  const dh = sh * intScale;
-  const ox = Math.floor((outW - dw) / 2);
-  const oy = outH - padBottom - dh;
+  const { ox, oy, dw, dh } = computeSafeDrawRect(sw, sh, outW, outH, padBottom);
   targetCtx.imageSmoothingEnabled = false;
   targetCtx.drawImage(off, 0, 0, sw, sh, ox, oy, dw, dh);
   if (storeGeom) gifLastCanvasGeom = { ox, oy, dw, dh, sw, sh };
-}
-
-function drawPinOverlay(targetCtx, rig, geom) {
-  if (!rig || !geom) return;
-  const sx = geom.dw / geom.sw, sy = geom.dh / geom.sh;
-  const toC = (p) => ({ x: geom.ox + p.x * sx, y: geom.oy + p.y * sy });
-  const byId = {};
-  for (let i = 0; i < rig.pins.length; i++) byId[rig.pins[i].id] = toC(rig.pins[i]);
-  const edges = [["head", "chest"], ["chest", "pelvis"], ["pelvis", "tail"], ["chest", "fl"], ["chest", "fr"], ["pelvis", "bl"], ["pelvis", "br"]];
-  targetCtx.save();
-  targetCtx.strokeStyle = "rgba(255,255,255,0.75)";
-  targetCtx.lineWidth = 1.5;
-  for (let i = 0; i < edges.length; i++) {
-    const a = byId[edges[i][0]], b = byId[edges[i][1]];
-    if (!a || !b) continue;
-    targetCtx.beginPath(); targetCtx.moveTo(a.x, a.y); targetCtx.lineTo(b.x, b.y); targetCtx.stroke();
-  }
-  for (let i = 0; i < rig.pins.length; i++) {
-    const pt = toC(rig.pins[i]);
-    targetCtx.beginPath();
-    targetCtx.arc(pt.x, pt.y, i === gifDragPinIdx ? 5.5 : 4.2, 0, Math.PI * 2);
-    targetCtx.fillStyle = rig.pins[i].color;
-    targetCtx.fill();
-    targetCtx.strokeStyle = "#0b0e12";
-    targetCtx.lineWidth = 1.5;
-    targetCtx.stroke();
-  }
-  targetCtx.restore();
 }
 
 function drawGifMakerFrame(targetCtx, w, h, frameIdx, totalFrames, allowOverlay) {
@@ -1677,7 +1667,7 @@ if (typeof document !== "undefined") {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = {
+  module.exports = { computeSafeDrawRect, 
     cleanRgbaPixels,
     detectNativeBlockScale,
     detectSpriteSheetGrid,
