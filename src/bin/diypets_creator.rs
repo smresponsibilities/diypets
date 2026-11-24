@@ -1439,7 +1439,7 @@ impl StudioApp {
                     && let Some(cur) = self.costume_frames.get(self.costume_selected).cloned()
                 {
                     self.push_costume_undo();
-                    self.costume_frames[self.costume_selected] = clean_fringe_and_specks(&cur);
+                    self.costume_frames[self.costume_selected] = diypets::pixel_core::strip_exterior_grey_halo(&clean_fringe_and_specks(&cur));
                     self.costume_dirty = true;
                     self.toasts.info("Cleaned grey fringe & floating specks");
                 }
@@ -1454,69 +1454,63 @@ impl StudioApp {
                     self.costume_dirty = true;
                     self.toasts.info("Repaired 1px silhouette outline");
                 }
+                let arch_id = egui::Id::new("studio_rig_archetype");
+                let fx_id = egui::Id::new("studio_rig_fx");
+                let mut arch_idx: usize = ui.data_mut(|d| d.get_temp(arch_id).unwrap_or(0));
+                let mut fx_idx: usize = ui.data_mut(|d| d.get_temp(fx_id).unwrap_or(0));
+                let arch_labels = ["Quadruped", "Biped", "Crawler", "Swimmer", "Bird"];
+                let fx_labels = ["Walk", "Sprint", "Dance", "Pet", "Sleep"];
+                ui.horizontal(|ui| {
+                    egui::ComboBox::from_id_salt("studio_rig_arch_cb")
+                        .width(86.0)
+                        .selected_text(arch_labels[arch_idx])
+                        .show_ui(ui, |ui| {
+                            for (i, lbl) in arch_labels.iter().enumerate() {
+                                ui.selectable_value(&mut arch_idx, i, *lbl);
+                            }
+                        });
+                    egui::ComboBox::from_id_salt("studio_rig_fx_cb")
+                        .width(74.0)
+                        .selected_text(fx_labels[fx_idx])
+                        .show_ui(ui, |ui| {
+                            for (i, lbl) in fx_labels.iter().enumerate() {
+                                ui.selectable_value(&mut fx_idx, i, *lbl);
+                            }
+                        });
+                });
+                ui.data_mut(|d| {
+                    d.insert_temp(arch_id, arch_idx);
+                    d.insert_temp(fx_id, fx_idx);
+                });
                 if ui
-                    .button("Generate 8-Frame Geodesic Walk")
-                    .on_hover_text("Auto-rig the current frame with native Rust Geodesic-Weighted Rigid MLS (zero leg stretching) and generate an 8-frame walk cycle")
+                    .button("Generate 8-Frame Geodesic Cycle")
+                    .on_hover_text("Auto-rig the current frame with native Rust hole-free Geodesic MLS across 5 archetypes and 5 FX")
                     .clicked()
                     && let Some(cur) = self.costume_frames.get(self.costume_selected).cloned()
                 {
-                    let (w, h) = cur.dimensions();
-                    let (mut min_x, mut max_x, mut min_y, mut max_y) = (w, 0u32, h, 0u32);
-                    for (x, y, p) in cur.enumerate_pixels() {
-                        if p[3] > 24 {
-                            min_x = min_x.min(x);
-                            max_x = max_x.max(x);
-                            min_y = min_y.min(y);
-                            max_y = max_y.max(y);
-                        }
-                    }
-                    if max_x > min_x + 4 && max_y > min_y + 4 {
-                        self.push_costume_undo();
-                        let bw = (max_x - min_x) as f32;
-                        let bh = (max_y - min_y) as f32;
-                        let mx = min_x as f32;
-                        let my = min_y as f32;
-                        let paw_y = my + bh * 0.94;
-                        let src_pins = [
-                            diypets::geodesic_rig::RigPin { x: mx + bw * 0.22, y: my + bh * 0.30, depth: 4 }, // head
-                            diypets::geodesic_rig::RigPin { x: mx + bw * 0.42, y: my + bh * 0.46, depth: 3 }, // chest
-                            diypets::geodesic_rig::RigPin { x: mx + bw * 0.68, y: my + bh * 0.50, depth: 3 }, // pelvis
-                            diypets::geodesic_rig::RigPin { x: mx + bw * 0.20, y: paw_y, depth: 5 },          // fl
-                            diypets::geodesic_rig::RigPin { x: mx + bw * 0.40, y: paw_y, depth: 1 },          // fr
-                            diypets::geodesic_rig::RigPin { x: mx + bw * 0.66, y: paw_y, depth: 1 },          // bl
-                            diypets::geodesic_rig::RigPin { x: mx + bw * 0.85, y: paw_y, depth: 5 },          // br
-                        ];
-                        let skin = diypets::geodesic_rig::compute_geodesic_skinning(&cur, &src_pins);
-                        let stride = (bw * 0.08).clamp(2.0, 8.0);
-                        let lift = (bh * 0.07).clamp(1.5, 6.0);
-                        let mut frames = Vec::with_capacity(8);
-                        for fi in 0..8 {
-                            let phase = (fi as f32 / 8.0) * std::f32::consts::TAU;
-                            let sa = phase.sin();
-                            let sb = (phase + std::f32::consts::PI).sin();
-                            let la = phase.cos().max(0.0);
-                            let lb = (phase + std::f32::consts::PI).cos().max(0.0);
-                            let bob = -(phase.cos().abs()) * (bh * 0.025).max(0.8);
-                            let mut dst = src_pins;
-                            dst[0].y += bob * 1.1;
-                            dst[1].y += bob;
-                            dst[2].y += bob * 0.9;
-                            dst[3].x -= sa * stride;
-                            dst[3].y -= la * lift;
-                            dst[6].x -= sa * stride;
-                            dst[6].y -= la * lift;
-                            dst[4].x -= sb * stride;
-                            dst[4].y -= lb * lift;
-                            dst[5].x -= sb * stride;
-                            dst[5].y -= lb * lift;
-                            let warped = diypets::geodesic_rig::warp_geodesic_mls(&cur, &src_pins, &dst, &skin);
-                            frames.push(warped);
-                        }
-                        self.costume_frames = diypets::pixel_core::align_foot_baseline(&frames);
-                        self.costume_selected = 0;
-                        self.costume_dirty = true;
-                        self.toasts.info("Generated 8-frame Geodesic MLS walk cycle!");
-                    }
+                    let arch = match arch_idx {
+                        1 => diypets::geodesic_rig::RigArchetype::Biped,
+                        2 => diypets::geodesic_rig::RigArchetype::Crawler,
+                        3 => diypets::geodesic_rig::RigArchetype::Swimmer,
+                        4 => diypets::geodesic_rig::RigArchetype::Bird,
+                        _ => diypets::geodesic_rig::RigArchetype::Quadruped,
+                    };
+                    let fx = match fx_idx {
+                        1 => diypets::geodesic_rig::RigFx::Sprint,
+                        2 => diypets::geodesic_rig::RigFx::Dance,
+                        3 => diypets::geodesic_rig::RigFx::Pet,
+                        4 => diypets::geodesic_rig::RigFx::Sleep,
+                        _ => diypets::geodesic_rig::RigFx::Walk,
+                    };
+                    self.push_costume_undo();
+                    let generated = diypets::geodesic_rig::generate_rigged_cycle(&cur, arch, fx, 8);
+                    self.costume_frames = generated;
+                    self.costume_selected = 0;
+                    self.costume_dirty = true;
+                    self.toasts.info(format!(
+                        "Generated 8-frame {} {} cycle",
+                        arch_labels[arch_idx], fx_labels[fx_idx]
+                    ));
                 }
                 if ui
                     .button("Align All Feet")
