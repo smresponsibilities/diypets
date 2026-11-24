@@ -1499,6 +1499,424 @@ function sealPinholesAndSpecks(rgba, w, h) {
   }
 }
 
+
+// ============================================================================
+// UNIFIED HIERARCHICAL BONE-FK ENGINE (All 6 Archetypes + Custom User Pins)
+// ============================================================================
+// Replaces hardcoded hipAnchorY cuts with a true parent->child skeleton graph:
+//   - Parent transforms carry children rigidly (zero detachment on any sprite)
+//   - Local joint rotation pivots cleanly around the parent->child socket
+//   - 5px socket blend + 1-step overlap collar keeps every joint watertight
+function buildBoneHierarchy(pins, bodyType) {
+  const byId = new Map();
+  for (let i = 0; i < pins.length; i++) byId.set(pins[i].id, i);
+
+  const parentOf = new Int16Array(pins.length).fill(-1);
+  const depthOf = new Int8Array(pins.length).fill(3);
+
+  const setParent = (childId, parentId) => {
+    const ci = byId.get(childId), pi = byId.get(parentId);
+    if (ci !== undefined && pi !== undefined && ci !== pi) parentOf[ci] = pi;
+  };
+
+  if (bodyType === "crawler") {
+    for (let i = 1; i < pins.length; i++) {
+      parentOf[i] = i - 1;
+      depthOf[i] = 3;
+    }
+    if (pins.length > 0) depthOf[0] = 4;
+  } else if (bodyType === "swimmer") {
+    setParent("head", "chest");
+    setParent("pelvis", "chest");
+    setParent("tail", "pelvis");
+    for (let i = 0; i < pins.length; i++) {
+      const id = pins[i].id;
+      depthOf[i] = id === "head" ? 4 : (id === "tail" ? 2 : 3);
+    }
+  } else {
+    // Quadruped, Biped, Bird, Blob: chest is root
+    const rootIdx = byId.has("chest") ? byId.get("chest") : 0;
+    setParent("head", "chest");
+    setParent("pelvis", "chest");
+    setParent("tail", byId.has("pelvis") ? "pelvis" : "chest");
+    setParent("fl", "chest");
+    setParent("fr", "chest");
+    setParent("l_hand", "chest");
+    setParent("r_hand", "chest");
+    setParent("wing", "chest");
+    setParent("bl", byId.has("pelvis") ? "pelvis" : "chest");
+    setParent("br", byId.has("pelvis") ? "pelvis" : "chest");
+
+    // Auto-parent any custom/unknown pins to nearest core bone
+    for (let i = 0; i < pins.length; i++) {
+      if (i === rootIdx || parentOf[i] !== -1) continue;
+      parentOf[i] = rootIdx;
+    }
+
+    for (let i = 0; i < pins.length; i++) {
+      const id = pins[i].id;
+      if (id === "fr" || id === "bl" || id === "r_hand") depthOf[i] = 1;
+      else if (id === "tail") depthOf[i] = 2;
+      else if (id === "chest" || id === "pelvis") depthOf[i] = 3;
+      else if (id === "head") depthOf[i] = 4;
+      else if (id === "fl" || id === "br") depthOf[i] = 5;
+      else if (id === "wing" || id === "l_hand") depthOf[i] = 6;
+      else depthOf[i] = 5;
+    }
+  }
+
+  // Topological order (parents always evaluated before children)
+  const order = [];
+  const visited = new Uint8Array(pins.length);
+  const visit = (i) => {
+    if (visited[i]) return;
+    if (parentOf[i] !== -1) visit(parentOf[i]);
+    visited[i] = 1;
+    order.push(i);
+  };
+  for (let i = 0; i < pins.length; i++) visit(i);
+
+  // Compute anatomical joint socket pivot (between parent and child, biased toward parent)
+  const sockets = new Array(pins.length);
+  for (let i = 0; i < pins.length; i++) {
+    const p = pins[i];
+    const pi = parentOf[i];
+    if (pi === -1) {
+      sockets[i] = { x: p.x, y: p.y, len: 1 };
+    } else {
+      const par = pins[pi];
+      const id = p.id;
+      const isLimb = (id === "fl" || id === "fr" || id === "bl" || id === "br");
+      // For legs, place hip/shoulder socket cleanly below torso center; for others, 35% from parent
+      const sx = isLimb ? (p.x * 0.78 + par.x * 0.22) : (par.x * 0.65 + p.x * 0.35);
+      const sy = isLimb ? (par.y * 0.68 + p.y * 0.32) : (par.y * 0.65 + p.y * 0.35);
+      sockets[i] = { x: sx, y: sy, len: Math.max(4, Math.hypot(p.x - sx, p.y - sy)) };
+    }
+  }
+
+  return { parentOf, depthOf, order, sockets };
+}
+
+function computeBoneFkTransforms(rig, fx, frameIdx, totalFrames, ampScale) {
+  const { pins, bbox, facesLeft, bodyType } = rig;
+  if (!rig.hierarchy) rig.hierarchy = buildBoneHierarchy(pins, bodyType);
+  const { parentOf, order, sockets } = rig.hierarchy;
+
+  const phase = (frameIdx / Math.max(1, totalFrames)) * Math.PI * 2;
+  const dir = facesLeft ? -1 : 1;
+  const amp = typeof ampScale === "number" ? ampScale : 1.0;
+
+  // Pair-gap aware non-colliding angle clamp for quadruped/biped legs
+  const byId = {};
+  for (let i = 0; i < pins.length; i++) byId[pins[i].id] = { pin: pins[i], sock: sockets[i] };
+  const clampPairAngle = (id, rawAng) => {
+    const partnerId = id === "fl" ? "fr" : (id === "fr" ? "fl" : (id === "bl" ? "br" : (id === "br" ? "bl" : null)));
+    if (!partnerId || !byId[id] || !byId[partnerId]) return rawAng;
+    const self = byId[id], partner = byId[partnerId];
+    const gap = Math.max(4, Math.abs(partner.pin.x - self.pin.x));
+    const toward = Math.sign(partner.pin.x - self.pin.x) || 1;
+    const tipDx = -Math.sin(rawAng) * self.sock.len;
+    if (tipDx * toward > 0) {
+      const maxInward = gap * 0.34;
+      if (Math.abs(tipDx) > maxInward) return rawAng * (maxInward / Math.abs(tipDx));
+    }
+    return rawAng;
+  };
+
+  // Root translation & local joint angles/offsets per bone
+  const localDx = new Float32Array(pins.length);
+  const localDy = new Float32Array(pins.length);
+  const localAng = new Float32Array(pins.length);
+
+  for (let i = 0; i < pins.length; i++) {
+    const id = pins[i].id;
+    let dx = 0, dy = 0, ang = 0;
+
+    if (bodyType === "crawler" && id.startsWith("spine_")) {
+      const si = parseInt(id.slice(6), 10) || 0;
+      const wAmp = (fx === "sprint" ? 1.35 : (fx === "sleep" ? 0.25 : 1.0)) * amp;
+      if (si === 0) {
+        dy = -Math.abs(Math.sin(phase)) * Math.max(1.0, bbox.bh * 0.04) * wAmp;
+        dx = dir * Math.cos(phase) * 0.8 * wAmp;
+      } else {
+        ang = Math.sin(phase - si * 1.05) * 0.24 * wAmp;
+        dy = -Math.abs(Math.sin(phase - si * 1.05)) * Math.max(1.0, bbox.bh * 0.06) * wAmp;
+      }
+    } else if (bodyType === "swimmer") {
+      const wAmp = (fx === "sprint" ? 1.4 : (fx === "sleep" ? 0.3 : 1.0)) * amp;
+      const buoy = Math.sin(phase) * Math.max(1.0, bbox.bh * 0.045) * wAmp;
+      if (id === "chest") { dy = buoy; ang = Math.sin(phase) * 0.04 * wAmp; }
+      else if (id === "head") { ang = -Math.sin(phase) * 0.05 * wAmp; }
+      else if (id === "pelvis") { ang = Math.sin(phase - 1.1) * 0.14 * wAmp; }
+      else if (id === "tail") { ang = Math.sin(phase - 2.0) * 0.32 * wAmp; }
+    } else if (bodyType === "bird") {
+      const flap = Math.sin(phase);
+      const wAmp = (fx === "sprint" ? 1.35 : (fx === "sleep" ? 0.25 : 1.0)) * amp;
+      if (id === "chest") { dy = -flap * Math.max(1.8, bbox.bh * 0.06) * wAmp; ang = dir * flap * 0.05 * wAmp; }
+      else if (id === "wing") { ang = -dir * flap * 0.42 * wAmp; dy = flap * Math.max(1.5, bbox.bh * 0.08) * wAmp; }
+      else if (id === "head") { ang = dir * Math.sin(phase - 0.6) * 0.08 * wAmp; }
+      else if (id === "tail") { ang = dir * Math.sin(phase - 0.9) * 0.18 * wAmp; }
+      else if (id === "fl") { ang = -dir * Math.sin(phase) * 0.16 * wAmp; }
+    } else if (fx === "walk") {
+      const bob = -Math.abs(Math.cos(phase)) * Math.max(1.0, bbox.bh * 0.026) * amp;
+      if (id === "chest") { dy = bob; ang = dir * Math.sin(phase) * 0.03 * amp; }
+      else if (id === "head") { ang = -dir * Math.sin(phase - 0.5) * 0.07 * amp; dy = -Math.abs(Math.cos(phase - 0.6)) * 0.6 * amp; }
+      else if (id === "pelvis") { ang = -dir * Math.sin(phase) * 0.025 * amp; }
+      else if (id === "tail") { ang = Math.sin(phase * 2 - 0.6) * 0.18 * amp; }
+      else if (id === "l_hand") { ang = -dir * Math.sin(phase + Math.PI) * 0.24 * amp; }
+      else if (id === "r_hand") { ang = -dir * Math.sin(phase) * 0.24 * amp; }
+      else if (id === "fl" || id === "br") {
+        ang = clampPairAngle(id, -dir * Math.sin(phase) * 0.22 * amp);
+        dy = -Math.max(0, Math.cos(phase)) * Math.max(1.6, sockets[i].len * 0.16) * amp;
+      } else if (id === "fr" || id === "bl") {
+        ang = clampPairAngle(id, -dir * Math.sin(phase + Math.PI) * 0.22 * amp);
+        dy = -Math.max(0, Math.cos(phase + Math.PI)) * Math.max(1.6, sockets[i].len * 0.16) * amp;
+      }
+    } else if (fx === "sprint" || fx === "run") {
+      const air = -Math.max(0, Math.sin(phase * 2)) * Math.max(2.0, bbox.bh * 0.06) * amp;
+      const pitch = dir * Math.cos(phase) * 0.07 * amp;
+      if (id === "chest") { dy = air; dx = dir * 0.8 * amp; ang = pitch; }
+      else if (id === "head") { ang = -pitch * 0.6; }
+      else if (id === "pelvis") { ang = -pitch * 0.5; }
+      else if (id === "tail") { ang = Math.sin(phase * 2 - 0.5) * 0.24 * amp; }
+      else if (id === "fl") { ang = clampPairAngle(id, -dir * Math.sin(phase) * 0.32 * amp); dy = -Math.max(0, Math.cos(phase)) * Math.max(2.2, sockets[i].len * 0.22) * amp; }
+      else if (id === "fr") { ang = clampPairAngle(id, -dir * Math.sin(phase + 0.5) * 0.32 * amp); dy = -Math.max(0, Math.cos(phase + 0.5)) * Math.max(2.2, sockets[i].len * 0.22) * amp; }
+      else if (id === "bl") { ang = clampPairAngle(id, -dir * Math.sin(phase + Math.PI * 0.9) * 0.32 * amp); dy = -Math.max(0, Math.cos(phase + Math.PI * 0.9)) * Math.max(2.2, sockets[i].len * 0.22) * amp; }
+      else if (id === "br") { ang = clampPairAngle(id, -dir * Math.sin(phase + Math.PI * 1.25) * 0.32 * amp); dy = -Math.max(0, Math.cos(phase + Math.PI * 1.25)) * Math.max(2.2, sockets[i].len * 0.22) * amp; }
+      else if (id === "l_hand") { ang = -dir * Math.sin(phase + Math.PI) * 0.32 * amp; }
+      else if (id === "r_hand") { ang = -dir * Math.sin(phase) * 0.32 * amp; }
+    } else if (fx === "dance") {
+      const sway = Math.sin(phase) * Math.max(1.5, bbox.bw * 0.032) * amp;
+      const bounce = -Math.abs(Math.sin(phase * 2)) * Math.max(1.6, bbox.bh * 0.048) * amp;
+      if (id === "chest") { dx = sway; dy = bounce; ang = Math.sin(phase) * 0.08 * amp; }
+      else if (id === "head") { ang = Math.sin(phase - 0.5) * 0.12 * amp; }
+      else if (id === "tail") { ang = Math.sin(phase * 2) * 0.24 * amp; }
+      else if (id === "fl" || id === "br") { dy = -Math.max(0, Math.sin(phase)) * Math.max(1.5, sockets[i].len * 0.16) * amp; ang = -Math.sin(phase) * 0.06 * amp; }
+      else if (id === "fr" || id === "bl") { dy = -Math.max(0, -Math.sin(phase)) * Math.max(1.5, sockets[i].len * 0.16) * amp; ang = Math.sin(phase) * 0.06 * amp; }
+      else if (id === "l_hand" || id === "r_hand") { ang = Math.sin(phase * 2) * 0.28 * amp; }
+    } else if (fx === "hop") {
+      const u = frameIdx / Math.max(1, totalFrames);
+      const crouch = u < 0.24 ? Math.sin((u / 0.24) * Math.PI) : (u >= 0.68 ? Math.sin(((u - 0.68) / 0.32) * Math.PI) * 0.7 : 0);
+      const air = (u >= 0.24 && u < 0.68) ? Math.sin(((u - 0.24) / 0.44) * Math.PI) : 0;
+      if (id === "chest") {
+        dy = (crouch * Math.max(2.2, bbox.bh * 0.05) - air * Math.max(4.5, bbox.bh * 0.15)) * amp;
+        ang = dir * (crouch * 0.05 - air * 0.06) * amp;
+      } else if (id === "fl" || id === "fr") {
+        ang = -dir * air * 0.24 * amp;
+      } else if (id === "bl" || id === "br") {
+        ang = dir * air * 0.24 * amp;
+      } else if (id === "tail") {
+        ang = -dir * air * 0.22 * amp;
+      }
+    } else if (fx === "sleep") {
+      const br = Math.sin(phase);
+      const crouch = Math.max(3.0, bbox.bh * 0.085) * amp;
+      if (id === "chest") { dy = crouch - br * Math.max(1.2, bbox.bh * 0.032) * amp; ang = dir * 0.05 * amp; }
+      else if (id === "head") { ang = dir * (0.14 + br * 0.04) * amp; dy = crouch * 0.2; }
+      else if (id === "tail") { ang = br * 0.10 * amp; }
+      else if (id === "fl" || id === "fr") { ang = dir * 0.16 * amp; }
+      else if (id === "bl" || id === "br") { ang = -dir * 0.16 * amp; }
+    } else if (fx === "pet") {
+      const sq = Math.max(0, Math.sin(phase)) * amp;
+      if (id === "chest") { dy = sq * Math.max(1.4, bbox.bh * 0.04); }
+      else if (id === "head") { dy = sq * Math.max(1.6, bbox.bh * 0.05); ang = dir * sq * 0.10; }
+      else if (id === "tail") { ang = Math.sin(phase * 4) * 0.28 * amp; }
+    } else if (fx === "breathe") {
+      const br = (Math.sin(phase) * 0.5 + 0.5) * amp;
+      if (id === "chest") { dy = br * Math.max(1.0, bbox.bh * 0.032); }
+      else if (id === "head") { ang = dir * br * 0.04; }
+    } else if (fx === "wave") {
+      if (id === "tail") { ang = Math.sin(phase) * 0.26 * amp; }
+      else if (id === "head") { ang = Math.sin(phase + 1.0) * 0.10 * amp; }
+      else if (id === "l_hand") { ang = Math.sin(phase * 2) * 0.35 * amp; }
+    }
+
+    localDx[i] = dx;
+    localDy[i] = dy;
+    localAng[i] = ang;
+  }
+
+  // Forward Kinematics: accumulate parent -> child world-space rigid transforms
+  // Transform of point (x, y) on bone i:
+  //   x' = pivOutX + (x - pivInX)*cos(wAng) - (y - pivInY)*sin(wAng)
+  //   y' = pivOutY + (x - pivInX)*sin(wAng) + (y - pivInY)*cos(wAng)
+  const world = new Array(pins.length);
+  for (let oi = 0; oi < order.length; oi++) {
+    const i = order[oi];
+    const pi = parentOf[i];
+    const sock = sockets[i];
+    if (pi === -1) {
+      const a = localAng[i];
+      world[i] = {
+        pivInX: sock.x, pivInY: sock.y,
+        pivOutX: sock.x + localDx[i], pivOutY: sock.y + localDy[i],
+        ang: a, ca: Math.cos(a), sa: Math.sin(a),
+      };
+    } else {
+      const pw = world[pi];
+      const rx = sock.x - pw.pivInX, ry = sock.y - pw.pivInY;
+      const sxOut = pw.pivOutX + rx * pw.ca - ry * pw.sa;
+      const syOut = pw.pivOutY + rx * pw.sa + ry * pw.ca;
+      const a = pw.ang + localAng[i];
+      world[i] = {
+        pivInX: sock.x, pivInY: sock.y,
+        pivOutX: sxOut + localDx[i], pivOutY: syOut + localDy[i],
+        ang: a, ca: Math.cos(a), sa: Math.sin(a),
+      };
+    }
+  }
+  return world;
+}
+
+function renderBoneFkFrame(rig, fx, frameIdx, totalFrames, ampScale) {
+  const { grid, epx, w, h, bbox, pins, geo } = rig;
+  if (!rig.hierarchy) rig.hierarchy = buildBoneHierarchy(pins, rig.bodyType);
+  const { parentOf, depthOf, sockets } = rig.hierarchy;
+  const world = computeBoneFkTransforms(rig, fx, frameIdx, totalFrames, ampScale);
+
+  const out = new Uint8ClampedArray(w * h * 4);
+  const zBuf = new Int8Array(w * h).fill(-10);
+  const ew = epx.w, eh = epx.h, edata = epx.data, efactor = epx.factor || 2;
+
+  const step = Math.max(w, h) > 96 ? 2 : 1;
+  const y0 = Math.max(0, bbox.minY), y1 = Math.min(h - 1, bbox.maxY);
+  const x0 = Math.max(0, bbox.minX), x1 = Math.min(w - 1, bbox.maxX);
+
+  const evalBonePt = (bi, x, y) => {
+    const t = world[bi];
+    const rx = x - t.pivInX, ry = y - t.pivInY;
+    return {
+      x: t.pivOutX + rx * t.ca - ry * t.sa,
+      y: t.pivOutY + rx * t.sa + ry * t.ca,
+    };
+  };
+
+  // Sort bones back-to-front by depthOf
+  const drawOrder = Array.from({ length: pins.length }, (_, i) => i).sort((a, b) => depthOf[a] - depthOf[b]);
+  const vx = new Float32Array((w + 1) * (h + 1));
+  const vy = new Float32Array((w + 1) * (h + 1));
+  const blendR = 5.0; // 5px smooth socket blend between parent and child
+
+  for (let di = 0; di < drawOrder.length; di++) {
+    const bi = drawOrder[di];
+    const pi = parentOf[bi];
+    const depth = depthOf[bi];
+    const sock = sockets[bi];
+
+    // Find tight bounding box of cells belonging to bone bi (with 1-step overlap collar)
+    let bMinX = w, bMaxX = -1, bMinY = h, bMaxY = -1;
+    for (let y = y0; y <= y1; y += step) {
+      const yNext = Math.min(h, y + step);
+      for (let x = x0; x <= x1; x += step) {
+        const xNext = Math.min(w, x + step);
+        let hit = false;
+        for (let ty = y; ty < yNext && !hit; ty++) {
+          for (let tx = x; tx < xNext; tx++) {
+            const ci = ty * w + tx;
+            if (grid[ci * 4 + 3] > 0 && geo.domPin[ci] === bi) { hit = true; break; }
+          }
+        }
+        if (hit) {
+          if (x < bMinX) bMinX = x; if (x > bMaxX) bMaxX = x;
+          if (y < bMinY) bMinY = y; if (y > bMaxY) bMaxY = y;
+        }
+      }
+    }
+    if (bMaxX < bMinX) continue;
+
+    // Expand by 1 step collar for watertight seams
+    const sx0 = Math.max(x0, bMinX - step);
+    const sx1 = Math.min(x1, bMaxX + step);
+    const sy0 = Math.max(y0, bMinY - step);
+    const sy1 = Math.min(y1, bMaxY + step);
+
+    // Evaluate vertices on bone bi (smoothly blending to parent near the joint socket)
+    for (let y = sy0; y <= sy1 + step; y += step) {
+      const cy = Math.min(h, y);
+      for (let x = sx0; x <= sx1 + step; x += step) {
+        const cx = Math.min(w, x);
+        const vi = cy * (w + 1) + cx;
+        const pC = evalBonePt(bi, cx, cy);
+        if (pi === -1) {
+          vx[vi] = pC.x; vy[vi] = pC.y;
+        } else {
+          // Signed projection along parent->child bone axis
+          const dSock = Math.hypot(cx - sock.x, cy - sock.y);
+          if (dSock < blendR) {
+            const pP = evalBonePt(pi, cx, cy);
+            const t = dSock / blendR;
+            const s = t * t * (3 - 2 * t);
+            vx[vi] = pP.x * (1 - s) + pC.x * s;
+            vy[vi] = pP.y * (1 - s) + pC.y * s;
+          } else {
+            vx[vi] = pC.x; vy[vi] = pC.y;
+          }
+        }
+      }
+    }
+
+    // Rasterize bone bi + 1-step overlap collar
+    for (let y = sy0; y <= sy1; y += step) {
+      const yNext = Math.min(h, y + step);
+      for (let x = sx0; x <= sx1; x += step) {
+        const xNext = Math.min(w, x + step);
+        let belongs = false;
+        for (let ty = y; ty < yNext && !belongs; ty++) {
+          for (let tx = x; tx < xNext; tx++) {
+            const ci = ty * w + tx;
+            if (grid[ci * 4 + 3] === 0) continue;
+            if (geo.domPin[ci] === bi) { belongs = true; break; }
+            const lx = Math.max(0, tx - step), rx = Math.min(w - 1, tx + step);
+            const uy = Math.max(0, ty - step), dy = Math.min(h - 1, ty + step);
+            if (
+              geo.domPin[ty * w + lx] === bi || geo.domPin[ty * w + rx] === bi ||
+              geo.domPin[uy * w + tx] === bi || geo.domPin[dy * w + tx] === bi
+            ) { belongs = true; break; }
+          }
+        }
+        if (!belongs) continue;
+        const i00 = y * (w + 1) + x, i10 = y * (w + 1) + xNext;
+        const i01 = yNext * (w + 1) + x, i11 = yNext * (w + 1) + xNext;
+        rasterizeTriEpx(out, zBuf, w, h, edata, ew, eh, efactor, vx[i00], vy[i00], x, y, vx[i10], vy[i10], xNext, y, vx[i11], vy[i11], xNext, yNext, depth);
+        rasterizeTriEpx(out, zBuf, w, h, edata, ew, eh, efactor, vx[i00], vy[i00], x, y, vx[i11], vy[i11], xNext, yNext, vx[i01], vy[i01], x, yNext, depth);
+      }
+    }
+  }
+
+  // Strict ground-baseline alignment for grounded cycles
+  let finalOut = out;
+  if ((fx === "walk" || fx === "breathe" || fx === "wave" || fx === "sleep") && rig.bodyType !== "bird" && rig.bodyType !== "swimmer") {
+    let curFoot = -1;
+    for (let y = h - 1; y >= 0 && curFoot === -1; y--) {
+      for (let x = 0; x < w; x++) {
+        if (out[(y * w + x) * 4 + 3] > 0) { curFoot = y; break; }
+      }
+    }
+    if (curFoot !== -1 && curFoot !== bbox.maxY) {
+      const shift = bbox.maxY - curFoot;
+      if (Math.abs(shift) <= 14) {
+        const aligned = new Uint8ClampedArray(w * h * 4);
+        for (let y = 0; y < h; y++) {
+          const ty = y + shift;
+          if (ty < 0 || ty >= h) continue;
+          for (let x = 0; x < w; x++) {
+            const sp = (y * w + x) * 4, dp = (ty * w + x) * 4;
+            aligned[dp] = out[sp]; aligned[dp + 1] = out[sp + 1]; aligned[dp + 2] = out[sp + 2]; aligned[dp + 3] = out[sp + 3];
+          }
+        }
+        finalOut = aligned;
+      }
+    }
+  }
+
+  sealPinholesAndSpecks(finalOut, w, h);
+  const lockEl = typeof document !== "undefined" ? document.getElementById("gif-outline-lock") : null;
+  if ((!lockEl || lockEl.checked) && !rig.isHiResNative) {
+    applyCrispOutlineLock(finalOut, w, h, rig.inkColor || [20, 22, 28]);
+  }
+  return finalOut;
+}
+
 function renderRiggedFrame(rig, fx, frameIdx, totalFrames, techOpt) {
   const { grid, epx, w, h, bbox, pins, geo } = rig;
   let ampScale = 1.0;
@@ -1529,7 +1947,10 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames, techOpt) {
   let tech = techOpt;
   if (!tech && typeof document !== "undefined") {
     const tEl = document.getElementById("gif-tech-select");
-    tech = tEl ? tEl.value : "rigid_3pass";
+    tech = tEl ? tEl.value : "bone_fk";
+  }
+  if (!tech || tech === "bone_fk") {
+    return renderBoneFkFrame(rig, fx, frameIdx, totalFrames, ampScale);
   }
   const useArticulatedLimbs =
     tech !== "geodesic_mls" &&
@@ -1993,7 +2414,7 @@ function getCachedRiggedFrame(rig, fx, frameIdx, totalFrames) {
   const ampEl = typeof document !== "undefined" ? document.getElementById("gif-amp") : null;
   const ampKey = ampEl ? ampEl.value : "1";
   const techEl = typeof document !== "undefined" ? document.getElementById("gif-tech-select") : null;
-  const techKey = techEl ? techEl.value : "rigid_3pass";
+  const techKey = techEl ? techEl.value : "bone_fk";
   const key = rig.w + "x" + rig.h + ":" + rig.bodyType + ":" + fx + ":" + totalFrames + ":" + lockKey + ":" + ampKey + ":" + techKey;
   if (_gifFrameCacheKey !== key) {
     _gifFrameCacheKey = key;
@@ -2767,7 +3188,7 @@ function exportMascotCompareSheet() {
     const restRgba = tctx.getImageData(0, 0, size, size).data;
 
     const techs = [
-      { id: "rigid_3pass", label: "RIGID 3P", color: "#7ee8fa" },
+      { id: "bone_fk", label: "BONE FK", color: "#7ee8fa" },
       { id: "geodesic_mls", label: "GEO MLS", color: "#ffd166" },
     ];
 
@@ -3098,6 +3519,9 @@ if (typeof module !== "undefined" && module.exports) {
     countInteriorHoles,
     buildFrameDiffRgba,
     sealPinholesAndSpecks,
+    buildBoneHierarchy,
+    computeBoneFkTransforms,
+    renderBoneFkFrame,
     renderRiggedFrame,
     extractMedialAxisFeatures,
     computeSpringFollowThrough,

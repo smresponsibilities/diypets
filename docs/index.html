@@ -588,6 +588,7 @@
             <label class="slider-chip" title="Animation Motion Intensity">AMP <span id="gif-amp-val">1.0x</span> <input id="gif-amp" type="range" min="0.4" max="1.8" step="0.1" value="1.0" style="width:62px;" oninput="onGifAmpChange()" /></label>
             <label class="slider-chip" title="Compare deformation techniques live">TECH
               <select id="gif-tech-select" class="ctrl-input" style="width:118px;padding:3px 6px;" onchange="invalidateGifFrameCache();renderGifPreviewNow()">
+                <option value="bone_fk" selected>Bone-FK (Unified)</option>
                 <option value="rigid_3pass">Rigid-Bone 3P</option>
                 <option value="geodesic_mls">Geodesic MLS</option>
               </select>
@@ -1308,7 +1309,7 @@ function loop(now) {
 requestAnimationFrame(loop);
 
 </script>
-<script src="gif_maker.js?v=21">
+<script src="gif_maker.js?v=22">
 // Auto-sync displayed version from GitHub Releases API (cached per session, fallback v0.4.1)
 (function syncLatestVersion() {
   const applyVer = (tag) => {
