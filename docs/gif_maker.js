@@ -1318,9 +1318,11 @@ function refreshCleanedCustomImg() {
     gifCustomSheet = null;
     setSheetControlsVisible(false);
     const bodySel = document.getElementById("gif-body-select");
+    invalidateGifFrameCache();
     gifCustomRig = buildAutoRig(raw, w, h, cleanBg, bodySel ? bodySel.value : "auto");
     if (st) {
-      st.textContent = "2x EPX RIGID MLS (" + gifCustomRig.bodyType.toUpperCase() + ", " + gifCustomRig.nativeW + "x" + gifCustomRig.nativeH + " NATIVE)";
+      const modeTag = gifCustomRig.isHiResNative ? "NATIVE 1:1 RIGID MLS" : "2x EPX RIGID MLS";
+      st.textContent = modeTag + " (" + gifCustomRig.bodyType.toUpperCase() + ", " + gifCustomRig.nativeW + "x" + gifCustomRig.nativeH + ")";
     }
   }
 }
@@ -1448,32 +1450,82 @@ function computeSafeDrawRect(sw, sh, outW, outH, padBottom) {
   return { ox, oy, dw, dh };
 }
 
+let _gifOffCanvas = null;
+let _gifFrameCacheKey = "";
+let _gifFrameCache = new Map();
+
+function invalidateGifFrameCache() {
+  _gifFrameCacheKey = "";
+  _gifFrameCache.clear();
+}
+
+function getCachedRiggedFrame(rig, fx, frameIdx, totalFrames) {
+  const lockEl = typeof document !== "undefined" ? document.getElementById("gif-outline-lock") : null;
+  const lockKey = (!lockEl || lockEl.checked) ? "1" : "0";
+  const key = rig.w + "x" + rig.h + ":" + rig.bodyType + ":" + fx + ":" + totalFrames + ":" + lockKey;
+  if (_gifFrameCacheKey !== key) {
+    _gifFrameCacheKey = key;
+    _gifFrameCache.clear();
+  }
+  let cached = _gifFrameCache.get(frameIdx);
+  if (!cached) {
+    cached = renderRiggedFrame(rig, fx, frameIdx, totalFrames);
+    _gifFrameCache.set(frameIdx, cached);
+  }
+  return cached;
+}
+
+function getGifPlaybackSequence(baseFrames, pingPong) {
+  const n = Math.max(1, baseFrames);
+  const seq = [];
+  for (let i = 0; i < n; i++) seq.push(i);
+  if (pingPong && n > 2) {
+    for (let i = n - 2; i >= 1; i--) seq.push(i);
+  }
+  return seq;
+}
+
+function getGifBgFill(bgMode, customHex) {
+  if (bgMode === "discord") return "#313338";
+  if (bgMode === "github") return "#0d1117";
+  if (bgMode === "light") return "#ffffff";
+  if (bgMode === "custom") return customHex || "#1e1f22";
+  return null;
+}
+
 function drawNativeRgbaScaled(targetCtx, rgba, sw, sh, outW, outH, padBottom, storeGeom) {
-  const off = document.createElement("canvas");
-  off.width = sw; off.height = sh;
-  off.getContext("2d").putImageData(new ImageData(rgba, sw, sh), 0, 0);
+  if (!_gifOffCanvas) _gifOffCanvas = document.createElement("canvas");
+  if (_gifOffCanvas.width !== sw || _gifOffCanvas.height !== sh) {
+    _gifOffCanvas.width = sw;
+    _gifOffCanvas.height = sh;
+  }
+  _gifOffCanvas.getContext("2d").putImageData(new ImageData(rgba, sw, sh), 0, 0);
 
   const { ox, oy, dw, dh } = computeSafeDrawRect(sw, sh, outW, outH, padBottom);
   const mirEl = typeof document !== "undefined" ? document.getElementById("gif-mirror") : null;
+  const mirrored = Boolean(mirEl && mirEl.checked);
   targetCtx.imageSmoothingEnabled = false;
-  if (mirEl && mirEl.checked) {
+  if (mirrored) {
     targetCtx.save();
     targetCtx.translate(ox + dw, oy);
     targetCtx.scale(-1, 1);
-    targetCtx.drawImage(off, 0, 0, sw, sh, 0, 0, dw, dh);
+    targetCtx.drawImage(_gifOffCanvas, 0, 0, sw, sh, 0, 0, dw, dh);
     targetCtx.restore();
   } else {
-    targetCtx.drawImage(off, 0, 0, sw, sh, ox, oy, dw, dh);
+    targetCtx.drawImage(_gifOffCanvas, 0, 0, sw, sh, ox, oy, dw, dh);
   }
-  if (storeGeom) gifLastCanvasGeom = { ox, oy, dw, dh, sw, sh };
+  if (storeGeom) gifLastCanvasGeom = { ox, oy, dw, dh, sw, sh, mirrored };
 }
 
 function drawGifMakerFrame(targetCtx, w, h, frameIdx, totalFrames, allowOverlay) {
   const petId = document.getElementById("gif-pet-select").value;
   const fx = document.getElementById("gif-fx-select").value;
   const bgMode = document.getElementById("gif-bg-select").value;
+  const customColEl = document.getElementById("gif-bg-color");
   const caption = (document.getElementById("gif-caption").value || "").trim();
   const editPinsEl = document.getElementById("gif-show-rig");
+  const mirEl = document.getElementById("gif-mirror");
+  const mirrored = Boolean(mirEl && mirEl.checked);
   const editPins = allowOverlay && editPinsEl && editPinsEl.checked;
   targetCtx.clearRect(0, 0, w, h);
   targetCtx.imageSmoothingEnabled = false;
@@ -1490,6 +1542,12 @@ function drawGifMakerFrame(targetCtx, w, h, frameIdx, totalFrames, allowOverlay)
       targetCtx.font = "bold " + Math.max(8, Math.round(10 * amp)) + "px monospace";
       targetCtx.fillText(caption, Math.round(8 * amp), Math.round(15 * amp));
     }
+  } else {
+    const fill = getGifBgFill(bgMode, customColEl ? customColEl.value : "#1e1f22");
+    if (fill) {
+      targetCtx.fillStyle = fill;
+      targetCtx.fillRect(0, 0, w, h);
+    }
   }
 
   const padBottom = bgMode === "card" ? Math.round(8 * amp) : Math.round(2 * amp);
@@ -1500,20 +1558,71 @@ function drawGifMakerFrame(targetCtx, w, h, frameIdx, totalFrames, allowOverlay)
     return;
   }
   if (gifCustomRig) {
-    const frameRgba = editPins ? gifCustomRig.grid : renderRiggedFrame(gifCustomRig, fx, frameIdx, totalFrames);
-    drawNativeRgbaScaled(targetCtx, frameRgba, gifCustomRig.w, gifCustomRig.h, w, h, padBottom, allowOverlay, gifCustomRig.nativeW, gifCustomRig.nativeH);
-    if (editPins) drawPinOverlay(targetCtx, gifCustomRig, gifLastCanvasGeom);
+    const frameRgba = editPins ? gifCustomRig.grid : getCachedRiggedFrame(gifCustomRig, fx, frameIdx, totalFrames);
+    drawNativeRgbaScaled(targetCtx, frameRgba, gifCustomRig.w, gifCustomRig.h, w, h, padBottom, allowOverlay);
+    if (editPins) {
+      if (mirrored && gifLastCanvasGeom) {
+        const g = gifLastCanvasGeom;
+        const mirRig = Object.assign({}, gifCustomRig, {
+          pins: gifCustomRig.pins.map((p) => Object.assign({}, p, { x: gifCustomRig.w - 1 - p.x })),
+        });
+        drawPinOverlay(targetCtx, mirRig, g);
+      } else {
+        drawPinOverlay(targetCtx, gifCustomRig, gifLastCanvasGeom);
+      }
+    }
     return;
   }
 
   if (typeof sprites !== "undefined" && sprites[petId] && sprites[petId].complete && sprites[petId].naturalWidth > 0) {
     const sp = sprites[petId];
     const fw = Math.floor(sp.naturalWidth / 9), fh = sp.naturalHeight;
-    const fCol = (fx === "walk" || fx === "run") ? (1 + (frameIdx % 4)) : 0;
-    const dy = fx === "hop" ? -Math.round(Math.sin((frameIdx / totalFrames) * Math.PI) * 14 * amp) : 0;
+    const phase = (frameIdx / Math.max(1, totalFrames)) * Math.PI * 2;
+    const fCol = (fx === "walk" || fx === "sprint" || fx === "run")
+      ? (1 + (frameIdx % 4))
+      : (fx === "sleep" ? 6 : 0);
+    let dy = 0, dx = 0, scaleY = 1.0;
+    if (fx === "hop") dy = -Math.round(Math.sin((frameIdx / totalFrames) * Math.PI) * 14 * amp);
+    else if (fx === "sprint") dy = -Math.round(Math.abs(Math.sin(phase)) * 6 * amp);
+    else if (fx === "dance") { dx = Math.round(Math.sin(phase) * 5 * amp); dy = -Math.round(Math.abs(Math.sin(phase * 2)) * 5 * amp); }
+    else if (fx === "pet") scaleY = 1.0 - Math.max(0, Math.sin(phase)) * 0.14;
+    else if (fx === "breathe" || fx === "sleep") scaleY = 1.0 + Math.sin(phase) * 0.04;
+    else if (fx === "wave") dx = Math.round(Math.sin(phase) * 2 * amp);
+
     const box = w - Math.round((bgMode === "card" ? 24 : 8) * amp);
-    targetCtx.drawImage(sp, fCol * fw, 0, fw, fh, Math.floor((w - box) / 2), h - padBottom - box + dy, box, box);
+    const drawH = Math.max(1, Math.round(box * scaleY));
+    const drawX = Math.floor((w - box) / 2) + dx;
+    const drawY = h - padBottom - drawH + dy;
+    targetCtx.save();
+    if (mirrored) {
+      targetCtx.translate(drawX + box, drawY);
+      targetCtx.scale(-1, 1);
+      targetCtx.drawImage(sp, fCol * fw, 0, fw, fh, 0, 0, box, drawH);
+    } else {
+      targetCtx.drawImage(sp, fCol * fw, 0, fw, fh, drawX, drawY, box, drawH);
+    }
+    targetCtx.restore();
   }
+}
+
+function onGifBgChange() {
+  const bgSel = document.getElementById("gif-bg-select");
+  const colEl = document.getElementById("gif-bg-color");
+  if (colEl && bgSel) colEl.style.display = bgSel.value === "custom" ? "inline-block" : "none";
+  renderGifPreviewNow();
+}
+
+function renderGifPreviewNow() {
+  const prevC = document.getElementById("gif-preview-canvas");
+  if (!prevC) return;
+  const fx = document.getElementById("gif-fx-select").value;
+  const baseTotal = getGifTotalFrames(fx);
+  const ppEl = document.getElementById("gif-pingpong");
+  const seq = getGifPlaybackSequence(baseTotal, Boolean(ppEl && ppEl.checked));
+  const pos = gifPreviewTick % seq.length;
+  const badge = document.getElementById("gif-frame-badge");
+  if (badge) badge.textContent = (pos + 1) + "/" + seq.length;
+  drawGifMakerFrame(prevC.getContext("2d"), prevC.width, prevC.height, seq[pos], baseTotal, true);
 }
 
 function lzwEncodeGif(indices, minCodeSize) {
@@ -1644,6 +1753,37 @@ function encodeGif89a(framesRgba, w, h, delayCs, transparent) {
   return new Uint8Array(bytes);
 }
 
+function buildDeskpetXmlString(title, tilesX, pngBase64) {
+  const safeTitle = String(title || "Custom Pet").replace(/[<>&"]/g, "");
+  const walkFrames = [];
+  for (let i = 0; i < tilesX; i++) walkFrames.push("      <Frame>" + i + "</Frame>");
+  return [
+    '<?xml version="1.0" encoding="utf-8"?>',
+    '<Animations>',
+    '  <Header>',
+    '    <Title>' + safeTitle + '</Title>',
+    '    <Author>diypets Web GIF Maker</Author>',
+    '    <Version>1.0</Version>',
+    '  </Header>',
+    '  <Image>',
+    '    <TilesX>' + tilesX + '</TilesX>',
+    '    <TilesY>1</TilesY>',
+    '    <Png>' + pngBase64 + '</Png>',
+    '  </Image>',
+    '  <Animation id="1" name="walk">',
+    '    <Sequence repeat="0">',
+    walkFrames.join('\n'),
+    '    </Sequence>',
+    '  </Animation>',
+    '  <Animation id="2" name="idle">',
+    '    <Sequence repeat="0">',
+    '      <Frame>0</Frame>',
+    '    </Sequence>',
+    '  </Animation>',
+    '</Animations>',
+  ].join('\n');
+}
+
 function getGifTotalFrames(fx) {
   if (gifCustomSheet && gifCustomSheet.activeIndices.length > 0) return gifCustomSheet.activeIndices.length;
   if (fx === "breathe") return 4;
@@ -1663,15 +1803,17 @@ function exportMascotGif() {
     const petId = document.getElementById("gif-pet-select").value;
     const transparent = document.getElementById("gif-bg-select").value === "transparent";
     const fps = Math.max(4, Math.min(14, Number(document.getElementById("gif-fps").value) || 8));
+    const ppEl = document.getElementById("gif-pingpong");
 
     if (!gifCustomRig && !gifCustomSheet && (!sprites[petId] || !sprites[petId].complete || sprites[petId].naturalWidth === 0)) {
       statusEl.textContent = "WAIT: SPRITE STILL LOADING...";
       return;
     }
-    const totalFrames = getGifTotalFrames(fx);
+    const baseTotal = getGifTotalFrames(fx);
+    const seq = getGifPlaybackSequence(baseTotal, Boolean(ppEl && ppEl.checked));
     const frames = [];
-    for (let i = 0; i < totalFrames; i++) {
-      drawGifMakerFrame(octx, size, size, i, totalFrames, false);
+    for (let i = 0; i < seq.length; i++) {
+      drawGifMakerFrame(octx, size, size, seq[i], baseTotal, false);
       frames.push(octx.getImageData(0, 0, size, size).data);
     }
     const gifBytes = encodeGif89a(frames, size, size, Math.max(4, Math.round(100 / fps)), transparent);
@@ -1682,7 +1824,7 @@ function exportMascotGif() {
     a.download = slug + "-" + (gifCustomSheet ? "sheet" : fx) + "-" + size + "px.gif";
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 2500);
-    statusEl.textContent = "EXPORTED " + (gifBytes.length / 1024).toFixed(1) + " KB GIF (" + size + "px, " + totalFrames + "f)";
+    statusEl.textContent = "EXPORTED " + (gifBytes.length / 1024).toFixed(1) + " KB GIF (" + size + "px, " + seq.length + "f)";
     if (typeof showToast === "function") showToast("Exported " + a.download);
   } catch (err) {
     console.error("GIF export error:", err);
@@ -1696,19 +1838,21 @@ function exportMascotSpriteSheet() {
     const size = Math.max(64, Math.min(256, Number(document.getElementById("gif-size-select").value) || 128));
     const fx = document.getElementById("gif-fx-select").value;
     const petId = document.getElementById("gif-pet-select").value;
-    const totalFrames = getGifTotalFrames(fx);
+    const ppEl = document.getElementById("gif-pingpong");
+    const baseTotal = getGifTotalFrames(fx);
+    const seq = getGifPlaybackSequence(baseTotal, Boolean(ppEl && ppEl.checked));
 
     const tileC = document.createElement("canvas");
     tileC.width = size; tileC.height = size;
     const tctx = tileC.getContext("2d");
 
     const sheetC = document.createElement("canvas");
-    sheetC.width = size * totalFrames; sheetC.height = size;
+    sheetC.width = size * seq.length; sheetC.height = size;
     const sctx = sheetC.getContext("2d");
     sctx.imageSmoothingEnabled = false;
 
-    for (let i = 0; i < totalFrames; i++) {
-      drawGifMakerFrame(tctx, size, size, i, totalFrames, false);
+    for (let i = 0; i < seq.length; i++) {
+      drawGifMakerFrame(tctx, size, size, seq[i], baseTotal, false);
       sctx.drawImage(tileC, i * size, 0);
     }
 
@@ -1717,15 +1861,59 @@ function exportMascotSpriteSheet() {
       const slug = ((gifCustomRig || gifCustomSheet) && gifCustomName) ? gifCustomName : petId;
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = slug + "-" + (gifCustomSheet ? "sheet" : fx) + "-" + totalFrames + "x1-" + size + "px.png";
+      a.download = slug + "-" + (gifCustomSheet ? "sheet" : fx) + "-" + seq.length + "x1-" + size + "px.png";
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 2500);
-      statusEl.textContent = "EXPORTED " + totalFrames + "x1 PNG SHEET (" + (blob.size / 1024).toFixed(1) + " KB)";
-      if (typeof showToast === "function") showToast("Exported PNG sprite sheet (" + totalFrames + " frames)");
+      statusEl.textContent = "EXPORTED " + seq.length + "x1 PNG SHEET (" + (blob.size / 1024).toFixed(1) + " KB)";
+      if (typeof showToast === "function") showToast("Exported PNG sprite sheet (" + seq.length + " frames)");
     }, "image/png");
   } catch (err) {
     console.error("Sheet export error:", err);
     statusEl.textContent = "ERROR EXPORTING PNG SHEET";
+  }
+}
+
+function exportMascotXmlPack() {
+  const statusEl = document.getElementById("gif-status");
+  try {
+    const size = Math.max(64, Math.min(256, Number(document.getElementById("gif-size-select").value) || 128));
+    const fx = document.getElementById("gif-fx-select").value;
+    const petId = document.getElementById("gif-pet-select").value;
+    const title = (document.getElementById("gif-caption").value || petId).trim();
+    const baseTotal = getGifTotalFrames(fx);
+
+    const tileC = document.createElement("canvas");
+    tileC.width = size; tileC.height = size;
+    const tctx = tileC.getContext("2d");
+
+    const sheetC = document.createElement("canvas");
+    sheetC.width = size * baseTotal; sheetC.height = size;
+    const sctx = sheetC.getContext("2d");
+    sctx.imageSmoothingEnabled = false;
+
+    const bgEl = document.getElementById("gif-bg-select");
+    const prevBg = bgEl ? bgEl.value : "transparent";
+    if (bgEl) bgEl.value = "transparent";
+    for (let i = 0; i < baseTotal; i++) {
+      drawGifMakerFrame(tctx, size, size, i, baseTotal, false);
+      sctx.drawImage(tileC, i * size, 0);
+    }
+    if (bgEl) bgEl.value = prevBg;
+
+    const b64 = sheetC.toDataURL("image/png").replace(/^data:image\/png;base64,/, "");
+    const xml = buildDeskpetXmlString(title, baseTotal, b64);
+    const blob = new Blob([xml], { type: "application/xml" });
+    const slug = ((gifCustomRig || gifCustomSheet) && gifCustomName) ? gifCustomName : petId;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = slug + "-deskpet.xml";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2500);
+    statusEl.textContent = "EXPORTED DESKPET.XML (" + (blob.size / 1024).toFixed(1) + " KB, " + baseTotal + "f)";
+    if (typeof showToast === "function") showToast("Exported " + a.download + " (drop into diypets!)");
+  } catch (err) {
+    console.error("XML pack export error:", err);
+    statusEl.textContent = "ERROR EXPORTING DESKPET.XML";
   }
 }
 
@@ -1740,9 +1928,14 @@ function updateGifPreviewFps() {
     const prevC = document.getElementById("gif-preview-canvas");
     if (!prevC) return;
     const fx = document.getElementById("gif-fx-select").value;
-    const total = getGifTotalFrames(fx);
-    if (!gifPaused) gifPreviewTick = (gifPreviewTick + 1) % total;
-    drawGifMakerFrame(prevC.getContext("2d"), prevC.width, prevC.height, gifPreviewTick, total, true);
+    const baseTotal = getGifTotalFrames(fx);
+    const ppEl = document.getElementById("gif-pingpong");
+    const seq = getGifPlaybackSequence(baseTotal, Boolean(ppEl && ppEl.checked));
+    if (!gifPaused) gifPreviewTick = (gifPreviewTick + 1) % seq.length;
+    const pos = gifPreviewTick % seq.length;
+    const badge = document.getElementById("gif-frame-badge");
+    if (badge) badge.textContent = (pos + 1) + "/" + seq.length;
+    drawGifMakerFrame(prevC.getContext("2d"), prevC.width, prevC.height, seq[pos], baseTotal, true);
   }, Math.round(1000 / fps));
 }
 
@@ -1770,7 +1963,8 @@ if (typeof document !== "undefined") {
       const g = gifLastCanvasGeom, sx = g.dw / g.sw, sy = g.dh / g.sh;
       let best = -1, bestD = 12;
       for (let i = 0; i < gifCustomRig.pins.length; i++) {
-        const px = g.ox + gifCustomRig.pins[i].x * sx;
+        const rx = g.mirrored ? (gifCustomRig.w - 1 - gifCustomRig.pins[i].x) : gifCustomRig.pins[i].x;
+        const px = g.ox + rx * sx;
         const py = g.oy + gifCustomRig.pins[i].y * sy;
         const d = Math.hypot(pt.x - px, pt.y - py);
         if (d < bestD) { bestD = d; best = i; }
@@ -1781,20 +1975,44 @@ if (typeof document !== "undefined") {
       if (gifDragPinIdx < 0 || !gifCustomRig || !gifLastCanvasGeom) return;
       const pt = getCanvasPos(ev);
       const g = gifLastCanvasGeom;
-      gifCustomRig.pins[gifDragPinIdx].x = Math.max(0, Math.min(gifCustomRig.w - 1, (pt.x - g.ox) * (g.sw / g.dw)));
+      let gx = Math.max(0, Math.min(gifCustomRig.w - 1, (pt.x - g.ox) * (g.sw / g.dw)));
+      if (g.mirrored) gx = gifCustomRig.w - 1 - gx;
+      gifCustomRig.pins[gifDragPinIdx].x = gx;
       gifCustomRig.pins[gifDragPinIdx].y = Math.max(0, Math.min(gifCustomRig.h - 1, (pt.y - g.oy) * (g.sh / g.dh)));
+      invalidateGifFrameCache();
       drawGifMakerFrame(prevC.getContext("2d"), prevC.width, prevC.height, 0, 8, true);
     });
-    const endDrag = () => { if (gifDragPinIdx >= 0 && gifCustomRig) { gifCustomRig.geo = computeGeodesicSkinning(gifCustomRig.grid, gifCustomRig.w, gifCustomRig.h, gifCustomRig.pins); } gifDragPinIdx = -1; };
+    const endDrag = () => {
+      if (gifDragPinIdx >= 0 && gifCustomRig) {
+        gifCustomRig.geo = computeGeodesicSkinning(gifCustomRig.grid, gifCustomRig.w, gifCustomRig.h, gifCustomRig.pins);
+        invalidateGifFrameCache();
+      }
+      gifDragPinIdx = -1;
+    };
     prevC.addEventListener("pointerup", endDrag);
     prevC.addEventListener("pointercancel", endDrag);
   }
+  document.addEventListener("keydown", (ev) => {
+    const tag = ev.target && ev.target.tagName ? ev.target.tagName.toLowerCase() : "";
+    if (tag === "input" || tag === "textarea" || tag === "select") return;
+    const sec = document.getElementById("gif-maker");
+    if (!sec) return;
+    const rect = sec.getBoundingClientRect();
+    if (rect.bottom < 0 || rect.top > window.innerHeight) return;
+    if (ev.code === "Space") { ev.preventDefault(); toggleGifPlay(); }
+    else if (ev.key === "ArrowLeft") { ev.preventDefault(); stepGifFrame(-1); }
+    else if (ev.key === "ArrowRight") { ev.preventDefault(); stepGifFrame(1); }
+  });
   syncGifMascotSelection();
   updateGifPreviewFps();
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { computeSafeDrawRect, 
+  module.exports = {
+    computeSafeDrawRect,
+    getGifPlaybackSequence,
+    getGifBgFill,
+    buildDeskpetXmlString,
     cleanRgbaPixels,
     detectNativeBlockScale,
     detectSpriteSheetGrid,

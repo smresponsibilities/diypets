@@ -116,10 +116,90 @@ fn sample_ram_usage_fraction() -> Option<f32> {
         }
         Some((total.saturating_sub(avail) as f32 / total as f32).clamp(0.0, 1.0))
     }
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(target_os = "macos")]
+    {
+        let vm = std::process::Command::new("vm_stat").output().ok()?;
+        let mem = std::process::Command::new("sysctl")
+            .args(["-n", "hw.memsize"])
+            .output()
+            .ok()?;
+        let total_bytes = String::from_utf8_lossy(&mem.stdout)
+            .trim()
+            .parse::<u64>()
+            .ok()?;
+        parse_macos_vm_stat(&String::from_utf8_lossy(&vm.stdout), total_bytes)
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         None
     }
+}
+
+/// Pure parser for macOS `vm_stat` output + `hw.memsize` bytes -> used RAM fraction (`0.0..=1.0`).
+pub fn parse_macos_vm_stat(vm_stat_text: &str, total_bytes: u64) -> Option<f32> {
+    if total_bytes == 0 {
+        return None;
+    }
+    let mut page_size: u64 = 4096;
+    let mut active: u64 = 0;
+    let mut wired: u64 = 0;
+    let mut compressed: u64 = 0;
+    for line in vm_stat_text.lines() {
+        let trimmed = line.trim();
+        if let Some(idx) = trimmed.find("page size of ") {
+            let after = &trimmed[idx + "page size of ".len()..];
+            if let Some(num) = after.split_whitespace().next()
+                && let Ok(ps) = num.parse::<u64>()
+                && ps > 0
+            {
+                page_size = ps;
+            }
+        } else if let Some((k, v)) = trimmed.split_once(':') {
+            let val = v.trim().trim_end_matches('.').parse::<u64>().unwrap_or(0);
+            match k.trim() {
+                "Pages active" => active = val,
+                "Pages wired down" => wired = val,
+                "Pages occupied by compressor" => compressed = val,
+                _ => {}
+            }
+        }
+    }
+    let used_bytes = active
+        .saturating_add(wired)
+        .saturating_add(compressed)
+        .saturating_mul(page_size);
+    if used_bytes == 0 {
+        return None;
+    }
+    Some((used_bytes as f64 / total_bytes as f64).clamp(0.0, 1.0) as f32)
+}
+
+/// Pure parser for Linux `/proc/interrupts` keyboard IRQ totals (works on X11 & Wayland, never logs keys).
+pub fn parse_linux_kbd_interrupts(proc_interrupts: &str) -> Option<u64> {
+    let mut total: u64 = 0;
+    let mut found = false;
+    for line in proc_interrupts.lines() {
+        let low = line.to_ascii_lowercase();
+        if !(low.contains("i8042") || low.contains("atkbd") || low.contains("keyboard")) {
+            continue;
+        }
+        let mut parts = line.split_whitespace();
+        let Some(irq) = parts.next() else { continue };
+        if !irq.ends_with(':') {
+            continue;
+        }
+        let mut line_sum = 0u64;
+        for tok in parts {
+            if let Ok(n) = tok.parse::<u64>() {
+                line_sum = line_sum.saturating_add(n);
+            } else {
+                break;
+            }
+        }
+        total = total.saturating_add(line_sum);
+        found = true;
+    }
+    found.then_some(total)
 }
 
 #[derive(Debug, Default)]
@@ -423,10 +503,11 @@ impl CpuSampler {
 struct InputCadencePoller {
     prev_tick: Option<u32>,
     prev_cursor: Option<(i32, i32)>,
+    prev_idle_secs: Option<f64>,
 }
 
 impl InputCadencePoller {
-    #[cfg_attr(not(windows), allow(dead_code))]
+    #[cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))]
     fn feed_sample(&mut self, input_tick: u32, cursor: Option<(i32, i32)>) -> bool {
         let Some(last_tick) = self.prev_tick else {
             self.prev_tick = Some(input_tick);
@@ -470,10 +551,43 @@ impl InputCadencePoller {
             self.feed_sample(info.dwTime, cursor)
         }
 
-        #[cfg(not(windows))]
+        #[cfg(target_os = "macos")]
+        {
+            #[link(name = "CoreGraphics", kind = "framework")]
+            unsafe extern "C" {
+                fn CGEventSourceSecondsSinceLastEventType(state_id: i32, event_type: u32) -> f64;
+            }
+            // kCGEventSourceStateCombinedSessionState = 0, kCGEventKeyDown = 10
+            let idle = unsafe { CGEventSourceSecondsSinceLastEventType(0, 10) };
+            self.feed_idle_seconds(idle)
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            let Ok(txt) = std::fs::read_to_string("/proc/interrupts") else {
+                return false;
+            };
+            let Some(irqs) = parse_linux_kbd_interrupts(&txt) else {
+                return false;
+            };
+            self.feed_sample((irqs & 0xFFFF_FFFF) as u32, None)
+        }
+
+        #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
         {
             false
         }
+    }
+
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    fn feed_idle_seconds(&mut self, idle_secs: f64) -> bool {
+        if !idle_secs.is_finite() || idle_secs < 0.0 {
+            return false;
+        }
+        let Some(prev) = self.prev_idle_secs.replace(idle_secs) else {
+            return false;
+        };
+        idle_secs + 0.005 < prev || (idle_secs < 0.05 && prev >= 0.05)
     }
 }
 
@@ -672,5 +786,26 @@ mod tests {
         // Below warmup resets counter cleanly
         assert_eq!(r.maybe_alert(t0, 0.20), None);
         assert!(r.hysteresis_armed);
+    }
+
+    #[test]
+    fn parses_macos_vm_stat_ram_fraction() {
+        let sample = "Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free: 10000.\nPages active: 200000.\nPages wired down: 100000.\nPages occupied by compressor: 50000.\n";
+        let total_bytes = 16u64 * 1024 * 1024 * 1024; // 16 GiB
+        let frac = parse_macos_vm_stat(sample, total_bytes).expect("valid vm_stat");
+        // (350000 * 16384) / 16 GiB ~= 0.3338
+        assert!((0.32..=0.35).contains(&frac), "unexpected frac={frac}");
+    }
+
+    #[test]
+    fn parses_linux_keyboard_interrupts_and_macos_idle_drops() {
+        let irqs = "           CPU0       CPU1\n  1:        120        340   IO-APIC   1-edge      i8042\n  8:          0          1   IO-APIC   8-edge      rtc0\n";
+        assert_eq!(parse_linux_kbd_interrupts(irqs), Some(460));
+
+        let mut poller = InputCadencePoller::default();
+        assert!(!poller.feed_idle_seconds(1.20));
+        assert!(!poller.feed_idle_seconds(1.26));
+        assert!(poller.feed_idle_seconds(0.02));
+        assert!(!poller.feed_idle_seconds(0.08));
     }
 }
