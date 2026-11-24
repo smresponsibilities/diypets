@@ -1350,43 +1350,71 @@ function evalRigidMlsInverse(vx, vy, srcPins, dstPins) {
 // Solves opposing-leg MLS cancellation on thick-legged sprites:
 //   Pass 1 (Far Limbs: fr, bl) -> Pass 2 (Body: torso/head/tail MLS) -> Pass 3 (Near Limbs: fl, br)
 // Each limb rotates cleanly around its shoulder/hip pivot with zero cross-leg rubber stretching.
+// Watertight Torso-MLS + Non-Colliding Pair-Gap Articulated Limb Rig
+// 1. Torso MLS uses ONLY non-limb pins (head, chest, pelvis, tail) so legs never distort the belly.
+// 2. Each limb vertex blends from exact torso position at y <= hipAnchorY (s = 0) via smoothstep(t),
+//    making shoulder/groin seams mathematically watertight (zero tears).
+// 3. Inward leg swing is clamped against the real rest-pose pair gap (|fr.x - fl.x|, |br.x - bl.x|)
+//    with passing-phase vertical clearance so paired paws never crash into a single clump.
 function computeLimbGaitPose(rig, fx, frameIdx, totalFrames, ampScale) {
   const phase = (frameIdx / Math.max(1, totalFrames)) * Math.PI * 2;
   const dir = rig.facesLeft ? -1 : 1;
   const legH = Math.max(8, rig.bbox.maxY - rig.hipY);
-  const poses = {};
+  const byId = {};
+  for (let i = 0; i < rig.pins.length; i++) byId[rig.pins[i].id] = rig.pins[i];
 
+  const frontGap = (byId.fl && byId.fr) ? Math.abs(byId.fr.x - byId.fl.x) : rig.bbox.bw * 0.22;
+  const backGap = (byId.bl && byId.br) ? Math.abs(byId.br.x - byId.bl.x) : rig.bbox.bw * 0.22;
+
+  // Clamp inward swing toward the paired leg so paws never collide on the same pixels
+  const clampPairShift = (id, rawShiftX, rawAngle) => {
+    const isFront = (id === "fl" || id === "fr");
+    const partner = id === "fl" ? byId.fr : (id === "fr" ? byId.fl : (id === "bl" ? byId.br : byId.bl));
+    const self = byId[id];
+    if (!self || !partner) return { shiftX: rawShiftX, angle: rawAngle };
+    const gap = Math.max(4, isFront ? frontGap : backGap);
+    const towardPartner = Math.sign(partner.x - self.x) || 1;
+    // Tip horizontal displacement from rotation + linear shift
+    const tipDx = rawShiftX - Math.sin(rawAngle) * legH * 0.85;
+    if (tipDx * towardPartner > 0) {
+      const maxInward = gap * 0.36;
+      if (Math.abs(tipDx) > maxInward) {
+        const ratio = maxInward / Math.abs(tipDx);
+        return { shiftX: rawShiftX * ratio, angle: rawAngle * ratio };
+      }
+    }
+    return { shiftX: rawShiftX, angle: rawAngle };
+  };
+
+  const poses = {};
   if (fx === "walk") {
-    // Diagonal quadruped/biped gait: FL+BR in phase, FR+BL 180 deg out of phase
-    const pairs = [
-      ["fl", 0], ["br", 0],
-      ["fr", Math.PI], ["bl", Math.PI],
-    ];
+    const pairs = [["fl", 0], ["br", 0], ["fr", Math.PI], ["bl", Math.PI]];
     for (const [id, off] of pairs) {
       const p = phase + off;
       const swing = Math.sin(p);
       const lift = Math.max(0, Math.cos(p));
+      const rawAngle = -dir * swing * 0.24 * ampScale;
+      const rawShiftX = dir * swing * Math.max(1.4, rig.bbox.bw * 0.024) * ampScale;
+      const safe = clampPairShift(id, rawShiftX, rawAngle);
       poses[id] = {
-        angle: -dir * swing * 0.30 * ampScale, // ~17 deg forward/back scissor
+        angle: safe.angle,
         liftY: -lift * Math.max(2.2, legH * 0.24) * ampScale,
-        shiftX: dir * swing * Math.max(1.8, rig.bbox.bw * 0.032) * ampScale,
+        shiftX: safe.shiftX,
       };
     }
   } else if (fx === "sprint" || fx === "run") {
-    // Rotary gallop: front legs reach together, hind legs drive together + wide 28-deg arc
-    const airLift = -Math.max(0, Math.sin(phase * 2)) * Math.max(2.0, rig.bbox.bh * 0.055) * ampScale;
-    const specs = [
-      ["fl", 0.0], ["fr", 0.45],
-      ["bl", Math.PI * 0.92], ["br", Math.PI * 1.22],
-    ];
+    const specs = [["fl", 0.0], ["fr", 0.55], ["bl", Math.PI * 0.90], ["br", Math.PI * 1.25]];
     for (const [id, off] of specs) {
       const p = phase + off;
       const swing = Math.sin(p);
       const lift = Math.max(0, Math.cos(p));
+      const rawAngle = -dir * swing * 0.38 * ampScale;
+      const rawShiftX = dir * swing * Math.max(2.2, rig.bbox.bw * 0.040) * ampScale;
+      const safe = clampPairShift(id, rawShiftX, rawAngle);
       poses[id] = {
-        angle: -dir * swing * 0.48 * ampScale, // ~28 deg gallop extension
-        liftY: airLift - lift * Math.max(3.2, legH * 0.34) * ampScale,
-        shiftX: dir * swing * Math.max(2.8, rig.bbox.bw * 0.052) * ampScale,
+        angle: safe.angle,
+        liftY: -lift * Math.max(3.0, legH * 0.32) * ampScale,
+        shiftX: safe.shiftX,
       };
     }
   } else if (fx === "dance") {
@@ -1394,16 +1422,17 @@ function computeLimbGaitPose(rig, fx, frameIdx, totalFrames, ampScale) {
     for (const [id, off] of specs) {
       const p = phase + off;
       const tap = Math.max(0, Math.sin(p));
+      const safe = clampPairShift(id, Math.sin(phase) * 1.2 * ampScale, dir * Math.sin(p) * 0.18 * ampScale);
       poses[id] = {
-        angle: dir * Math.sin(p) * 0.22 * ampScale,
-        liftY: -tap * Math.max(2.4, legH * 0.25) * ampScale,
-        shiftX: Math.sin(phase) * 1.4 * ampScale,
+        angle: safe.angle,
+        liftY: -tap * Math.max(2.4, legH * 0.26) * ampScale,
+        shiftX: safe.shiftX,
       };
     }
   } else if (fx === "hop") {
     const u = frameIdx / Math.max(1, totalFrames);
     const air = (u >= 0.24 && u < 0.68) ? Math.sin(((u - 0.24) / 0.44) * Math.PI) : 0;
-    const tuck = air * 0.38 * ampScale;
+    const tuck = air * 0.32 * ampScale;
     for (const id of ["fl", "fr", "bl", "br"]) {
       const isFront = (id === "fl" || id === "fr");
       poses[id] = {
@@ -1451,7 +1480,22 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames) {
   const y0 = Math.max(0, bbox.minY), y1 = Math.min(h - 1, bbox.maxY);
   const x0 = Math.max(0, bbox.minX), x1 = Math.min(w - 1, bbox.maxX);
 
-  // Precompute torso/body MLS vertex grid (used for body pass AND hip-socket anchor)
+  // Build torso-only pin subset when using articulated limbs so opposing legs never warp the belly
+  const bodySrcPins = [];
+  const bodyDstPins = [];
+  const bodyPinMap = [];
+  if (useArticulatedLimbs) {
+    for (let i = 0; i < pins.length; i++) {
+      if (isLimbPin[i] === 0) {
+        bodySrcPins.push(pins[i]);
+        bodyDstPins.push(dstPins[i]);
+        bodyPinMap.push(i);
+      }
+    }
+  }
+  const useTorsoOnly = useArticulatedLimbs && bodySrcPins.length >= 2;
+  const bodyWRow = new Float32Array(Math.max(1, bodySrcPins.length));
+
   const vxBody = new Float32Array((w + 1) * (h + 1));
   const vyBody = new Float32Array((w + 1) * (h + 1));
   for (let y = y0; y <= y1 + step; y += step) {
@@ -1459,7 +1503,20 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames) {
     for (let x = x0; x <= x1 + step; x += step) {
       const cx = Math.min(w, x), sx = Math.min(w - 1, cx);
       const cellIdx = sy * w + sx;
-      const p = evalRigidMlsForward(cx, cy, pins, dstPins, geo.weights, cellIdx * geo.numPins);
+      let p;
+      if (useTorsoOnly) {
+        let sum = 0;
+        for (let k = 0; k < bodyPinMap.length; k++) {
+          const wk = geo.weights[cellIdx * geo.numPins + bodyPinMap[k]] + 1e-6;
+          bodyWRow[k] = wk;
+          sum += wk;
+        }
+        const inv = 1 / sum;
+        for (let k = 0; k < bodyPinMap.length; k++) bodyWRow[k] *= inv;
+        p = evalRigidMlsForward(cx, cy, bodySrcPins, bodyDstPins, bodyWRow, 0);
+      } else {
+        p = evalRigidMlsForward(cx, cy, pins, dstPins, geo.weights, cellIdx * geo.numPins);
+      }
       const vi = cy * (w + 1) + cx;
       vxBody[vi] = p.x;
       vyBody[vi] = p.y;
@@ -1467,7 +1524,6 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames) {
   }
 
   if (!useArticulatedLimbs) {
-    // Non-legged archetypes (crawler, swimmer, bird, blob) or subtle FX (breathe, sleep, pet, wave)
     for (let y = y0; y <= y1; y += step) {
       const yNext = Math.min(h, y + step);
       for (let x = x0; x <= x1; x += step) {
@@ -1488,51 +1544,52 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames) {
       }
     }
   } else {
-    // 3-PASS LAYERED ARTICULATED RENDERING:
-    // 1. Far Limbs (fr, bl)  2. Body (head, chest, pelvis, tail)  3. Near Limbs (fl, br)
     const limbPoses = computeLimbGaitPose(rig, fx, frameIdx, totalFrames, ampScale);
-    const hipAnchorY = Math.max(bbox.minY + 4, Math.min(rig.hipY - 3, bbox.maxY - Math.max(6, Math.round(bbox.bh * 0.22))));
+    const hipAnchorY = Math.max(bbox.minY + 4, Math.min(rig.hipY - 2, bbox.maxY - Math.max(6, Math.round(bbox.bh * 0.22))));
     const legSpan = Math.max(6, bbox.maxY - hipAnchorY);
 
-    // Helper: transform a vertex belonging to a specific limb pin around its shoulder/hip socket
-    const mapLimbVertex = (vx, vy, pinIdx) => {
-      const id = pinIds[pinIdx];
-      const pose = limbPoses[id];
-      const pin = pins[pinIdx];
-      // Base torso motion at the hip socket keeps shoulder/hip 100% attached with zero tear
-      const sx = Math.max(0, Math.min(w - 1, Math.round(pin.x)));
-      const sy = Math.max(0, Math.min(h - 1, Math.round(hipAnchorY)));
-      const anchorP = evalRigidMlsForward(pin.x, hipAnchorY, pins, dstPins, geo.weights, (sy * w + sx) * geo.numPins);
-      const baseDx = anchorP.x - pin.x;
-      const baseDy = anchorP.y - hipAnchorY;
-      if (!pose) return { x: vx + baseDx, y: vy + baseDy };
-
-      const t = Math.max(0, Math.min(1, (vy - hipAnchorY) / legSpan));
-      const ang = pose.angle * (0.25 + 0.75 * t);
-      const ca = Math.cos(ang), sa = Math.sin(ang);
-      const rx = vx - pin.x, ry = vy - hipAnchorY;
-      const rotX = pin.x + rx * ca - ry * sa;
-      const rotY = hipAnchorY + rx * sa + ry * ca;
-      return {
-        x: rotX + baseDx + pose.shiftX * t,
-        y: rotY + baseDy + pose.liftY * t,
-      };
-    };
-
+    // Watertight limb vertex mapping:
+    // At vy <= hipAnchorY: s = 0 -> EXACTLY (vxBody, vyBody), zero seam tear!
+    // Below hipAnchorY: smoothly pivots around the limb's deformed hip socket.
     const drawLimbPass = (targetPinIdx, depth) => {
+      const id = pinIds[targetPinIdx];
+      const pose = limbPoses[id];
+      const pin = pins[targetPinIdx];
       const vxL = new Float32Array((w + 1) * (h + 1));
       const vyL = new Float32Array((w + 1) * (h + 1));
-      const yStart = Math.max(y0, Math.floor(hipAnchorY - step * 2));
+      const yStart = y0 + Math.max(0, Math.floor((hipAnchorY - step * 2 - y0) / step)) * step;
+
+      // Socket position in deformed torso space (strictly aligned to vxBody's x0/y0/step lattice)
+      const sockX = Math.min(x1, x0 + Math.max(0, Math.round((pin.x - x0) / step)) * step);
+      const sockY = Math.min(y1, y0 + Math.max(0, Math.round((hipAnchorY - y0) / step)) * step);
+      const sockVi = sockY * (w + 1) + sockX;
+      const pivX = vxBody[sockVi];
+      const pivY = vyBody[sockVi];
+
       for (let y = yStart; y <= y1 + step; y += step) {
         const cy = Math.min(h, y);
+        const rawT = Math.max(0, Math.min(1, (cy - hipAnchorY) / legSpan));
+        // Smoothstep ramp: 0 at hipAnchorY (100% locked to torso), smooth bend down to paw
+        const s = rawT * rawT * (3 - 2 * rawT);
+        const ang = pose ? pose.angle * s : 0;
+        const ca = Math.cos(ang), sa = Math.sin(ang);
+        const shX = pose ? pose.shiftX * s : 0;
+        const lY = pose ? pose.liftY * s : 0;
         for (let x = x0; x <= x1 + step; x += step) {
           const cx = Math.min(w, x);
-          const p = mapLimbVertex(cx, cy, targetPinIdx);
           const vi = cy * (w + 1) + cx;
-          vxL[vi] = p.x;
-          vyL[vi] = p.y;
+          const bx = vxBody[vi], by = vyBody[vi];
+          if (s <= 1e-4) {
+            vxL[vi] = bx;
+            vyL[vi] = by;
+          } else {
+            const rx = bx - pivX, ry = by - pivY;
+            vxL[vi] = pivX + rx * ca - ry * sa + shX;
+            vyL[vi] = pivY + rx * sa + ry * ca + lY;
+          }
         }
       }
+
       for (let y = yStart; y <= y1; y += step) {
         const yNext = Math.min(h, y + step);
         for (let x = x0; x <= x1; x += step) {
@@ -1541,7 +1598,7 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames) {
           for (let ty = y; ty < yNext && !belongs; ty++) {
             for (let tx = x; tx < xNext; tx++) {
               const ci = ty * w + tx;
-              if (grid[ci * 4 + 3] > 0 && geo.domPin[ci] === targetPinIdx && ty >= hipAnchorY - 3) {
+              if (grid[ci * 4 + 3] > 0 && geo.domPin[ci] === targetPinIdx && ty >= hipAnchorY - step) {
                 belongs = true;
                 break;
               }
@@ -1561,7 +1618,7 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames) {
       if (isLimbPin[pi] === 1) drawLimbPass(pi, 1);
     }
 
-    // Pass 2: Body (torso, head, tail, upper shoulders down to hipAnchorY + 2)
+    // Pass 2: Full Torso & Upper Hip Sockets (extends cleanly down to hipAnchorY + step so zero gap can appear)
     for (let y = y0; y <= y1; y += step) {
       const yNext = Math.min(h, y + step);
       for (let x = x0; x <= x1; x += step) {
@@ -1572,7 +1629,7 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames) {
             const ci = ty * w + tx;
             if (grid[ci * 4 + 3] > 0) {
               const dp = geo.domPin[ci];
-              if (isLimbPin[dp] === 0 || ty <= hipAnchorY + 1) {
+              if (isLimbPin[dp] === 0 || ty <= hipAnchorY + step) {
                 hasBody = true;
                 sampleIdx = ci;
                 break;
@@ -2482,6 +2539,67 @@ function exportMascotSpriteSheet() {
   }
 }
 
+
+function exportMascotAllFxSheet() {
+  const statusEl = document.getElementById("gif-status");
+  try {
+    const size = Math.max(64, Math.min(256, Number(document.getElementById("gif-size-select").value) || 128));
+    const petId = document.getElementById("gif-pet-select").value;
+    const fxSel = document.getElementById("gif-fx-select");
+    const prevFx = fxSel ? fxSel.value : "walk";
+    const fxRows = [
+      { id: "walk", label: "WALK" },
+      { id: "sprint", label: "SPRINT" },
+      { id: "dance", label: "DANCE" },
+      { id: "hop", label: "HOP" },
+      { id: "sleep", label: "SLEEP" },
+    ];
+    const cols = 8;
+    const labelW = 64;
+
+    const tileC = document.createElement("canvas");
+    tileC.width = size; tileC.height = size;
+    const tctx = tileC.getContext("2d");
+
+    const sheetC = document.createElement("canvas");
+    sheetC.width = labelW + size * cols;
+    sheetC.height = size * fxRows.length;
+    const sctx = sheetC.getContext("2d");
+    sctx.imageSmoothingEnabled = false;
+
+    for (let r = 0; r < fxRows.length; r++) {
+      const rowFx = fxRows[r];
+      if (fxSel) fxSel.value = rowFx.id;
+      const ry = r * size;
+      sctx.fillStyle = "rgba(13, 17, 23, 0.85)";
+      sctx.fillRect(0, ry, labelW - 2, size - 2);
+      sctx.fillStyle = "#7ee8fa";
+      sctx.font = "bold 11px monospace";
+      sctx.fillText(rowFx.label, 8, ry + Math.floor(size / 2) + 4);
+      for (let c = 0; c < cols; c++) {
+        drawGifMakerFrame(tctx, size, size, c, cols, false);
+        sctx.drawImage(tileC, labelW + c * size, ry);
+      }
+    }
+    if (fxSel) fxSel.value = prevFx;
+
+    sheetC.toBlob((blob) => {
+      if (!blob) return;
+      const slug = ((gifCustomRig || gifCustomSheet) && gifCustomName) ? gifCustomName : petId;
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = slug + "-all-fx-" + cols + "x" + fxRows.length + "-" + size + "px.png";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2500);
+      statusEl.textContent = "EXPORTED ALL-FX " + cols + "x" + fxRows.length + " SHEET (" + (blob.size / 1024).toFixed(1) + " KB)";
+      if (typeof showToast === "function") showToast("Exported full multi-FX PNG sheet (" + fxRows.length + " rows x " + cols + " frames)");
+    }, "image/png");
+  } catch (err) {
+    console.error("All-FX sheet export error:", err);
+    statusEl.textContent = "ERROR EXPORTING ALL-FX SHEET";
+  }
+}
+
 function exportMascotXmlPack() {
   const statusEl = document.getElementById("gif-status");
   try {
@@ -2732,6 +2850,7 @@ if (typeof module !== "undefined" && module.exports) {
     sliceSpriteSheet,
     buildAutoRig,
     computeAnimatedPins,
+    computeLimbGaitPose,
     renderRiggedFrame,
     extractMedialAxisFeatures,
     computeSpringFollowThrough,
