@@ -1064,7 +1064,7 @@ function computeAnimatedPins(rig, fx, frameIdx, totalFrames, ampScaleOpt) {
       if (pin.id === "head") { dx = dir * 1.8; dy = airLift - 0.6; }
       else if (pin.id === "chest") { dx = dir * 1.1; dy = airLift; }
       else if (pin.id === "pelvis") { dy = airLift * 0.85; }
-      else if (pin.id === "tail") { dx = -dir * (1.5 + Math.cos(phase) * 1.4); dy = airLift + Math.sin(phase * 2) * 1.8; }
+      else if (pin.id === "tail") { dx = -dir * (0.4 + Math.cos(phase) * 0.6); dy = airLift + Math.sin(phase * 2) * 1.4; }
       else if (pin.id === "fl" || pin.id === "fr") { dx = dir * sA * stride * 1.45; dy = airLift - lA * liftMax * 1.4; }
       else if (pin.id === "bl" || pin.id === "br") { dx = dir * sB * stride * 1.45; dy = airLift - lB * liftMax * 1.4; }
       else { dy = airLift; }
@@ -1548,7 +1548,7 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames, techOpt) {
   } else {
     const limbPoses = computeLimbGaitPose(rig, fx, frameIdx, totalFrames, ampScale);
     const hipAnchorY = Math.max(bbox.minY + 4, Math.min(rig.hipY - 2, bbox.maxY - Math.max(6, Math.round(bbox.bh * 0.22))));
-    const blendZone = 6.0; // 4px joint blend at hip, then 100% rigid bone rotation down to paw!
+    const blendZone = 8.0; // 4px joint blend at hip, then 100% rigid bone rotation down to paw!
 
     const drawLimbPass = (targetPinIdx, depth) => {
       const id = pinIds[targetPinIdx];
@@ -1570,7 +1570,7 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames, techOpt) {
       for (let y = yStart; y <= y1 + step; y += step) {
         const cy = Math.min(h, y);
         // Linear 4px blend at hip socket, then constant 1.0 rigid rotation for the entire lower leg & paw
-        const blend = Math.max(0, Math.min(1, (cy - hipAnchorY) / blendZone));
+        const blend = Math.max(0, Math.min(1, (cy - (hipAnchorY + 2)) / blendZone));
         const ang = fullAng * blend;
         const ca = Math.cos(ang), sa = Math.sin(ang);
         const lY = fullLift * blend;
@@ -1597,9 +1597,23 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames, techOpt) {
           for (let ty = y; ty < yNext && !belongs; ty++) {
             for (let tx = x; tx < xNext; tx++) {
               const ci = ty * w + tx;
-              if (grid[ci * 4 + 3] > 0 && geo.domPin[ci] === targetPinIdx && ty >= hipAnchorY - step) {
-                belongs = true;
-                break;
+              if (grid[ci * 4 + 3] > 0 && ty >= hipAnchorY - step * 2) {
+                if (geo.domPin[ci] === targetPinIdx) {
+                  belongs = true;
+                  break;
+                }
+                // 1-step overlap collar at limb/body & limb/limb seam prevents hairline white slits
+                const lx = Math.max(0, tx - step), rx = Math.min(w - 1, tx + step);
+                const uy = Math.max(0, ty - step), dy = Math.min(h - 1, ty + step);
+                if (
+                  geo.domPin[ty * w + lx] === targetPinIdx ||
+                  geo.domPin[ty * w + rx] === targetPinIdx ||
+                  geo.domPin[uy * w + tx] === targetPinIdx ||
+                  geo.domPin[dy * w + tx] === targetPinIdx
+                ) {
+                  belongs = true;
+                  break;
+                }
               }
             }
           }
@@ -1628,7 +1642,7 @@ function renderRiggedFrame(rig, fx, frameIdx, totalFrames, techOpt) {
             const ci = ty * w + tx;
             if (grid[ci * 4 + 3] > 0) {
               const dp = geo.domPin[ci];
-              if (isLimbPin[dp] === 0 || ty <= hipAnchorY + step) {
+              if (isLimbPin[dp] === 0 || ty <= hipAnchorY + Math.max(6, step * 3)) {
                 hasBody = true;
                 sampleIdx = ci;
                 break;
@@ -2602,6 +2616,71 @@ function exportMascotAllFxSheet() {
 }
 
 
+
+// Count enclosed transparent interior holes/slits (border flood-fill of alpha===0; anything left is a tear/hole)
+function countInteriorHoles(rgba, w, h) {
+  const n = w * h;
+  const vis = new Uint8Array(n);
+  const q = new Int32Array(n);
+  let head = 0, tail = 0;
+  const push = (idx) => {
+    if (!vis[idx] && rgba[idx * 4 + 3] === 0) { vis[idx] = 1; q[tail++] = idx; }
+  };
+  for (let x = 0; x < w; x++) { push(x); push((h - 1) * w + x); }
+  for (let y = 0; y < h; y++) { push(y * w); push(y * w + (w - 1)); }
+  while (head < tail) {
+    const u = q[head++], ux = u % w, uy = (u / w) | 0;
+    if (ux > 0) push(u - 1);
+    if (ux + 1 < w) push(u + 1);
+    if (uy > 0) push(u - w);
+    if (uy + 1 < h) push(u + w);
+  }
+  let holes = 0;
+  const holeMask = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    if (!vis[i] && rgba[i * 4 + 3] === 0) {
+      holeMask[i] = 1;
+      holes++;
+    }
+  }
+  return { holes, holeMask };
+}
+
+// Build a true visual diff image comparing `cur` against `rest`:
+// - Darkened silhouette = unchanged pixels
+// - Bright Green = newly occupied pixels (real motion)
+// - Cyan/Blue = vacated rest pixels
+// - Bright Red = newly opened interior holes/slits (tears!)
+function buildFrameDiffRgba(restRgba, curRgba, w, h) {
+  const out = new Uint8ClampedArray(w * h * 4);
+  const restH = countInteriorHoles(restRgba, w, h);
+  const curH = countInteriorHoles(curRgba, w, h);
+  let movedPx = 0, newHolePx = 0;
+  for (let i = 0; i < w * h; i++) {
+    const p = i * 4;
+    const rA = restRgba[p + 3] > 0;
+    const cA = curRgba[p + 3] > 0;
+    if (curH.holeMask[i] && !restH.holeMask[i]) {
+      // Newly opened interior tear/slit -> BRIGHT RED
+      out[p] = 255; out[p + 1] = 35; out[p + 2] = 60; out[p + 3] = 255;
+      newHolePx++;
+    } else if (cA && !rA) {
+      // Newly occupied motion pixel -> BRIGHT GREEN
+      out[p] = 50; out[p + 1] = 235; out[p + 2] = 120; out[p + 3] = 255;
+      movedPx++;
+    } else if (rA && !cA) {
+      // Vacated rest pixel -> BLUE
+      out[p] = 65; out[p + 1] = 145; out[p + 2] = 255; out[p + 3] = 200;
+      movedPx++;
+    } else if (cA) {
+      // Unchanged interior -> subtle muted greyscale so motion & tears pop
+      const lum = Math.round((curRgba[p] * 0.3 + curRgba[p + 1] * 0.59 + curRgba[p + 2] * 0.11) * 0.45);
+      out[p] = lum; out[p + 1] = lum; out[p + 2] = lum; out[p + 3] = 255;
+    }
+  }
+  return { rgba: out, movedPx, newHolePx };
+}
+
 function exportMascotCompareSheet() {
   const statusEl = document.getElementById("gif-status");
   try {
@@ -2609,39 +2688,85 @@ function exportMascotCompareSheet() {
     const petId = document.getElementById("gif-pet-select").value;
     const fx = document.getElementById("gif-fx-select").value;
     const techSel = document.getElementById("gif-tech-select");
+    const bgSel = document.getElementById("gif-bg-select");
     const prevTech = techSel ? techSel.value : "rigid_3pass";
-    const rows = [
-      { id: "rigid_3pass", label: "RIGID 3P" },
-      { id: "geodesic_mls", label: "GEO MLS" },
-    ];
+    const prevBg = bgSel ? bgSel.value : "transparent";
     const cols = getGifTotalFrames(fx);
-    const labelW = 72;
+    const labelW = 92;
 
     const tileC = document.createElement("canvas");
     tileC.width = size; tileC.height = size;
-    const tctx = tileC.getContext("2d");
+    const tctx = tileC.getContext("2d", { willReadFrequently: true });
+
+    // Capture Rest reference frame (unwarped grid or frame 0)
+    if (bgSel) bgSel.value = "transparent";
+    tctx.clearRect(0, 0, size, size);
+    if (gifCustomRig) {
+      drawNativeRgbaScaled(tctx, gifCustomRig.grid, gifCustomRig.w, gifCustomRig.h, size, size, Math.round(2 * (size / 128)), false);
+    } else {
+      drawGifMakerFrame(tctx, size, size, 0, cols, false);
+    }
+    const restRgba = tctx.getImageData(0, 0, size, size).data;
+
+    const techs = [
+      { id: "rigid_3pass", label: "RIGID 3P", color: "#7ee8fa" },
+      { id: "geodesic_mls", label: "GEO MLS", color: "#ffd166" },
+    ];
 
     const sheetC = document.createElement("canvas");
     sheetC.width = labelW + size * cols;
-    sheetC.height = size * rows.length;
+    sheetC.height = size * (techs.length * 2);
     const sctx = sheetC.getContext("2d");
     sctx.imageSmoothingEnabled = false;
 
-    for (let r = 0; r < rows.length; r++) {
-      if (techSel) techSel.value = rows[r].id;
+    const diffC = document.createElement("canvas");
+    diffC.width = size; diffC.height = size;
+    const dctx = diffC.getContext("2d");
+
+    for (let ti = 0; ti < techs.length; ti++) {
+      const tech = techs[ti];
+      if (techSel) techSel.value = tech.id;
       invalidateGifFrameCache();
-      const ry = r * size;
-      sctx.fillStyle = "rgba(13, 17, 23, 0.90)";
-      sctx.fillRect(0, ry, labelW - 2, size - 2);
-      sctx.fillStyle = r === 0 ? "#7ee8fa" : "#ffd166";
-      sctx.font = "bold 11px monospace";
-      sctx.fillText(rows[r].label, 6, ry + Math.floor(size / 2) + 4);
+
+      const rowRenderY = (ti * 2) * size;
+      const rowDiffY = (ti * 2 + 1) * size;
+      let totalMoved = 0, totalNewHoles = 0;
+
       for (let c = 0; c < cols; c++) {
         drawGifMakerFrame(tctx, size, size, c, cols, false);
-        sctx.drawImage(tileC, labelW + c * size, ry);
+        sctx.drawImage(tileC, labelW + c * size, rowRenderY);
+
+        const curRgba = tctx.getImageData(0, 0, size, size).data;
+        const diff = buildFrameDiffRgba(restRgba, curRgba, size, size);
+        totalMoved += diff.movedPx;
+        totalNewHoles += diff.newHolePx;
+
+        // Dark background on diff row so green/blue/red motion & tear markers are crystal clear
+        sctx.fillStyle = "#11161f";
+        sctx.fillRect(labelW + c * size, rowDiffY, size, size);
+        dctx.putImageData(new ImageData(diff.rgba, size, size), 0, 0);
+        sctx.drawImage(diffC, labelW + c * size, rowDiffY);
       }
+
+      // Render row label
+      sctx.fillStyle = "#0d1117";
+      sctx.fillRect(0, rowRenderY, labelW - 2, size - 2);
+      sctx.fillStyle = tech.color;
+      sctx.font = "bold 11px monospace";
+      sctx.fillText(tech.label, 6, rowRenderY + Math.floor(size / 2) + 4);
+
+      // Diff row label with exact numeric motion & hole metrics
+      sctx.fillStyle = "#161b22";
+      sctx.fillRect(0, rowDiffY, labelW - 2, size - 2);
+      sctx.fillStyle = "#a3e635";
+      sctx.font = "bold 10px monospace";
+      sctx.fillText("DIFF " + Math.round(totalMoved / cols) + "px", 6, rowDiffY + Math.floor(size / 2) - 4);
+      sctx.fillStyle = totalNewHoles > 0 ? "#ff4d6d" : "#7ee8fa";
+      sctx.fillText("HOLES: " + totalNewHoles, 6, rowDiffY + Math.floor(size / 2) + 12);
     }
+
     if (techSel) techSel.value = prevTech;
+    if (bgSel) bgSel.value = prevBg;
     invalidateGifFrameCache();
 
     sheetC.toBlob((blob) => {
@@ -2649,15 +2774,15 @@ function exportMascotCompareSheet() {
       const slug = ((gifCustomRig || gifCustomSheet) && gifCustomName) ? gifCustomName : petId;
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = slug + "-compare-" + fx + "-" + cols + "x2-" + size + "px.png";
+      a.download = slug + "-compare-diff-" + fx + "-" + cols + "x4-" + size + "px.png";
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 2500);
-      statusEl.textContent = "EXPORTED RIG COMPARISON (" + fx.toUpperCase() + ", " + cols + "x2)";
-      if (typeof showToast === "function") showToast("Exported Rigid 3-Pass vs Geodesic MLS comparison sheet");
+      statusEl.textContent = "EXPORTED WHOLE-DIFF COMPARISON (" + fx.toUpperCase() + ", " + cols + "x4)";
+      if (typeof showToast === "function") showToast("Exported 4-row Whole-Diff comparison (Green=motion, Red=tears)");
     }, "image/png");
   } catch (err) {
-    console.error("Compare sheet export error:", err);
-    statusEl.textContent = "ERROR EXPORTING COMPARE SHEET";
+    console.error("Compare diff sheet export error:", err);
+    statusEl.textContent = "ERROR EXPORTING COMPARE DIFF";
   }
 }
 
@@ -2912,6 +3037,8 @@ if (typeof module !== "undefined" && module.exports) {
     buildAutoRig,
     computeAnimatedPins,
     computeLimbGaitPose,
+    countInteriorHoles,
+    buildFrameDiffRgba,
     renderRiggedFrame,
     extractMedialAxisFeatures,
     computeSpringFollowThrough,
