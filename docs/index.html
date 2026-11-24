@@ -31,7 +31,7 @@
   "url": "https://shivammahajan.com/diypets/",
   "downloadUrl": "https://github.com/smresponsibilities/diypets/releases/latest",
   "codeRepository": "https://github.com/smresponsibilities/diypets",
-  "softwareVersion": "<span class="diypets-ver-num">0.4.1</span>",
+  "softwareVersion": "0.4.1",
   "operatingSystem": "Windows, macOS, Linux",
   "applicationCategory": "DesktopEnhancementApplication",
   "license": "https://opensource.org/licenses/MIT",
@@ -550,6 +550,10 @@
             <label class="slider-chip">JUICE FX
               <select id="gif-fx-select" class="ctrl-input" style="width:128px;padding:3px 6px;">
                 <option value="walk">Walk Cycle</option>
+                <option value="sprint">Sprint / Gallop</option>
+                <option value="dance">Dance Groove</option>
+                <option value="pet">Happy Pet / Squish</option>
+                <option value="sleep">Sleep / Nap</option>
                 <option value="run">Run / Sprint</option>
                 <option value="breathe">Idle Breathe (1px)</option>
                 <option value="hop">Squash Hop</option>
@@ -1281,7 +1285,7 @@ function loop(now) {
 requestAnimationFrame(loop);
 
 </script>
-<script src="gif_maker.js?v=12">
+<script src="gif_maker.js?v=13">
 // Auto-sync displayed version from GitHub Releases API (cached per session, fallback v0.4.1)
 (function syncLatestVersion() {
   const applyVer = (tag) => {

@@ -1,0 +1,42 @@
+# DIYPets
+
+> Lightweight (~7.8 MB RAM) cross-platform desktop mascot engine in pure Rust with Multi-Pet Herd Mode, built-in 2D/SVG Studio, and native MCP server for Claude Code and Cursor.
+
+- **Website**: https://shivammahajan.com/diypets/
+- **Repository**: https://github.com/smresponsibilities/diypets
+- **Crates.io**: https://crates.io/crates/diypets
+- **License**: MIT OR Apache-2.0
+
+## Quick Install
+
+```bash
+# Cargo
+cargo install diypets
+
+# Precompiled binary (instant, no build)
+cargo binstall diypets
+
+# Windows (Winget)
+winget install smresponsibilities.diypets
+
+# Windows (Scoop)
+scoop bucket add smresponsibilities https://github.com/smresponsibilities/scoop-bucket
+scoop install diypets
+
+# macOS & Linux (Homebrew)
+brew install smresponsibilities/tap/diypets
+```
+
+## Key Capabilities
+
+1. **Ultra-Low Memory Footprint**: Pure Rust using `winit` and `softbuffer` on OS transparent window framebuffers (`WS_EX_LAYERED` on Windows, Wayland/X11 on Linux, Cocoa on macOS). Idles at ~7.8 MB RAM and < 0.2% CPU.
+2. **Coding Agent Hooks**: 1-click installation for Claude Code and Cursor (`diypets hooks install claude-code`). Mascots react to test suites, git commits, and agent completions.
+3. **Model Context Protocol (MCP)**: Native stdio and HTTP MCP server (`diypets mcp`) exposing:
+   - `pet_say`: Display speech balloons above mascots.
+   - `pet_react`: Trigger emotions (happy, sleep, celebrate, alert).
+   - `pet_spawn`: Spawn additional animal species into the herd.
+   - `pet_drop_ball`: Drop interactive physics balls for pets to chase.
+   - `pet_set_follow_cursor`: Enable or disable cursor tracking.
+   - `pet_status`: Return coordinates, current state, and herd count.
+4. **Pet Creator Studio (`diypets-creator`)**: Built-in 2D/SVG pixel rigging studio with geodesic skinning, RotSprite limb rotation, and lossless animated GIF exporter.
+5. **Multi-Pet Herds & Window Topology**: Mascots walk on active OS window titlebars, climb borders, and interact as herds.

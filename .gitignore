@@ -13,3 +13,4 @@ assets/esheep_ani.gif
 !assets/generate_demo.py
 !scripts/update_package_manifests.py
 !scripts/package_skill.py
+!scripts/benchmark_autorig.py

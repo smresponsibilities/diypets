@@ -279,7 +279,9 @@ function extractPaddedNativeGrid(rgba, w, h) {
       const sx = Math.min(w - 1, bb.minX + Math.floor((x + phaseX) * scaleF));
       const sp = (sy * w + sx) * 4;
       const dp = ((y + padTop) * outW + (x + padSide)) * 4;
-      if (rgba[sp + 3] >= 128) {
+      const a = rgba[sp + 3];
+      const lum = rgba[sp] * 0.299 + rgba[sp + 1] * 0.587 + rgba[sp + 2] * 0.114;
+      if (a >= 215 || (a >= 148 && lum < 75)) {
         grid[dp] = rgba[sp];
         grid[dp + 1] = rgba[sp + 1];
         grid[dp + 2] = rgba[sp + 2];
@@ -300,6 +302,82 @@ function extractPaddedNativeGrid(rgba, w, h) {
     padSide,
   };
 }
+
+// Strip exterior grey anti-aliasing halo (neutral grey pixels touching transparency & a dark outline)
+// plus detached 1-5px floating dust specks without ever touching interior shading or dark outlines.
+function stripExteriorGreyHalo(grid, w, h) {
+  for (let pass = 0; pass < 2; pass++) {
+    const snap = new Uint8ClampedArray(grid);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const idx = y * w + x;
+        const p = idx * 4;
+        if (snap[p + 3] === 0) continue;
+        const r = snap[p], g = snap[p + 1], b = snap[p + 2];
+        const sat = Math.max(r, g, b) - Math.min(r, g, b);
+        const lum = r * 0.299 + g * 0.587 + b * 0.114;
+        if (sat > 12 || lum < 90 || lum > 210) continue;
+
+        let touchesTrans = false;
+        let touchesDark = false;
+        const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]];
+        for (let k = 0; k < 8; k++) {
+          const nx = x + dirs[k][0], ny = y + dirs[k][1];
+          if (nx < 0 || nx >= w || ny < 0 || ny >= h) {
+            if (k < 4) touchesTrans = true;
+            continue;
+          }
+          const np = (ny * w + nx) * 4;
+          if (snap[np + 3] === 0) {
+            if (k < 4) touchesTrans = true;
+          } else {
+            const nlum = snap[np] * 0.299 + snap[np + 1] * 0.587 + snap[np + 2] * 0.114;
+            if (nlum < 68) touchesDark = true;
+          }
+        }
+        if (touchesTrans && touchesDark) {
+          grid[p] = 0; grid[p + 1] = 0; grid[p + 2] = 0; grid[p + 3] = 0;
+        }
+      }
+    }
+  }
+
+  // Remove detached floating dust specks (8-connected components <= 5 pixels)
+  const visited = new Uint8Array(w * h);
+  const q = new Int32Array(w * h);
+  const comp = [];
+  for (let i = 0; i < w * h; i++) {
+    if (visited[i] || grid[i * 4 + 3] === 0) continue;
+    let head = 0, tail = 0;
+    q[tail++] = i;
+    visited[i] = 1;
+    comp.length = 0;
+    while (head < tail) {
+      const u = q[head++];
+      comp.push(u);
+      const ux = u % w, uy = (u / w) | 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          const nx = ux + dx, ny = uy + dy;
+          if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+          const v = ny * w + nx;
+          if (!visited[v] && grid[v * 4 + 3] > 0) {
+            visited[v] = 1;
+            q[tail++] = v;
+          }
+        }
+      }
+    }
+    if (comp.length <= 5) {
+      for (let j = 0; j < comp.length; j++) {
+        const p = comp[j] * 4;
+        grid[p] = 0; grid[p + 1] = 0; grid[p + 2] = 0; grid[p + 3] = 0;
+      }
+    }
+  }
+}
+
 function upscale2xEpx(src, w, h) {
   const dw = w * 2, dh = h * 2;
   const dst = new Uint8ClampedArray(dw * dh * 4);
@@ -515,6 +593,7 @@ function findColumnMassCenter(grid, w, x0, x1, y0, y1, fallbackX, fallbackY) {
 function buildAutoRig(rawRgba, rawW, rawH, cleanBg, modeHint) {
   const cleaned = cleanBg ? cleanRgbaPixels(rawRgba, rawW, rawH) : new Uint8ClampedArray(rawRgba);
   const { grid, w, h, nativeW, nativeH, blockScale = 1 } = extractPaddedNativeGrid(cleaned, rawW, rawH);
+  if (cleanBg) stripExteriorGreyHalo(grid, w, h);
   const isHiResNative = (blockScale === 1 && Math.max(nativeW, nativeH) >= 90);
   const epx = isHiResNative ? { data: grid, w, h, factor: 1 } : Object.assign(upscale2xEpx(grid, w, h), { factor: 2 });
   const bbox = findBbox(grid, w, h);
@@ -783,6 +862,43 @@ function computeAnimatedPins(rig, fx, frameIdx, totalFrames) {
       else if (pin.id === "fr") { dx = dir * Math.sin(phase + 0.55) * runS; dy = -Math.max(0, Math.cos(phase + 0.55)) * runL; }
       else if (pin.id === "bl") { dx = dir * Math.sin(phase + Math.PI * 0.85) * runS; dy = -Math.max(0, Math.cos(phase + Math.PI * 0.85)) * runL; }
       else if (pin.id === "br") { dx = dir * Math.sin(phase + Math.PI * 1.15) * runS; dy = -Math.max(0, Math.cos(phase + Math.PI * 1.15)) * runL; }
+    } else if (fx === "sprint") {
+      // High-energy gallop/sprint: 1.45x stride, forward torso pitch, airborne suspension phase
+      const sA = Math.sin(phase);
+      const sB = Math.sin(phase + Math.PI * 0.72);
+      const lA = Math.max(0, Math.cos(phase));
+      const lB = Math.max(0, Math.cos(phase + Math.PI * 0.72));
+      const airLift = -Math.max(0, Math.sin(phase * 2)) * Math.max(1.8, bbox.bh * 0.065);
+      if (pin.id === "head") { dx = dir * 1.8; dy = airLift - 0.6; }
+      else if (pin.id === "chest") { dx = dir * 1.1; dy = airLift; }
+      else if (pin.id === "pelvis") { dy = airLift * 0.85; }
+      else if (pin.id === "tail") { dx = -dir * (1.5 + Math.cos(phase) * 1.4); dy = airLift + Math.sin(phase * 2) * 1.8; }
+      else if (pin.id === "fl" || pin.id === "fr") { dx = dir * sA * stride * 1.45; dy = airLift - lA * liftMax * 1.4; }
+      else if (pin.id === "bl" || pin.id === "br") { dx = dir * sB * stride * 1.45; dy = airLift - lB * liftMax * 1.4; }
+      else { dy = airLift; }
+    } else if (fx === "dance") {
+      // Rhythmic groove: alternating sway, double-time head bob, paw taps
+      const sway = Math.sin(phase) * Math.max(1.6, bbox.bw * 0.045);
+      const bounce = -Math.abs(Math.sin(phase * 2)) * Math.max(1.4, bbox.bh * 0.05);
+      if (pin.id === "head") { dx = sway * 1.3; dy = bounce * 1.35; }
+      else if (pin.id === "chest") { dx = sway; dy = bounce; }
+      else if (pin.id === "pelvis") { dx = -sway * 0.65; dy = bounce * 0.6; }
+      else if (pin.id === "tail") { dx = -sway * 1.2; dy = bounce + Math.sin(phase * 2) * 1.6; }
+      else if (pin.id === "fl" || pin.id === "br") { dy = -Math.max(0, Math.sin(phase)) * liftMax * 0.8; }
+      else if (pin.id === "fr" || pin.id === "bl") { dy = -Math.max(0, -Math.sin(phase)) * liftMax * 0.8; }
+    } else if (fx === "pet") {
+      // Happy head-pat squish + rapid tail wag
+      const squish = Math.max(0, Math.sin(phase));
+      if (pin.id === "head") { dy = squish * Math.max(2.2, bbox.bh * 0.075); dx = dir * squish * 0.6; }
+      else if (pin.id === "chest") { dy = squish * Math.max(1.2, bbox.bh * 0.04); }
+      else if (pin.id === "tail") { dy = Math.sin(phase * 4) * Math.max(2.0, bbox.bh * 0.07); dx = -dir * Math.cos(phase * 4) * 1.0; }
+    } else if (fx === "sleep") {
+      // Slow peaceful nap: gentle breathing expansion + relaxed head droop
+      const br = Math.sin(phase);
+      if (pin.id === "head") { dy = Math.max(1.2, bbox.bh * 0.04) + br * 0.6; dx = dir * 0.8; }
+      else if (pin.id === "chest") { dy = -br * Math.max(1.1, bbox.bh * 0.032); }
+      else if (pin.id === "pelvis") { dy = -br * Math.max(0.7, bbox.bh * 0.02); }
+      else if (pin.id === "tail") { dy = br * 0.7; }
     } else if (fx === "breathe") {
       const ex = (Math.sin(phase) * 0.5 + 0.5) * Math.max(1.0, bbox.bh * 0.04);
       if (pin.id === "head" || pin.id === "chest") dy = ex;
@@ -824,8 +940,8 @@ function computeGeodesicSkinning(grid, w, h, pins) {
   const dists = new Float32Array(n * numPins);
 
   // Simple binary min-heap for fast Dijkstra on native pixel grid (< 2ms total)
-  const heapIdx = new Int32Array(n * 4);
-  const heapDist = new Float32Array(n * 4);
+  const heapIdx = new Int32Array(n * 8);
+  const heapDist = new Float32Array(n * 8);
 
   const dx8 = [-1, 1, 0, 0, -1, 1, -1, 1];
   const dy8 = [0, 0, -1, 1, -1, -1, 1, 1];
@@ -876,8 +992,10 @@ function computeGeodesicSkinning(grid, w, h, pins) {
 
     push(startIdx, 0);
     while (hSize > 0) {
+      const topD = heapDist[0];
       const u = pop();
       const du = dists[base + u];
+      if (topD > du + 1e-5) continue;
       const ux = u % w, uy = (u / w) | 0;
       for (let k = 0; k < 8; k++) {
         const nx = ux + dx8[k], ny = uy + dy8[k];
@@ -1336,8 +1454,17 @@ function drawNativeRgbaScaled(targetCtx, rgba, sw, sh, outW, outH, padBottom, st
   off.getContext("2d").putImageData(new ImageData(rgba, sw, sh), 0, 0);
 
   const { ox, oy, dw, dh } = computeSafeDrawRect(sw, sh, outW, outH, padBottom);
+  const mirEl = typeof document !== "undefined" ? document.getElementById("gif-mirror") : null;
   targetCtx.imageSmoothingEnabled = false;
-  targetCtx.drawImage(off, 0, 0, sw, sh, ox, oy, dw, dh);
+  if (mirEl && mirEl.checked) {
+    targetCtx.save();
+    targetCtx.translate(ox + dw, oy);
+    targetCtx.scale(-1, 1);
+    targetCtx.drawImage(off, 0, 0, sw, sh, 0, 0, dw, dh);
+    targetCtx.restore();
+  } else {
+    targetCtx.drawImage(off, 0, 0, sw, sh, ox, oy, dw, dh);
+  }
   if (storeGeom) gifLastCanvasGeom = { ox, oy, dw, dh, sw, sh };
 }
 
