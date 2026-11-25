@@ -1605,9 +1605,6 @@ function computeBoneFkTransforms(rig, fx, frameIdx, totalFrames, ampScale) {
     ampScale = (typeof ampScale === "number" ? ampScale : 1.0) * Math.max(0.24, _minMargin / 18.0);
   } else if (rig.bodyType === "blob") {
     ampScale = (typeof ampScale === "number" ? ampScale : 1.0) * 0.55;
-  } else if (fx === "walk" || fx === "sprint" || fx === "run") {
-    const k = (rig.bodyType === "bird" || rig.bodyType === "swimmer") ? 1.25 : (rig.bodyType === "biped" ? 1.45 : 2.05);
-    ampScale = (typeof ampScale === "number" ? ampScale : 1.0) * k;
   }
   const { pins, bbox, facesLeft, bodyType } = rig;
   if (!rig.hierarchy) rig.hierarchy = buildBoneHierarchy(pins, bodyType);
@@ -1779,17 +1776,73 @@ function computeBoneFkTransforms(rig, fx, frameIdx, totalFrames, ampScale) {
   return world;
 }
 
+function computeBoneSeamDistances(rig) {
+  if (rig.seamDist) return rig.seamDist;
+  const { grid, w, h, pins, geo } = rig;
+  if (!rig.hierarchy) rig.hierarchy = buildBoneHierarchy(pins, rig.bodyType);
+  const { parentOf } = rig.hierarchy;
+  const n = w * h;
+  const dist = new Uint8Array(n);
+  dist.fill(255);
+  const q = new Int32Array(n);
+  let head = 0, tail = 0;
+
+  // Seed every pixel on a bone that touches a DIFFERENT bone (4-connected) with distance 0
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (grid[i * 4 + 3] === 0) continue;
+      const bi = geo.domPin[i];
+      if (parentOf[bi] === -1) continue;
+      const touchDiff =
+        (x > 0 && grid[(i - 1) * 4 + 3] > 0 && geo.domPin[i - 1] !== bi) ||
+        (x + 1 < w && grid[(i + 1) * 4 + 3] > 0 && geo.domPin[i + 1] !== bi) ||
+        (y > 0 && grid[(i - w) * 4 + 3] > 0 && geo.domPin[i - w] !== bi) ||
+        (y + 1 < h && grid[(i + w) * 4 + 3] > 0 && geo.domPin[i + w] !== bi);
+      if (touchDiff) {
+        dist[i] = 0;
+        q[tail++] = i;
+      }
+    }
+  }
+
+  // BFS inward inside each bone up to 12px
+  while (head < tail) {
+    const u = q[head++];
+    const nd = dist[u] + 1;
+    if (nd > 12) continue;
+    const ux = u % w, uy = (u / w) | 0;
+    const bi = geo.domPin[u];
+    const nbrs = [];
+    if (ux > 0) nbrs.push(u - 1);
+    if (ux + 1 < w) nbrs.push(u + 1);
+    if (uy > 0) nbrs.push(u - w);
+    if (uy + 1 < h) nbrs.push(u + w);
+    for (let k = 0; k < nbrs.length; k++) {
+      const v = nbrs[k];
+      if (dist[v] === 255 && grid[v * 4 + 3] > 0 && geo.domPin[v] === bi) {
+        dist[v] = nd;
+        q[tail++] = v;
+      }
+    }
+  }
+  rig.seamDist = dist;
+  return dist;
+}
+
 function renderBoneFkFrame(rig, fx, frameIdx, totalFrames, ampScale) {
   const { grid, epx, w, h, bbox, pins, geo } = rig;
   if (!rig.hierarchy) rig.hierarchy = buildBoneHierarchy(pins, rig.bodyType);
-  const { parentOf, depthOf, sockets } = rig.hierarchy;
+  const { parentOf, depthOf } = rig.hierarchy;
+  const seamDist = computeBoneSeamDistances(rig);
   const world = computeBoneFkTransforms(rig, fx, frameIdx, totalFrames, ampScale);
 
   const out = new Uint8ClampedArray(w * h * 4);
   const zBuf = new Int8Array(w * h).fill(-10);
   const ew = epx.w, eh = epx.h, edata = epx.data, efactor = epx.factor || 2;
 
-  const step = Math.max(w, h) > 96 ? 2 : 1;
+  // Always step=1 for watertight 4-connected outlines (eliminates step=2 diagonal detachments)
+  const step = 1;
   const y0 = Math.max(0, bbox.minY), y1 = Math.min(h - 1, bbox.maxY);
   const x0 = Math.max(0, bbox.minX), x1 = Math.min(w - 1, bbox.maxX);
 
@@ -1802,32 +1855,47 @@ function renderBoneFkFrame(rig, fx, frameIdx, totalFrames, ampScale) {
     };
   };
 
-  // Sort bones back-to-front by depthOf
-  const drawOrder = Array.from({ length: pins.length }, (_, i) => i).sort((a, b) => depthOf[a] - depthOf[b]);
   const vx = new Float32Array((w + 1) * (h + 1));
   const vy = new Float32Array((w + 1) * (h + 1));
-  const blendR = 7.5; // 5px smooth socket blend between parent and child
+
+  // 1. Draw inpainted torso backing behind limbs so swinging legs never open transparent cracks
+  const inp = inpaintTorsoBacking(rig);
+  if (rig.inpaintedHasLimbs) {
+    const chestIdx = Math.max(0, pins.findIndex((p) => p.id === "chest"));
+    for (let y = y0; y <= y1 + 1; y++) {
+      const cy = Math.min(h, y);
+      for (let x = x0; x <= x1 + 1; x++) {
+        const cx = Math.min(w, x);
+        const pt = evalBonePt(chestIdx, cx, cy);
+        vx[cy * (w + 1) + cx] = pt.x;
+        vy[cy * (w + 1) + cx] = pt.y;
+      }
+    }
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        if (!rig.inpaintedMask[y * w + x]) continue;
+        const i00 = y * (w + 1) + x, i10 = i00 + 1;
+        const i01 = (y + 1) * (w + 1) + x, i11 = i01 + 1;
+        rasterizeTriEpx(out, zBuf, w, h, inp.data, inp.w, inp.h, 1, vx[i00], vy[i00], x, y, vx[i10], vy[i10], x + 1, y, vx[i11], vy[i11], x + 1, y + 1, -2);
+        rasterizeTriEpx(out, zBuf, w, h, inp.data, inp.w, inp.h, 1, vx[i00], vy[i00], x, y, vx[i11], vy[i11], x + 1, y + 1, vx[i01], vy[i01], x, y + 1, -2);
+      }
+    }
+  }
+
+  // 2. Depth-sorted bones welded along the ENTIRE parent-child seam via seamDist
+  const drawOrder = Array.from({ length: pins.length }, (_, i) => i).sort((a, b) => depthOf[a] - depthOf[b]);
+  const blendR = 7.0;
 
   for (let di = 0; di < drawOrder.length; di++) {
     const bi = drawOrder[di];
     const pi = parentOf[bi];
     const depth = depthOf[bi];
-    const sock = sockets[bi];
 
-    // Find tight bounding box of cells belonging to bone bi (with 1-step overlap collar)
     let bMinX = w, bMaxX = -1, bMinY = h, bMaxY = -1;
-    for (let y = y0; y <= y1; y += step) {
-      const yNext = Math.min(h, y + step);
-      for (let x = x0; x <= x1; x += step) {
-        const xNext = Math.min(w, x + step);
-        let hit = false;
-        for (let ty = y; ty < yNext && !hit; ty++) {
-          for (let tx = x; tx < xNext; tx++) {
-            const ci = ty * w + tx;
-            if (grid[ci * 4 + 3] > 0 && geo.domPin[ci] === bi) { hit = true; break; }
-          }
-        }
-        if (hit) {
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const ci = y * w + x;
+        if (grid[ci * 4 + 3] > 0 && geo.domPin[ci] === bi) {
           if (x < bMinX) bMinX = x; if (x > bMaxX) bMaxX = x;
           if (y < bMinY) bMinY = y; if (y > bMaxY) bMaxY = y;
         }
@@ -1835,27 +1903,28 @@ function renderBoneFkFrame(rig, fx, frameIdx, totalFrames, ampScale) {
     }
     if (bMaxX < bMinX) continue;
 
-    // Expand by 1 step collar for watertight seams
-    const sx0 = Math.max(x0, bMinX - step);
-    const sx1 = Math.min(x1, bMaxX + step);
-    const sy0 = Math.max(y0, bMinY - step);
-    const sy1 = Math.min(y1, bMaxY + step);
+    const sx0 = Math.max(x0, bMinX - 1);
+    const sx1 = Math.min(x1, bMaxX + 1);
+    const sy0 = Math.max(y0, bMinY - 1);
+    const sy1 = Math.min(y1, bMaxY + 1);
 
-    // Evaluate vertices on bone bi (smoothly blending to parent near the joint socket)
-    for (let y = sy0; y <= sy1 + step; y += step) {
+    for (let y = sy0; y <= sy1 + 1; y++) {
       const cy = Math.min(h, y);
-      for (let x = sx0; x <= sx1 + step; x += step) {
+      const py = Math.min(h - 1, cy);
+      for (let x = sx0; x <= sx1 + 1; x++) {
         const cx = Math.min(w, x);
+        const px = Math.min(w - 1, cx);
         const vi = cy * (w + 1) + cx;
         const pC = evalBonePt(bi, cx, cy);
         if (pi === -1) {
           vx[vi] = pC.x; vy[vi] = pC.y;
         } else {
-          // Signed projection along parent->child bone axis
-          const dSock = Math.hypot(cx - sock.x, cy - sock.y);
-          if (dSock < blendR) {
+          // Full-seam boundary weld: s=0 at every pixel touching another bone, smoothly ramping to s=1
+          const ci = py * w + px;
+          const dSeam = geo.domPin[ci] === bi ? seamDist[ci] : 0;
+          if (dSeam < blendR) {
             const pP = evalBonePt(pi, cx, cy);
-            const t = dSock / blendR;
+            const t = dSeam / blendR;
             const s = t * t * (3 - 2 * t);
             vx[vi] = pP.x * (1 - s) + pC.x * s;
             vy[vi] = pP.y * (1 - s) + pC.y * s;
@@ -1866,30 +1935,23 @@ function renderBoneFkFrame(rig, fx, frameIdx, totalFrames, ampScale) {
       }
     }
 
-    // Rasterize bone bi + 1-step overlap collar
-    for (let y = sy0; y <= sy1; y += step) {
-      const yNext = Math.min(h, y + step);
-      for (let x = sx0; x <= sx1; x += step) {
-        const xNext = Math.min(w, x + step);
-        let belongs = false;
-        for (let ty = y; ty < yNext && !belongs; ty++) {
-          for (let tx = x; tx < xNext; tx++) {
-            const ci = ty * w + tx;
-            if (grid[ci * 4 + 3] === 0) continue;
-            if (geo.domPin[ci] === bi) { belongs = true; break; }
-            const lx = Math.max(0, tx - step), rx = Math.min(w - 1, tx + step);
-            const uy = Math.max(0, ty - step), dy = Math.min(h - 1, ty + step);
-            if (
-              geo.domPin[ty * w + lx] === bi || geo.domPin[ty * w + rx] === bi ||
-              geo.domPin[uy * w + tx] === bi || geo.domPin[dy * w + tx] === bi
-            ) { belongs = true; break; }
-          }
+    for (let y = sy0; y <= sy1; y++) {
+      for (let x = sx0; x <= sx1; x++) {
+        const ci = y * w + x;
+        if (grid[ci * 4 + 3] === 0) continue;
+        let belongs = geo.domPin[ci] === bi;
+        if (!belongs) {
+          const lx = Math.max(0, x - 1), rx = Math.min(w - 1, x + 1);
+          const uy = Math.max(0, y - 1), dy = Math.min(h - 1, y + 1);
+          belongs =
+            geo.domPin[y * w + lx] === bi || geo.domPin[y * w + rx] === bi ||
+            geo.domPin[uy * w + x] === bi || geo.domPin[dy * w + x] === bi;
         }
         if (!belongs) continue;
-        const i00 = y * (w + 1) + x, i10 = y * (w + 1) + xNext;
-        const i01 = yNext * (w + 1) + x, i11 = yNext * (w + 1) + xNext;
-        rasterizeTriEpx(out, zBuf, w, h, edata, ew, eh, efactor, vx[i00], vy[i00], x, y, vx[i10], vy[i10], xNext, y, vx[i11], vy[i11], xNext, yNext, depth);
-        rasterizeTriEpx(out, zBuf, w, h, edata, ew, eh, efactor, vx[i00], vy[i00], x, y, vx[i11], vy[i11], xNext, yNext, vx[i01], vy[i01], x, yNext, depth);
+        const i00 = y * (w + 1) + x, i10 = i00 + 1;
+        const i01 = (y + 1) * (w + 1) + x, i11 = i01 + 1;
+        rasterizeTriEpx(out, zBuf, w, h, edata, ew, eh, efactor, vx[i00], vy[i00], x, y, vx[i10], vy[i10], x + 1, y, vx[i11], vy[i11], x + 1, y + 1, depth);
+        rasterizeTriEpx(out, zBuf, w, h, edata, ew, eh, efactor, vx[i00], vy[i00], x, y, vx[i11], vy[i11], x + 1, y + 1, vx[i01], vy[i01], x, y + 1, depth);
       }
     }
   }
@@ -1927,7 +1989,6 @@ function renderBoneFkFrame(rig, fx, frameIdx, totalFrames, ampScale) {
   }
   return finalOut;
 }
-
 
 // ============================================================================
 // RESEARCH-BACKED 2D RIGGING SUITE V3 (TRUE PAPER IMPLEMENTATIONS)
@@ -2080,20 +2141,14 @@ function computeBiharmonicWeights(rig) {
   // Power-sharpen BBW weights (gamma = 3.2) & block opposing-leg cross-bleed so strides don't cancel out
   const oppMap = { fl: "fr", fr: "fl", bl: "br", br: "bl" };
   const oppIdx = pins.map((p) => (oppMap[p.id] ? pins.findIndex((q) => q.id === oppMap[p.id]) : -1));
-  const isLegPin = pins.map((p) => p.id === "fl" || p.id === "fr" || p.id === "bl" || p.id === "br");
-  const isTorsoPin = pins.map((p) => p.id === "chest" || p.id === "pelvis");
-  const legSplitY = rig.bbox.minY + rig.bbox.bh * 0.68;
   for (let idx = 0; idx < n; idx++) {
     if (grid[idx * 4 + 3] === 0) continue;
-    const py = (idx / w) | 0;
     const dp = geo.domPin[idx];
     const blockPin = (dp >= 0 && dp < numPins) ? oppIdx[dp] : -1;
-    const inLowerLeg = (dp >= 0 && dp < numPins && isLegPin[dp] && py >= legSplitY);
     let total = 0;
     for (let p = 0; p < numPins; p++) {
-      let v = (p === blockPin) ? 0 : weights[p][idx];
-      if (inLowerLeg && isTorsoPin[p]) v *= 0.15;
-      const sv = v > 1e-5 ? Math.pow(v, 3.6) : 0;
+      const v = (p === blockPin) ? 0 : weights[p][idx];
+      const sv = v > 1e-5 ? Math.pow(v, 2.2) : 0;
       weights[p][idx] = sv;
       total += sv;
     }
